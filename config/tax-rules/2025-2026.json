@@ -1,0 +1,53 @@
+{
+  "taxYear": "2025-2026",
+  "label": "2025 to 2026",
+  "jurisdiction": "england_wales_northern_ireland",
+  "estimateNotice": "Budgeting estimate only. This does not replace payroll, HMRC, Student Loans Company, or regulated tax advice.",
+  "sources": [
+    {
+      "name": "GOV.UK Income Tax rates and allowances current and past",
+      "url": "https://www.gov.uk/government/publications/rates-and-allowances-income-tax/income-tax-rates-and-allowances-current-and-past"
+    },
+    {
+      "name": "GOV.UK rates and thresholds for employers 2025 to 2026",
+      "url": "https://www.gov.uk/guidance/rates-and-thresholds-for-employers-2025-to-2026"
+    },
+    {
+      "name": "GOV.UK previous annual student loan repayment thresholds",
+      "url": "https://www.gov.uk/guidance/previous-annual-repayment-thresholds"
+    }
+  ],
+  "incomeTax": {
+    "personalAllowance": 12570,
+    "personalAllowanceTaperStarts": 100000,
+    "personalAllowanceTaperRate": 0.5,
+    "bands": [
+      { "name": "Basic rate", "upTo": 37700, "rate": 0.2 },
+      { "name": "Higher rate", "upTo": 125140, "rate": 0.4 },
+      { "name": "Additional rate", "upTo": null, "rate": 0.45 }
+    ]
+  },
+  "nationalInsurance": {
+    "class1Employee": {
+      "primaryThreshold": 12570,
+      "upperEarningsLimit": 50270,
+      "mainRate": 0.08,
+      "additionalRate": 0.02
+    }
+  },
+  "studentLoans": {
+    "undergraduatePlans": [
+      { "plan": "plan_1", "label": "Plan 1", "annualThreshold": 26065, "repaymentRate": 0.09, "active": true },
+      { "plan": "plan_2", "label": "Plan 2", "annualThreshold": 28470, "repaymentRate": 0.09, "active": true },
+      { "plan": "plan_4", "label": "Plan 4", "annualThreshold": 32745, "repaymentRate": 0.09, "active": true },
+      { "plan": "plan_5", "label": "Plan 5", "annualThreshold": 25000, "repaymentRate": 0.09, "active": false, "note": "Plan 5 repayments do not start before April 2026." }
+    ],
+    "postgraduateLoan": {
+      "plan": "postgraduate",
+      "label": "Postgraduate Loan",
+      "annualThreshold": 21000,
+      "repaymentRate": 0.06,
+      "active": true
+    }
+  }
+}
