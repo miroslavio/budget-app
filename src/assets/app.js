@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireAutoSubmit();
   wireNumberInputs();
   wireSplitSliders();
+  wireTransactionCategorySelects();
   wireConfirmActions();
   wireModals();
   wireMobileNav();
@@ -107,6 +108,7 @@ function wireModals(root = document) {
       refreshConditionalSections(dialog);
       wireNumberInputs(dialog);
       wireSplitSliders(dialog);
+      wireTransactionCategorySelects(dialog);
       dialog.showModal();
     });
   });
@@ -244,6 +246,48 @@ function formatSplitPercent(value) {
   const rounded = Math.round(Number(value || 0) * 100) / 100;
   if (Number.isInteger(rounded)) return `${rounded}%`;
   return `${String(rounded).replace(/(?:\\.0+|(\\.\\d+?)0+)$/, '$1')}%`;
+}
+
+function wireTransactionCategorySelects(root = document) {
+  root.querySelectorAll('select[data-transaction-category-select]').forEach((select) => {
+    if (!(select instanceof HTMLSelectElement)) return;
+    const form = select.closest('form');
+    const typeSelect = form?.querySelector('select[name="type"]');
+    if (!(typeSelect instanceof HTMLSelectElement)) return;
+
+    const allowedKindsForType = (type) => {
+      if (type === 'income') return ['income'];
+      if (type === 'savings') return ['savings'];
+      return ['expense', 'debt'];
+    };
+
+    const update = () => {
+      const allowedKinds = allowedKindsForType(typeSelect.value);
+      let selectedStillVisible = false;
+
+      [...select.options].forEach((option) => {
+        const kind = option.dataset.kind || '';
+        const isPlaceholder = !option.value;
+        const visible = isPlaceholder || allowedKinds.includes(kind);
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible && option.value === select.value) selectedStillVisible = true;
+      });
+
+      if (!selectedStillVisible) {
+        const firstVisible = [...select.options].find((option) => !option.disabled);
+        select.value = firstVisible?.value || '';
+      }
+    };
+
+    if (select.dataset.transactionCategoryBound !== 'true') {
+      select.dataset.transactionCategoryBound = 'true';
+      typeSelect.addEventListener('change', update);
+      typeSelect.addEventListener('input', update);
+    }
+
+    update();
+  });
 }
 
 function wireMobileNav(root = document) {

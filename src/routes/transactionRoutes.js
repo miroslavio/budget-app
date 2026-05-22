@@ -125,10 +125,10 @@ function transactionForm(ctx, categories, members, month) {
     <section class="form-section">
       <h3>Classification</h3>
     <label>Category
-      <input name="category_name" list="category-list" data-modal-field="categoryName">
-      <datalist id="category-list">
-        ${categories.map((category) => `<option value="${escapeHtml(category.name)}"></option>`).join('')}
-      </datalist>
+      <select name="category_name" data-modal-field="categoryName" data-transaction-category-select>
+        <option value="">Choose a category</option>
+        ${categories.map((category) => `<option value="${escapeHtml(category.name)}" data-kind="${escapeHtml(category.kind)}">${escapeHtml(category.name)}</option>`).join('')}
+      </select>
     </label>
     <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
