@@ -56,8 +56,8 @@ export function registerAuthRoutes(router, db) {
             <label>Email <input name="email" type="email" autocomplete="email" required></label>
             <label>Password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
             <label>Household name <input name="household_name" value="Our household" maxlength="120"></label>
-            <label>Invite code for Person B <input name="invite_code" value="${escapeHtml(inviteCode)}" maxlength="64"></label>
-            <p class="hint">Leave invite code blank to create a new household as Person A. Use a household invite code to join as Person B.</p>
+            <label>Household invite code <input name="invite_code" value="${escapeHtml(inviteCode)}" maxlength="64"></label>
+            <p class="hint">Leave this blank to create a new household. Use a household invite code to join an existing household as the second member.</p>
             <button type="submit">Create account</button>
           </form>
           <p>Already registered? <a href="/login">Log in</a>.</p>
@@ -84,7 +84,7 @@ export function registerAuthRoutes(router, db) {
           if (!household) throw new Error('Invite code was not found.');
           const members = listHouseholdMembers(db, household.id);
           if (members.length >= 2) throw new Error('This household already has two people.');
-          if (members.some((member) => member.person_key === 'person_b')) throw new Error('Person B is already registered.');
+          if (members.some((member) => member.person_key === 'person_b')) throw new Error('The second household member is already registered.');
           personKey = 'person_b';
         } else {
           household = createHousehold(db, { name: requireString(ctx.body.household_name || 'Our household', 'Household name', 120) });

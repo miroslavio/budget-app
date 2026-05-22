@@ -5,6 +5,7 @@ import { buildMonthlyForecast } from '../services/forecastService.js';
 import { savingsGoalsAsBudgetItems } from '../services/savingsService.js';
 import { currentMonth, monthLabel } from '../utils/dates.js';
 import { formatCurrency, formatSignedCurrency, page } from '../views/html.js';
+import { decimalInputAttrs } from '../views/forms.js';
 import { cashflowForecastChart } from '../views/charts.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated } from './helpers.js';
@@ -30,13 +31,12 @@ export function registerForecastRoutes(router, db) {
         wide: true,
         body: `<section class="page-title">
           <div>
-            <p class="eyebrow">Future cashflow</p>
-            <h1>Monthly forecast</h1>
-            <p>Forecast uses active recurring income, expenses, and savings contributions.</p>
+            <h1>Forecast</h1>
+            <p class="page-context">See what your current plan suggests for the months ahead.</p>
           </div>
           <form method="get" action="/forecast" class="inline-form">
-            <label>Start <input type="month" name="start_month" value="${startMonth}"></label>
-            <label>Months <input type="number" name="months" min="1" max="36" value="${months}"></label>
+            <label>Start <input type="month" name="start_month" value="${startMonth}" required></label>
+            <label>Months <input name="months" value="${months}" ${decimalInputAttrs({ required: true, min: '1', max: '36', decimals: 0, step: '1' })}></label>
             <button>Update</button>
           </form>
         </section>
@@ -44,7 +44,6 @@ export function registerForecastRoutes(router, db) {
           <div class="card-heading">
             <div>
               <h2>Projected balance and monthly movement</h2>
-              <p class="hint">This is better than a waterfall for a rolling household forecast: the bars show each month’s surplus or deficit, and the line shows whether the closing balance is trending safely.</p>
             </div>
           </div>
           ${cashflowForecastChart(forecast)}

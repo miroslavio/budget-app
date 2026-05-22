@@ -3,10 +3,12 @@ import { listActiveBudgetItems } from '../repositories/budgetItemRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
-import { actualMonthlySummary, plannedMonthlySummary, varianceSummary, yearlyItems } from '../services/budgetService.js';
+import { yearlyItems } from '../services/budgetService.js';
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
+import { buildPeriodReport } from '../services/reportService.js';
 import { savingsGoalProgress, savingsGoalsAsBudgetItems } from '../services/savingsService.js';
-import { currentMonth, monthLabel, monthRange } from '../utils/dates.js';
+import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
+import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, formatSignedCurrency, page, signedStat, stat, ownerLabel } from '../views/html.js';
 import { pieChart } from '../views/charts.js';
 import { html } from '../http/response.js';
@@ -15,32 +17,45 @@ import { ensureAuthenticated } from './helpers.js';
 export function registerDashboardRoutes(router, db) {
   router.get('/dashboard', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
-    const month = ctx.query.get('month') || currentMonth();
+    const selectedMonth = ctx.query.get('month') || currentMonth();
+    const selectedPeriod = ctx.query.get('period') || 'this_month';
     const household = findHouseholdById(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, ctx.user.household_id);
     const items = listActiveBudgetItems(db, household.id);
     const goals = listSavingsGoals(db, household.id);
     const planningItems = [...items, ...savingsGoalsAsBudgetItems(goals)];
-    const range = monthRange(month);
-    const transactions = listTransactions(db, household.id, { startDate: range.start, endDate: range.end });
-    const planned = plannedMonthlySummary(planningItems, month);
-    const actual = actualMonthlySummary(transactions);
-    const variance = varianceSummary(planned, actual);
+    const period = resolveDashboardPeriod(selectedPeriod, selectedMonth);
+    const transactions = listTransactions(db, household.id, { startDate: period.range.start, endDate: period.range.end });
+    const report = buildPeriodReport({ items: planningItems, transactions, range: period.range });
+    const { planned, actual, variance } = report;
     const chartOwner = ctx.query.get('chart_owner') || 'household';
-    const plannedExpenseSeries = plannedExpenseCategorySeries(planningItems, { owner: chartOwner });
+    const plannedExpenseSeries = plannedExpenseCategorySeries(items, { owner: chartOwner, months: report.months });
 
     html(
       ctx.res,
       page(ctx, {
         title: 'Dashboard',
         wide: true,
-        body: `<section class="page-title dashboard-title">
+        body: `<div class="dashboard-layout">
+        <section class="page-title dashboard-toolbar">
           <div>
-            <h1>${monthLabel(month)}</h1>
+            <h1>Dashboard</h1>
+            <p class="dashboard-period-label">${escapeHtml(period.summaryLabel)}</p>
           </div>
-          <form method="get" action="/dashboard" class="inline-form" data-submit-on-change>
-            <label>Month <input type="month" name="month" value="${month}"></label>
-          </form>
+          <div class="dashboard-toolbar-controls">
+            <nav class="period-pills" aria-label="Dashboard period">
+              ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth, chartOwner)}
+              ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth, chartOwner)}
+              ${periodPill('/dashboard', 'last_3_months', 'Last 3 months', period.key, selectedMonth, chartOwner)}
+              ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth, chartOwner)}
+              ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth, chartOwner)}
+            </nav>
+            ${period.key === 'specific_month' ? `<form method="get" action="/dashboard" class="inline-form dashboard-month-form" data-submit-on-change>
+              <input type="hidden" name="period" value="specific_month">
+              <input type="hidden" name="chart_owner" value="${escapeHtml(chartOwner)}">
+              <label>Month <input type="month" name="month" value="${escapeHtml(selectedMonth)}"></label>
+            </form>` : ''}
+          </div>
         </section>
 
         <section class="grid four">
@@ -60,22 +75,15 @@ export function registerDashboardRoutes(router, db) {
         <section class="card chart-card">
           <div class="card-heading">
             <div>
-              <h2>Planned monthly expenses by category</h2>
-              <p class="hint">Switch between household and person views. Shared costs use their configured split.</p>
+              <h2>Planned expenses by category</h2>
             </div>
-            <form method="get" action="/dashboard" class="inline-form">
-              <input type="hidden" name="month" value="${month}">
-              <label>View
-                <select name="chart_owner">
-                  <option value="household" ${chartOwner === 'household' ? 'selected' : ''}>Household</option>
-                  <option value="person_a" ${chartOwner === 'person_a' ? 'selected' : ''}>${escapeHtml(members.find((member) => member.person_key === 'person_a')?.display_name || 'Person A')}</option>
-                  <option value="person_b" ${chartOwner === 'person_b' ? 'selected' : ''}>${escapeHtml(members.find((member) => member.person_key === 'person_b')?.display_name || 'Person B')}</option>
-                </select>
-              </label>
-              <button>Update chart</button>
-            </form>
+            <nav class="period-pills chart-owner-pills" aria-label="Expense chart view">
+              ${chartOwnerPill('/dashboard', 'household', 'Household', chartOwner, period.key, selectedMonth)}
+              ${chartOwnerPill('/dashboard', 'person_a', ownerLabel('person_a', members), chartOwner, period.key, selectedMonth)}
+              ${chartOwnerPill('/dashboard', 'person_b', ownerLabel('person_b', members), chartOwner, period.key, selectedMonth)}
+            </nav>
           </div>
-          ${pieChart(plannedExpenseSeries, { title: 'Planned monthly expenses by category', emptyMessage: 'Add planned expenses to build this chart.' })}
+          ${pieChart(plannedExpenseSeries, { title: 'Planned expenses by category', emptyMessage: 'Add planned expenses to build this chart.' })}
         </section>
 
         <section class="grid two">
@@ -91,7 +99,7 @@ export function registerDashboardRoutes(router, db) {
             </table>
           </div>
           <div class="card">
-            <h2>Upcoming yearly costs as monthly equivalents</h2>
+            <h2>Yearly costs in your plan</h2>
             ${yearlyTable(yearlyItems(items))}
           </div>
         </section>
@@ -103,7 +111,7 @@ export function registerDashboardRoutes(router, db) {
 
         <section class="card">
           <h2>Ownership snapshot</h2>
-          <table class="financial-table ownership-table">
+          <table class="data-table financial-table ownership-table">
             <thead><tr><th>Owner</th><th>Planned income</th><th>Planned expenses</th><th>Planned savings</th></tr></thead>
             <tbody>
               ${Object.entries(planned.byOwner)
@@ -114,15 +122,91 @@ export function registerDashboardRoutes(router, db) {
                 .join('')}
             </tbody>
           </table>
-        </section>`
+        </section>
+        </div>`
       })
     );
   });
 }
 
+function resolveDashboardPeriod(periodKey, selectedMonth) {
+  const thisMonth = currentMonth();
+  const currentTaxYear = taxYearForDate(todayIso());
+
+  switch (periodKey) {
+    case 'next_month': {
+      const month = addMonths(thisMonth, 1);
+      return {
+        key: periodKey,
+        range: { ...monthRange(month), label: month, periodType: 'month' },
+        summaryLabel: `Next month · ${monthLabel(month)}`
+      };
+    }
+    case 'last_3_months': {
+      const startMonth = addMonths(thisMonth, -2);
+      const endMonth = thisMonth;
+      return {
+        key: periodKey,
+        range: {
+          start: monthRange(startMonth).start,
+          end: monthRange(endMonth).end,
+          label: `${startMonth} to ${endMonth}`,
+          periodType: 'custom'
+        },
+        summaryLabel: `Last 3 months · ${monthLabel(startMonth)} to ${monthLabel(endMonth)}`
+      };
+    }
+    case 'tax_year': {
+      return {
+        key: periodKey,
+        range: {
+          ...taxYearRange(currentTaxYear),
+          label: currentTaxYear,
+          periodType: 'tax_year'
+        },
+        summaryLabel: `Tax year · ${currentTaxYear.replace('-', ' to ')}`
+      };
+    }
+    case 'specific_month': {
+      return {
+        key: periodKey,
+        range: { ...monthRange(selectedMonth), label: selectedMonth, periodType: 'month' },
+        summaryLabel: `${monthLabel(selectedMonth)}`
+      };
+    }
+    case 'this_month':
+    default:
+      return {
+        key: 'this_month',
+        range: { ...monthRange(thisMonth), label: thisMonth, periodType: 'month' },
+        summaryLabel: `This month · ${monthLabel(thisMonth)}`
+      };
+  }
+}
+
+function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth, chartOwner) {
+  const params = new URLSearchParams({
+    period: periodKey,
+    month: selectedMonth,
+    chart_owner: chartOwner
+  });
+  const active = selectedPeriod === periodKey;
+  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
+}
+
+function chartOwnerPill(basePath, ownerKey, label, selectedOwner, periodKey, selectedMonth) {
+  const params = new URLSearchParams({
+    period: periodKey,
+    month: selectedMonth,
+    chart_owner: ownerKey
+  });
+  const active = selectedOwner === ownerKey;
+  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
+}
+
 function yearlyTable(items) {
   if (!items.length) return '<p class="empty">No yearly active items.</p>';
-  return `<table>
+  return `<table class="data-table">
     <thead><tr><th>Name</th><th>Type</th><th>Yearly amount</th><th>Monthly equivalent</th></tr></thead>
     <tbody>${items
       .map(
@@ -138,8 +222,8 @@ function goalProgress(goal) {
   const status =
     progress.onTrack === null ? 'No target date' : progress.onTrack ? 'On track' : 'Behind target';
   return `<article class="goal">
-    <div><strong>${escapeHtml(goal.name)}</strong><span>${formatCurrency(goal.current_saved_amount_pence)} of ${formatCurrency(goal.target_amount_pence)}</span></div>
+    <div class="goal-head"><strong>${escapeHtml(goal.name)}</strong><span>${formatCurrency(goal.current_saved_amount_pence)} of ${formatCurrency(goal.target_amount_pence)}</span></div>
     <progress value="${progress.progressPercentage}" max="100"></progress>
-    <small>${progress.progressPercentage}% · ${status}</small>
+    <small class="goal-meta">${progress.progressPercentage}% · ${status}</small>
   </article>`;
 }

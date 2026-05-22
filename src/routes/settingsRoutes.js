@@ -1,9 +1,9 @@
 import { findHouseholdById, updateHouseholdSettings } from '../repositories/householdRepository.js';
-import { createCategory, listCategories } from '../repositories/categoryRepository.js';
+import { createCategory, deleteCategory, listCategories, updateCategory } from '../repositories/categoryRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
-import { parsePoundsToPence } from '../utils/money.js';
-import { requireString } from '../utils/validation.js';
-import { csrfField, escapeHtml, formatCurrency, moneyInputValue, ownerLabel, page } from '../views/html.js';
+import { optionalMoney, requireString } from '../utils/validation.js';
+import { actionIconButton, csrfField, escapeHtml, formatCurrency, moneyInputValue, page } from '../views/html.js';
+import { moneyInputAttrs } from '../views/forms.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
@@ -17,6 +17,7 @@ export function registerSettingsRoutes(router, db) {
       ctx.res,
       page(ctx, {
         title: 'Settings',
+        wide: true,
         body: `<section class="page-title">
           <div>
             <h1>Settings</h1>
@@ -28,43 +29,87 @@ export function registerSettingsRoutes(router, db) {
             <form method="post" action="/settings" class="stack">
               ${csrfField(ctx)}
               <label>Household name <input name="name" value="${escapeHtml(household.name)}" maxlength="120" required></label>
-              <label>Opening balance for forecast <input name="opening_balance" value="${moneyInputValue(household.opening_balance_pence)}" inputmode="decimal"></label>
+              <label>Opening balance for forecast <input name="opening_balance" value="${moneyInputValue(household.opening_balance_pence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
               <button>Save settings</button>
             </form>
           </div>
           <div class="card">
             <h2>Members</h2>
-            <table>
-              <thead><tr><th>Person</th><th>Name</th><th>Email</th></tr></thead>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Email</th></tr></thead>
               <tbody>${members
-                .map((member) => `<tr><td>${escapeHtml(ownerLabel(member.person_key, members))}</td><td>${escapeHtml(member.display_name)}</td><td>${escapeHtml(member.email)}</td></tr>`)
+                .map((member) => `<tr><td>${escapeHtml(member.display_name)}</td><td>${escapeHtml(member.email)}</td></tr>`)
                 .join('')}</tbody>
             </table>
-            <p class="hint">Invite code for Person B: <strong>${escapeHtml(household.invite_code)}</strong></p>
+            <p class="hint">Household invite code: <strong>${escapeHtml(household.invite_code)}</strong></p>
             <p class="hint">Opening balance currently used by forecast: ${formatCurrency(household.opening_balance_pence)}</p>
           </div>
-        </section>`
-        + `<section class="card">
+        </section>
+        <section class="card">
           <div class="card-heading">
             <div>
               <h2>Expense categories</h2>
             </div>
+            <button type="button" data-open-modal="add-category-modal" data-reset-modal="true">Add category</button>
           </div>
-          <div class="grid two">
-            <form method="post" action="/settings/categories" class="stack">
-              ${csrfField(ctx)}
-              <label>Category name <input name="name" maxlength="120" required></label>
-              <button>Add category</button>
-            </form>
-            <div>
-              ${categories.length ? `<table>
-                <thead><tr><th>Name</th><th>Scope</th></tr></thead>
-                <tbody>${categories
-                  .map((category) => `<tr><td>${escapeHtml(category.name)}</td><td>${category.is_default ? 'Built-in' : 'Custom'}</td></tr>`)
-                  .join('')}</tbody>
-              </table>` : '<p class="empty">No expense categories yet.</p>'}
+          ${categories.length ? `<table class="data-table settings-categories-table">
+            <thead><tr><th>Name</th><th class="actions-col">Actions</th></tr></thead>
+            <tbody>${categories
+              .map(
+                (category) => `<tr>
+                  <td>${escapeHtml(category.name)}</td>
+                  <td class="actions-col">
+                    <div class="inline-form category-actions">
+                      ${actionIconButton({
+                        label: 'Edit category',
+                        icon: 'edit',
+                        variant: 'edit',
+                        attributes: `data-open-modal="edit-category-modal"
+                        data-fill-id="${category.id}"
+                        data-fill-name="${escapeHtml(category.name)}"`
+                      })}
+                      <form method="post" action="/settings/categories/delete" data-confirm="Delete this category? Existing items will keep their records but lose the category.">
+                        ${csrfField(ctx)}
+                        <input type="hidden" name="id" value="${category.id}">
+                        ${actionIconButton({ label: 'Delete category', icon: 'delete', variant: 'delete', type: 'submit' })}
+                      </form>
+                    </div>
+                  </td>
+                </tr>`
+              )
+              .join('')}</tbody>
+          </table>` : '<p class="empty">No categories yet.</p>'}
+          <dialog id="add-category-modal" class="modal" data-modal>
+            <div class="modal-panel">
+              <div class="modal-heading">
+                <div>
+                  <h2>Add category</h2>
+                </div>
+                <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
+              </div>
+              <form method="post" action="/settings/categories" class="stack">
+                ${csrfField(ctx)}
+                <label>Category name <input name="name" maxlength="120" required></label>
+                <button>Add category</button>
+              </form>
             </div>
-          </div>
+          </dialog>
+          <dialog id="edit-category-modal" class="modal" data-modal>
+            <div class="modal-panel">
+              <div class="modal-heading">
+                <div>
+                  <h2>Edit category</h2>
+                </div>
+                <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
+              </div>
+              <form method="post" action="/settings/categories/update" class="stack">
+                ${csrfField(ctx)}
+                <input type="hidden" name="id" data-modal-field="id">
+                <label>Category name <input name="name" data-modal-field="name" maxlength="120" required></label>
+                <button>Save category</button>
+              </form>
+            </div>
+          </dialog>
         </section>`
       })
     );
@@ -75,7 +120,7 @@ export function registerSettingsRoutes(router, db) {
     try {
       updateHouseholdSettings(db, ctx.user.household_id, {
         name: requireString(ctx.body.name, 'Household name', 120),
-        openingBalancePence: parsePoundsToPence(ctx.body.opening_balance || '0')
+        openingBalancePence: optionalMoney(ctx.body.opening_balance, 'Opening balance', { allowNegative: true, minPence: null })
       });
       redirectWithSuccess(ctx.res, '/settings', 'Settings saved.');
     } catch (error) {
@@ -91,6 +136,30 @@ export function registerSettingsRoutes(router, db) {
         kind: 'expense'
       });
       redirectWithSuccess(ctx.res, '/settings', 'Category added.');
+    } catch (error) {
+      redirectWithError(ctx.res, '/settings', error);
+    }
+  });
+
+  router.post('/settings/categories/update', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      updateCategory(db, {
+        id: Number(ctx.body.id),
+        kind: 'expense',
+        name: requireString(ctx.body.name, 'Category name', 120)
+      });
+      redirectWithSuccess(ctx.res, '/settings', 'Category updated.');
+    } catch (error) {
+      redirectWithError(ctx.res, '/settings', error);
+    }
+  });
+
+  router.post('/settings/categories/delete', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      deleteCategory(db, Number(ctx.body.id));
+      redirectWithSuccess(ctx.res, '/settings', 'Category deleted.');
     } catch (error) {
       redirectWithError(ctx.res, '/settings', error);
     }

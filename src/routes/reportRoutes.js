@@ -1,9 +1,11 @@
 import { listActiveBudgetItems } from '../repositories/budgetItemRepository.js';
+import { listCategoryBudgetDefaults, listCategoryBudgets } from '../repositories/categoryBudgetRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listIncomeEstimates } from '../repositories/incomeEstimateRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { buildPeriodReport, categoryBreakdown, reportingRange } from '../services/reportService.js';
+import { categoryBudgetComparison, effectiveCategoryBudgets, mergeCategoryExpenseTracking } from '../services/categoryBudgetService.js';
 import { savingsGoalsAsBudgetItems } from '../services/savingsService.js';
 import { currentMonth } from '../utils/dates.js';
 import { renderReportsPage } from '../views/reportViews.js';
@@ -22,10 +24,41 @@ export function registerReportRoutes(router, db) {
     const report = buildPeriodReport({ items, transactions, range });
     const { planned, actual, variance } = report;
     const breakdown = categoryBreakdown(planned, actual);
+    const defaultCategoryBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
+    const overrideCategoryBudgets = listCategoryBudgets(db, ctx.user.household_id, {
+      startMonth: report.months[0],
+      endMonth: report.months[report.months.length - 1]
+    });
+    const categoryBudgetRows = categoryBudgetComparison(
+      report.months.flatMap((reportMonth) =>
+        effectiveCategoryBudgets(
+          defaultCategoryBudgets,
+          overrideCategoryBudgets.filter((budget) => budget.budget_month === reportMonth),
+          reportMonth
+        )
+      ),
+      transactions
+    );
+    const categoryTracking = mergeCategoryExpenseTracking(breakdown, categoryBudgetRows);
     const goals = listSavingsGoals(db, ctx.user.household_id);
     const estimates = listIncomeEstimates(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, ctx.user.household_id);
 
-    html(ctx.res, renderReportsPage(ctx, { month, calendarYear, taxYear, range, planned, actual, variance, breakdown, goals, estimates, members }));
+    html(
+      ctx.res,
+      renderReportsPage(ctx, {
+        month,
+        calendarYear,
+        taxYear,
+        range,
+        planned,
+        actual,
+        variance,
+        breakdown: categoryTracking,
+        goals,
+        estimates,
+        members
+      })
+    );
   });
 }

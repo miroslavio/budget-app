@@ -1,16 +1,21 @@
 import { calculateSharedSplit } from './budgetService.js';
+import { isItemActiveInMonth } from '../utils/dates.js';
 
 const PALETTE = ['#2f6fed', '#ff8a00', '#2fa75a', '#f2bd16', '#e8463c', '#49b8bd', '#8c6bd1', '#c55a9b'];
 
-export function plannedExpenseCategorySeries(items, { owner = 'household' } = {}) {
+export function plannedExpenseCategorySeries(items, { owner = 'household', months = [] } = {}) {
   const totals = new Map();
+  const periodMonths = months.length ? months : [null];
 
   for (const item of items) {
     if (item.item_type !== 'expense' || Number(item.is_active) !== 1) continue;
-    const amount = amountForOwner(Number(item.monthly_equivalent_pence || 0), item, owner);
-    if (amount <= 0) continue;
-    const category = item.category_name || 'Uncategorised';
-    totals.set(category, (totals.get(category) || 0) + amount);
+    for (const month of periodMonths) {
+      if (month && !isItemActiveInMonth(item, month)) continue;
+      const amount = amountForOwner(Number(item.monthly_equivalent_pence || 0), item, owner);
+      if (amount <= 0) continue;
+      const category = item.category_name || 'Uncategorised';
+      totals.set(category, (totals.get(category) || 0) + amount);
+    }
   }
 
   return [...totals.entries()]

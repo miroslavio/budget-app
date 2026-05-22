@@ -33,6 +33,28 @@ export function createTransaction(db, transaction) {
   return findTransactionById(db, transaction.householdId, result.lastInsertRowid);
 }
 
+export function updateTransaction(db, transaction) {
+  const duplicateKey = transaction.duplicateKey || buildDuplicateKey(transaction);
+  db.prepare(
+    `UPDATE transactions
+     SET transaction_date = ?, description = ?, amount_pence = ?, type = ?, category_id = ?,
+         owner_type = ?, notes = ?, duplicate_key = ?
+     WHERE household_id = ? AND id = ?`
+  ).run(
+    transaction.transactionDate,
+    transaction.description,
+    transaction.amountPence,
+    transaction.type,
+    transaction.categoryId,
+    transaction.ownerType,
+    transaction.notes || null,
+    duplicateKey,
+    transaction.householdId,
+    transaction.id
+  );
+  return findTransactionById(db, transaction.householdId, transaction.id);
+}
+
 export function duplicateExists(db, householdId, duplicateKey) {
   return Boolean(db.prepare('SELECT id FROM transactions WHERE household_id = ? AND duplicate_key = ?').get(householdId, duplicateKey));
 }
@@ -76,4 +98,8 @@ export function listTransactions(db, householdId, filters = {}) {
        ORDER BY transactions.transaction_date DESC, transactions.id DESC`
     )
     .all(...params);
+}
+
+export function deleteTransaction(db, householdId, id) {
+  db.prepare('DELETE FROM transactions WHERE household_id = ? AND id = ?').run(householdId, id);
 }

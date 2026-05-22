@@ -7,9 +7,8 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
     wide: true,
     body: `<section class="page-title">
       <div>
-        <p class="eyebrow">Reporting</p>
         <h1>Reports</h1>
-        <p>Calendar month, calendar year, and UK tax-year-aware reporting.</p>
+        <p class="page-context">Compare your plan, actuals, savings progress, and tax-year totals across the periods that matter.</p>
       </div>
       <form method="get" action="/reports" class="inline-form">
         <label>Month <input type="month" name="month" value="${escapeHtml(month)}"></label>
@@ -52,12 +51,12 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
 
     <section class="grid two">
       <div class="card">
-        <h2>Category breakdown</h2>
+        <h2>Category budget tracking</h2>
         ${categoryTable(breakdown)}
       </div>
       <div class="card">
         <h2>Person / household ownership breakdown</h2>
-        ${ownerTable(planned, actual)}
+        ${ownerTable(planned, actual, members)}
       </div>
     </section>
 
@@ -77,21 +76,22 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
 function categoryTable(rows) {
   if (!rows.length) return '<p class="empty">No category data yet.</p>';
   return `<table>
-    <thead><tr><th>Category</th><th>Planned expenses</th><th>Actual expenses</th><th>Variance</th></tr></thead>
+    <thead><tr><th>Category</th><th>Budget target</th><th>Recurring plan</th><th>Actual expenses</th><th>Budget variance</th></tr></thead>
     <tbody>${rows
       .map(
         (row) => `<tr>
           <td>${escapeHtml(row.category)}</td>
+          <td>${row.budgetPence ? formatCurrency(row.budgetPence) : '—'}</td>
           <td>${formatCurrency(row.plannedExpensePence)}</td>
           <td>${formatCurrency(row.actualExpensePence)}</td>
-          <td>${formatSignedCurrency(row.actualExpensePence - row.plannedExpensePence)}</td>
+          <td>${formatSignedCurrency(row.budgetVariancePence)}</td>
         </tr>`
       )
       .join('')}</tbody>
   </table>`;
 }
 
-function ownerTable(planned, actual) {
+function ownerTable(planned, actual, members) {
   return `<table>
     <thead><tr><th>Owner</th><th>Planned expenses</th><th>Actual expenses</th><th>Planned savings</th><th>Actual savings</th></tr></thead>
     <tbody>${Object.keys(planned.byOwner)

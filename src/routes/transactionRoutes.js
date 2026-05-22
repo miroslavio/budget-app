@@ -1,11 +1,10 @@
 import { findOrCreateCategory, listCategories } from '../repositories/categoryRepository.js';
-import { createTransaction, listTransactions } from '../repositories/transactionRepository.js';
+import { createTransaction, deleteTransaction, findTransactionById, listTransactions, updateTransaction } from '../repositories/transactionRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
-import { parsePoundsToPence } from '../utils/money.js';
 import { currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
-import { optionalString, requireChoice, requireString } from '../utils/validation.js';
-import { csrfField, escapeHtml, formatCurrency, ownerLabel, page, typeLabel } from '../views/html.js';
-import { ownerOptions } from '../views/forms.js';
+import { optionalString, requireChoice, requireMoney, requireString } from '../utils/validation.js';
+import { actionIconButton, csrfField, escapeHtml, formatCurrency, ownerLabel, page, typeLabel } from '../views/html.js';
+import { moneyInputAttrs, ownerOptions } from '../views/forms.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
@@ -21,39 +20,35 @@ export function registerTransactionRoutes(router, db) {
     html(
       ctx.res,
       page(ctx, {
-        title: 'Transactions',
+        title: 'Actuals',
         wide: true,
         body: `<section class="page-title">
           <div>
-            <p class="eyebrow">Actual tracking</p>
-            <h1>Transactions</h1>
-            <p>Manual actual income, expenses, and savings contributions.</p>
+            <h1>Actuals</h1>
+            <p class="page-context">Record actual income, spending, and savings movements.</p>
           </div>
-          <form method="get" action="/transactions" class="inline-form">
+          <form method="get" action="/transactions" class="inline-form" data-submit-on-change>
             <label>Month <input type="month" name="month" value="${month}"></label>
-            <button>View</button>
           </form>
         </section>
         <section class="action-row">
-          <button type="button" data-open-modal="transaction-modal">Add transaction</button>
+          <button type="button" data-open-modal="transaction-modal" data-reset-modal="true">Record transaction</button>
           <dialog id="transaction-modal" class="modal" data-modal>
             <div class="modal-panel">
               <div class="modal-heading">
                 <div>
-                  <p class="eyebrow">New actual transaction</p>
-                  <h2>Add transaction</h2>
-                  <p class="hint">Record money that actually moved. Use planned budget items for recurring expectations.</p>
+                  <h2>Record actual movement</h2>
                 </div>
                 <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
               </div>
-              ${transactionForm(ctx, categories, members)}
+              ${transactionForm(ctx, categories, members, month)}
             </div>
           </dialog>
         </section>
         <section class="grid one">
           <div class="card">
             <h2>${monthLabel(month)} transactions</h2>
-            ${transactionsTable(transactions, members)}
+            ${transactionsTable(ctx, transactions, members, month)}
           </div>
         </section>`
       })
@@ -63,12 +58,16 @@ export function registerTransactionRoutes(router, db) {
   router.post('/transactions', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
     try {
+      const transactionId = Number(ctx.body.id || 0) || null;
+      if (transactionId && !findTransactionById(db, ctx.user.household_id, transactionId)) {
+        throw new Error('Transaction was not found.');
+      }
       const type = requireChoice(ctx.body.type, ['income', 'expense', 'savings'], 'Type');
       const category = findOrCreateCategory(db, ctx.body.category_name, type === 'income' ? 'income' : type === 'savings' ? 'savings' : 'expense', ctx.user.household_id);
-      const amountPence = parsePoundsToPence(ctx.body.amount);
-      if (amountPence <= 0) throw new Error('Transaction amount must be greater than zero.');
-      createTransaction(db, {
+      const amountPence = requireMoney(ctx.body.amount, 'Transaction amount');
+      const payload = {
         householdId: ctx.user.household_id,
+        id: transactionId,
         transactionDate: requireString(ctx.body.transaction_date || todayIso(), 'Date', 10),
         description: requireString(ctx.body.description, 'Description', 255),
         amountPence,
@@ -78,49 +77,70 @@ export function registerTransactionRoutes(router, db) {
         source: 'manual',
         notes: optionalString(ctx.body.notes),
         createdBy: ctx.user.id
-      });
-      redirectWithSuccess(ctx.res, `/transactions?month=${String(ctx.body.transaction_date || todayIso()).slice(0, 7)}`, 'Transaction saved.');
+      };
+      if (transactionId) {
+        updateTransaction(db, payload);
+      } else {
+        createTransaction(db, payload);
+      }
+      redirectWithSuccess(
+        ctx.res,
+        ctx.body.return_to || `/transactions?month=${String(ctx.body.transaction_date || todayIso()).slice(0, 7)}`,
+        transactionId ? 'Transaction updated.' : 'Transaction saved.'
+      );
     } catch (error) {
-      redirectWithError(ctx.res, '/transactions', error);
+      redirectWithError(ctx.res, ctx.body.return_to || '/transactions', error);
+    }
+  });
+
+  router.post('/transactions/delete', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      deleteTransaction(db, ctx.user.household_id, Number(ctx.body.id));
+      redirectWithSuccess(ctx.res, ctx.body.return_to || '/transactions', 'Transaction deleted.');
+    } catch (error) {
+      redirectWithError(ctx.res, ctx.body.return_to || '/transactions', error);
     }
   });
 }
 
-function transactionForm(ctx, categories, members) {
+function transactionForm(ctx, categories, members, month) {
   return `<form method="post" action="/transactions" class="stack">
     ${csrfField(ctx)}
+    <input type="hidden" name="id" value="" data-modal-field="id">
+    <input type="hidden" name="return_to" value="/transactions?month=${escapeHtml(month)}">
     <section class="form-section">
-      <h3>1. Transaction details</h3>
-    <label>Date <input name="transaction_date" type="date" value="${todayIso()}" required></label>
-    <label>Description <input name="description" maxlength="255" required></label>
-    <label>Amount <input name="amount" inputmode="decimal" pattern="^\\d+(\\.\\d{1,2})?$" required></label>
+      <h3>Transaction details</h3>
+    <label>Date <input name="transaction_date" type="date" value="${todayIso()}" required data-modal-field="transactionDate"></label>
+    <label>Description <input name="description" maxlength="255" required data-modal-field="description"></label>
+    <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
     <label>Type
-      <select name="type">
-        <option value="expense">Expense</option>
+      <select name="type" data-modal-field="type">
+        <option value="expense">Spending</option>
         <option value="income">Income</option>
         <option value="savings">Savings</option>
       </select>
     </label>
     </section>
     <section class="form-section">
-      <h3>2. Classification</h3>
+      <h3>Classification</h3>
     <label>Category
-      <input name="category_name" list="category-list">
+      <input name="category_name" list="category-list" data-modal-field="categoryName">
       <datalist id="category-list">
         ${categories.map((category) => `<option value="${escapeHtml(category.name)}"></option>`).join('')}
       </datalist>
     </label>
-    <label>Owner <select name="owner_type">${ownerOptions('shared', members)}</select></label>
-    <label>Notes <textarea name="notes" rows="3"></textarea></label>
+    <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
+    <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
     <button>Save transaction</button>
   </form>`;
 }
 
-function transactionsTable(transactions, members) {
+function transactionsTable(ctx, transactions, members, month) {
   if (!transactions.length) return '<p class="empty">No transactions for this month.</p>';
-  return `<table>
-    <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th>Owner</th><th>Amount</th></tr></thead>
+  return `<table class="data-table">
+    <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th>Owner</th><th>Amount</th><th class="actions-col"></th></tr></thead>
     <tbody>${transactions
       .map(
         (transaction) => `<tr>
@@ -130,6 +150,31 @@ function transactionsTable(transactions, members) {
           <td>${escapeHtml(transaction.category_name || '')}</td>
           <td>${escapeHtml(ownerLabel(transaction.owner_type, members))}</td>
           <td>${formatCurrency(transaction.amount_pence)}</td>
+          <td class="actions-col">
+            <div class="table-actions">
+              ${actionIconButton({
+                label: 'Edit transaction',
+                icon: 'edit',
+                variant: 'edit',
+                attributes: `data-open-modal="transaction-modal"
+                data-reset-modal="true"
+                data-fill-id="${escapeHtml(transaction.id)}"
+                data-fill-transaction-date="${escapeHtml(transaction.transaction_date)}"
+                data-fill-description="${escapeHtml(transaction.description)}"
+                data-fill-amount="${escapeHtml((Number(transaction.amount_pence || 0) / 100).toFixed(2))}"
+                data-fill-type="${escapeHtml(transaction.type)}"
+                data-fill-category-name="${escapeHtml(transaction.category_name || '')}"
+                data-fill-owner-type="${escapeHtml(transaction.owner_type)}"
+                data-fill-notes="${escapeHtml(transaction.notes || '')}"`
+              })}
+              <form method="post" action="/transactions/delete" data-confirm="Delete this transaction?">
+                ${csrfField(ctx)}
+                <input type="hidden" name="id" value="${transaction.id}">
+                <input type="hidden" name="return_to" value="/transactions?month=${escapeHtml(month)}">
+                ${actionIconButton({ label: 'Delete transaction', icon: 'delete', variant: 'delete', type: 'submit' })}
+              </form>
+            </div>
+          </td>
         </tr>`
       )
       .join('')}</tbody>

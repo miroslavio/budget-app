@@ -21,39 +21,9 @@ export function getDatabase() {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
   database.exec(fs.readFileSync(schemaPath, 'utf8'));
-  seedDefaultCategories(database);
   runMigrations(database);
 
   return database;
-}
-
-function seedDefaultCategories(db) {
-  const defaults = [
-    ['Salary', 'income'],
-    ['Other income', 'income'],
-    ['Rent', 'expense'],
-    ['Mortgage', 'expense'],
-    ['Mortgage overpayment', 'expense'],
-    ['Council tax', 'expense'],
-    ['Energy bill', 'expense'],
-    ['Broadband', 'expense'],
-    ['Mobile phone', 'expense'],
-    ['TV licence', 'expense'],
-    ['Utilities', 'expense'],
-    ['Groceries', 'expense'],
-    ['Transport', 'expense'],
-    ['Insurance', 'expense'],
-    ['Subscriptions', 'expense'],
-    ['Gym membership', 'expense'],
-    ['Discretionary spending', 'expense'],
-    ['Debt repayment', 'debt'],
-    ['Emergency fund', 'savings'],
-    ['ISA', 'savings'],
-    ['Savings', 'savings']
-  ];
-
-  const statement = db.prepare('INSERT OR IGNORE INTO categories (name, kind) VALUES (?, ?)');
-  for (const [name, kind] of defaults) statement.run(name, kind);
 }
 
 export function runMigrations(db) {

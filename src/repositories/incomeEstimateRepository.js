@@ -44,6 +44,46 @@ export function attachEstimateToBudgetItem(db, householdId, estimateId, budgetIt
   );
 }
 
+export function updateIncomeEstimate(db, estimate) {
+  db.prepare(
+    `UPDATE income_estimates
+     SET gross_annual_salary_pence = ?, pay_frequency = ?, tax_year = ?,
+         pension_contribution_type = ?, pension_contribution_value = ?, pension_contribution_tax_treatment = ?,
+         other_pre_tax_deductions_pence = ?, other_post_tax_deductions_pence = ?, student_loan_plans_json = ?,
+         has_postgraduate_loan = ?, estimated_income_tax_pence = ?, estimated_national_insurance_pence = ?,
+         estimated_student_loan_repayment_pence = ?, estimated_postgraduate_loan_repayment_pence = ?,
+         pension_contribution_pence = ?, estimated_other_deductions_pence = ?,
+         estimated_net_monthly_income_pence = ?, estimated_net_annual_income_pence = ?
+     WHERE household_id = ? AND id = ?`
+  ).run(
+    estimate.grossAnnualSalaryPence,
+    estimate.payFrequency,
+    estimate.taxYear,
+    estimate.pensionContributionType,
+    estimate.pensionContributionValue,
+    estimate.pensionContributionTaxTreatment,
+    estimate.otherPreTaxDeductionsPence,
+    estimate.otherPostTaxDeductionsPence,
+    JSON.stringify(estimate.studentLoanPlans || []),
+    estimate.hasPostgraduateLoan ? 1 : 0,
+    estimate.estimatedIncomeTaxPence,
+    estimate.estimatedNationalInsurancePence,
+    estimate.estimatedStudentLoanRepaymentPence,
+    estimate.estimatedPostgraduateLoanRepaymentPence,
+    estimate.pensionContributionPence,
+    estimate.estimatedOtherDeductionsPence,
+    estimate.estimatedNetMonthlyIncomePence,
+    estimate.estimatedNetAnnualIncomePence,
+    estimate.householdId,
+    estimate.id
+  );
+  return findIncomeEstimateById(db, estimate.householdId, estimate.id);
+}
+
+export function deleteIncomeEstimate(db, householdId, id) {
+  db.prepare('DELETE FROM income_estimates WHERE household_id = ? AND id = ?').run(householdId, id);
+}
+
 export function findIncomeEstimateById(db, householdId, id) {
   return db.prepare('SELECT * FROM income_estimates WHERE household_id = ? AND id = ?').get(householdId, id);
 }

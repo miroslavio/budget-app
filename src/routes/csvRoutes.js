@@ -19,13 +19,12 @@ export function registerCsvRoutes(router, db) {
     html(
       ctx.res,
       page(ctx, {
-        title: 'CSV import and export',
+        title: 'Import/Export',
         wide: true,
         body: `<section class="page-title">
           <div>
-            <p class="eyebrow">Manual import/export</p>
-            <h1>CSV import and export</h1>
-            <p>Upload transaction CSV files, preview rows, map columns, and export household data.</p>
+            <h1>Import/Export</h1>
+            <p class="page-context">Import actual transactions and export household plan, actuals, and reporting data.</p>
           </div>
         </section>
         <section class="action-row">
@@ -34,7 +33,6 @@ export function registerCsvRoutes(router, db) {
             <div class="modal-panel">
               <div class="modal-heading">
                 <div>
-                  <p class="eyebrow">CSV upload</p>
                   <h2>Import transactions</h2>
                   <p class="hint">Upload a CSV, then map the required columns before saving transactions.</p>
                 </div>
@@ -97,13 +95,12 @@ export function registerCsvRoutes(router, db) {
     html(
       ctx.res,
       page(ctx, {
-        title: 'Preview CSV',
+        title: 'Import/Export · Preview',
         wide: true,
         body: `<section class="hero compact">
           <div>
-            <p class="eyebrow">CSV preview</p>
-            <h1>Preview and map columns</h1>
-            <p>Review the first rows before saving valid rows as actual transactions.</p>
+            <h1>Preview import</h1>
+            <p class="page-context">Review the first rows and map the columns before saving valid rows as actual transactions.</p>
           </div>
         </section>
         <section class="card">

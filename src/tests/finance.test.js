@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateMonthlyEquivalent, calculateSharedSplit, plannedMonthlySummary, actualMonthlySummary, varianceSummary } from '../services/budgetService.js';
+import { plannedExpenseCategorySeries } from '../services/chartService.js';
 import { buildMonthlyForecast } from '../services/forecastService.js';
 import { savingsGoalProgress } from '../services/savingsService.js';
 
@@ -57,6 +58,38 @@ test('forecast rolls opening and closing balances month by month', () => {
   assert.equal(rows[0].closingBalancePence, 250000);
   assert.equal(rows[1].openingBalancePence, 250000);
   assert.equal(rows[1].closingBalancePence, 450000);
+});
+
+test('planned expense chart can aggregate across multiple months and honour shared splits', () => {
+  const rows = plannedExpenseCategorySeries(
+    [
+      {
+        ...item('Groceries', 'expense', 40000),
+        category_name: 'Groceries',
+        owner_type: 'shared',
+        split_type: 'equal'
+      },
+      {
+        ...item('Utilities', 'expense', 12000),
+        category_name: 'Utilities',
+        owner_type: 'person_a',
+        split_type: 'equal'
+      },
+      {
+        ...item('Old bill', 'expense', 10000),
+        category_name: 'Old bill',
+        owner_type: 'shared',
+        split_type: 'equal',
+        end_date: '2026-04-30'
+      }
+    ],
+    { owner: 'person_a', months: ['2026-05', '2026-06'] }
+  );
+
+  assert.deepEqual(rows, [
+    { label: 'Groceries', value: 40000 },
+    { label: 'Utilities', value: 24000 }
+  ]);
 });
 
 test('savings goal progress reports percentage and estimated completion', () => {
