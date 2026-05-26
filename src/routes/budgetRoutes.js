@@ -9,13 +9,15 @@ import {
 } from '../repositories/categoryBudgetRepository.js';
 import { createIncomeEstimate, attachEstimateToBudgetItem, deleteIncomeEstimate, updateIncomeEstimate } from '../repositories/incomeEstimateRepository.js';
 import { listCategories } from '../repositories/categoryRepository.js';
+import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { calculateMonthlyEquivalent, plannedMonthlySummary } from '../services/budgetService.js';
 import { categoryBudgetComparison, categoryBudgetSummary, effectiveCategoryBudgets } from '../services/categoryBudgetService.js';
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
-import { savingsGoalsAsBudgetItems } from '../services/savingsService.js';
+import { savingsAccountTypeLabel } from '../services/savingsAccountService.js';
+import { plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { estimateTakeHomePay } from '../services/takeHomePayService.js';
 import { listTaxYears, latestTaxYear } from '../services/taxRulesService.js';
 import { currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
@@ -48,7 +50,8 @@ function renderBudgetPlanOverview(ctx, db) {
   const members = listHouseholdMembers(db, ctx.user.household_id);
   const activeItems = listActiveBudgetItems(db, ctx.user.household_id);
   const goals = listSavingsGoals(db, ctx.user.household_id);
-  const planningItems = [...activeItems, ...savingsGoalsAsBudgetItems(goals)];
+  const savingsAccounts = listSavingsAccounts(db, ctx.user.household_id, { activeOnly: true });
+  const planningItems = [...activeItems, ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
   const plan = plannedMonthlySummary(planningItems, month);
   const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
   const monthBudgets = listCategoryBudgets(db, ctx.user.household_id, { startMonth: month, endMonth: month });
@@ -259,7 +262,8 @@ function renderPlannedSavingsPage(ctx, db) {
   const month = currentMonth();
   const members = listHouseholdMembers(db, ctx.user.household_id);
   const goals = listSavingsGoals(db, ctx.user.household_id);
-  const plannedSavingsItems = plannedMonthlySummary(savingsGoalsAsBudgetItems(goals), month).activeItems;
+  const savingsAccounts = listSavingsAccounts(db, ctx.user.household_id, { activeOnly: true });
+  const plannedSavingsItems = plannedMonthlySummary(plannedSavingsBudgetItems({ goals, accounts: savingsAccounts }), month).activeItems;
   const totalPlannedSavingsPence = plannedSavingsItems.reduce((total, item) => total + Number(item.monthly_equivalent_pence || 0), 0);
 
   html(
@@ -269,8 +273,8 @@ function renderPlannedSavingsPage(ctx, db) {
       wide: true,
       body: `${budgetPlanPageIntro('planned-savings', 'What savings contributions are included in the monthly budget?', `Current month · ${monthLabel(month)}`)}
       <section class="action-row">
-        <a class="button" href="/savings">Add savings contribution</a>
-        <a class="button" href="/savings">View full Savings Goals</a>
+        <a class="button" href="/savings/accounts">Add savings contribution</a>
+        <a class="button" href="/savings/goals">View full Savings Goals</a>
       </section>
       <section class="grid two">
         <div class="stat">
@@ -280,12 +284,12 @@ function renderPlannedSavingsPage(ctx, db) {
         <div class="stat">
           <span>Active contributions in plan</span>
           <strong>${plannedSavingsItems.length}</strong>
-          <small class="plan-stat-note">Monthly contributions from active savings goals are included in the plan.</small>
+          <small class="plan-stat-note">${savingsAccounts.length ? 'Monthly contributions from active accounts and pots are included in the plan.' : 'Monthly contributions from active savings goals are included in the plan until you start tracking accounts and pots.'}</small>
         </div>
       </section>
       <section class="card">
         <h2>Planned savings contributions</h2>
-        ${plannedSavingsTable(goals, plannedSavingsItems, members)}
+        ${plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts)}
       </section>`
     })
   );
@@ -376,7 +380,7 @@ function budgetPlanQuickActions() {
       <a class="button" href="/budget-plan/income">Add income</a>
       <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
       <a class="button" href="/budget-plan/flexible-spending">Add flexible spending target</a>
-      <a class="button" href="/savings">Add savings contribution</a>
+      <a class="button" href="/savings/accounts">Add savings contribution</a>
     </div>
   </section>`;
 }
@@ -389,7 +393,7 @@ function budgetPlanEmptyState() {
       <a class="button" href="/budget-plan/income">Add income</a>
       <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
       <a class="button" href="/budget-plan/flexible-spending">Add flexible spending target</a>
-      <a class="button" href="/savings">Add savings contribution</a>
+      <a class="button" href="/savings/accounts">Add savings contribution</a>
     </div>
   </section>`;
 }
@@ -416,10 +420,30 @@ function overallTargetStatus(targetPence, actualPence) {
   return 'On track';
 }
 
-function plannedSavingsTable(goals, plannedSavingsItems, members) {
+function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts = []) {
+  if (savingsAccounts.length) {
+    const rows = savingsAccounts.filter((account) => Number(account.is_active) === 1 && Number(account.monthly_contribution_pence || 0) > 0);
+    if (!rows.length) {
+      return '<p class="empty">No active savings-account contributions are currently included in the budget.</p>';
+    }
+
+    return `<table class="data-table">
+      <thead><tr><th>Account or pot</th><th>Owner</th><th>Monthly contribution</th><th>Type</th><th>Projected annual rate</th></tr></thead>
+      <tbody>${rows
+        .map((account) => `<tr>
+          <td>${escapeHtml(account.name)}</td>
+          <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
+          <td>${plannedSavingsContributionCell(account)}</td>
+          <td>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</td>
+          <td>${escapeHtml(Number(account.projected_annual_rate || 0).toFixed(2).replace(/\.00$/, ''))}%</td>
+        </tr>`)
+        .join('')}</tbody>
+    </table>`;
+  }
+
   const rows = goals.filter((goal) => goal.status === 'active' && Number(goal.monthly_contribution_pence || 0) > 0);
   if (!rows.length) {
-    return `<p class="empty">No planned savings contributions are currently included in the budget. Add a monthly contribution to an active savings goal to include it here.</p>`;
+    return `<p class="empty">No planned savings contributions are currently included in the budget. Add a monthly contribution to an active savings goal or start tracking savings accounts and pots.</p>`;
   }
 
   return `<table class="data-table">
@@ -434,6 +458,20 @@ function plannedSavingsTable(goals, plannedSavingsItems, members) {
       </tr>`)
       .join('')}</tbody>
   </table>`;
+}
+
+function plannedSavingsContributionCell(account) {
+  const notes = [];
+  if (account.account_type === 'pension' && Number(account.employer_monthly_contribution_pence || 0) > 0) {
+    notes.push(`Employer ${formatCurrency(Number(account.employer_monthly_contribution_pence || 0))}/month`);
+  }
+  if (account.account_type === 'lifetime_isa' && Number(account.include_lisa_bonus) === 1) {
+    notes.push('25% LISA bonus in projections');
+  }
+  return `<div class="cell-stack">
+    <strong>${formatCurrency(Number(account.monthly_contribution_pence || 0))}</strong>
+    ${notes.map((note) => `<small class="hint">${escapeHtml(note)}</small>`).join('')}
+  </div>`;
 }
 
 function flexibleSpendingTable(ctx, rows, month, returnTo) {

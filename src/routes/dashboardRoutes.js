@@ -1,12 +1,13 @@
 import { findHouseholdById } from '../repositories/householdRepository.js';
 import { listActiveBudgetItems } from '../repositories/budgetItemRepository.js';
+import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { yearlyItems } from '../services/budgetService.js';
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
 import { buildPeriodReport } from '../services/reportService.js';
-import { savingsGoalProgress, savingsGoalsAsBudgetItems } from '../services/savingsService.js';
+import { savingsGoalProgress, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, formatSignedCurrency, page, signedStat, stat, ownerLabel } from '../views/html.js';
@@ -23,7 +24,8 @@ export function registerDashboardRoutes(router, db) {
     const members = listHouseholdMembers(db, ctx.user.household_id);
     const items = listActiveBudgetItems(db, household.id);
     const goals = listSavingsGoals(db, household.id);
-    const planningItems = [...items, ...savingsGoalsAsBudgetItems(goals)];
+    const savingsAccounts = listSavingsAccounts(db, household.id, { activeOnly: true });
+    const planningItems = [...items, ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
     const period = resolveDashboardPeriod(selectedPeriod, selectedMonth);
     const transactions = listTransactions(db, household.id, { startDate: period.range.start, endDate: period.range.end });
     const report = buildPeriodReport({ items: planningItems, transactions, range: period.range });

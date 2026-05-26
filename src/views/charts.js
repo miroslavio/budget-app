@@ -99,6 +99,55 @@ export function cashflowForecastChart(forecast) {
   </div>`;
 }
 
+export function savingsProjectionChart(projection, { emptyMessage = 'No projected savings data yet.' } = {}) {
+  if (!projection.months.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const width = 920;
+  const height = 320;
+  const padding = { top: 24, right: 28, bottom: 54, left: 86 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const values = projection.months.flatMap((row) => [row.openingBalancePence, row.closingBalancePence]);
+  const minValue = Math.min(0, ...values);
+  const maxValue = Math.max(0, ...values);
+  const range = maxValue - minValue || 1;
+  const step = plotWidth / Math.max(1, projection.months.length);
+  const linePoints = projection.months.map((row, index) => {
+    const x = padding.left + step * index + step / 2;
+    const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
+    return `${round(x)},${round(y)}`;
+  });
+
+  return `<div class="cashflow-chart-block" role="img" aria-label="Projected savings balances chart">
+    <svg class="cashflow-chart" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+      <line class="axis-line" x1="${padding.left}" y1="${yFor(0, minValue, range, padding, plotHeight)}" x2="${width - padding.right}" y2="${yFor(0, minValue, range, padding, plotHeight)}"></line>
+      <text class="axis-label" x="12" y="${yFor(0, minValue, range, padding, plotHeight) + 4}">${formatCurrency(0)}</text>
+      <polyline class="savings-line" points="${linePoints.join(' ')}"></polyline>
+      ${projection.months
+        .map((row, index) => {
+          const x = padding.left + step * index + step / 2;
+          const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
+          return `<circle class="savings-point" cx="${round(x)}" cy="${round(y)}" r="4"></circle>`;
+        })
+        .join('')}
+      ${projection.months
+        .filter((_, index) => index % Math.ceil(projection.months.length / 6) === 0)
+        .map((row) => {
+          const originalIndex = projection.months.indexOf(row);
+          const x = padding.left + step * originalIndex + step / 2;
+          return `<text class="month-label" x="${round(x)}" y="${height - 20}" text-anchor="middle">${escapeHtml(shortMonth(row.month))}</text>`;
+        })
+        .join('')}
+    </svg>
+    <div class="chart-legend forecast-legend">
+      <div class="legend-row"><span class="legend-line savings-line-key"></span><span>Tracked balances</span><strong>${formatCurrency(projection.months[projection.months.length - 1].closingBalancePence)}</strong></div>
+      <div class="legend-row"><span class="legend-swatch forecast-positive"></span><span>Personal contributions</span><strong>${formatSignedCurrency(totalSavingsPersonalContributions(projection.months))}</strong></div>
+      <div class="legend-row"><span class="legend-swatch savings-extra"></span><span>Employer and LISA top-ups</span><strong>${formatSignedCurrency(totalSavingsExtraAdditions(projection.months))}</strong></div>
+      <div class="legend-row"><span class="legend-swatch savings-growth"></span><span>Projected growth / interest</span><strong>${formatSignedCurrency(totalSavingsGrowth(projection.months))}</strong></div>
+    </div>
+  </div>`;
+}
+
 function pointOnCircle(cx, cy, radius, percentage) {
   const angle = percentage * Math.PI * 2 - Math.PI / 2;
   return {
@@ -126,4 +175,16 @@ function totalPositive(forecast) {
 
 function totalNegative(forecast) {
   return forecast.reduce((sum, row) => sum + Math.min(0, row.netMovementPence), 0);
+}
+
+function totalSavingsPersonalContributions(months) {
+  return months.reduce((sum, row) => sum + Number(row.personalContributionPence || 0), 0);
+}
+
+function totalSavingsExtraAdditions(months) {
+  return months.reduce((sum, row) => sum + Number(row.employerContributionPence || 0) + Number(row.bonusPence || 0), 0);
+}
+
+function totalSavingsGrowth(months) {
+  return months.reduce((sum, row) => sum + Number(row.growthPence || 0), 0);
 }

@@ -1,12 +1,13 @@
 import { listActiveBudgetItems } from '../repositories/budgetItemRepository.js';
 import { listCategoryBudgetDefaults, listCategoryBudgets } from '../repositories/categoryBudgetRepository.js';
+import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listIncomeEstimates } from '../repositories/incomeEstimateRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { buildPeriodReport, categoryBreakdown, reportingRange } from '../services/reportService.js';
 import { categoryBudgetComparison, effectiveCategoryBudgets, mergeCategoryExpenseTracking } from '../services/categoryBudgetService.js';
-import { savingsGoalsAsBudgetItems } from '../services/savingsService.js';
+import { plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { currentMonth } from '../utils/dates.js';
 import { renderReportsPage } from '../views/reportViews.js';
 import { html } from '../http/response.js';
@@ -19,7 +20,9 @@ export function registerReportRoutes(router, db) {
     const calendarYear = ctx.query.get('calendar_year') || '';
     const taxYear = ctx.query.get('tax_year') || '';
     const range = reportingRange({ month: calendarYear || taxYear ? '' : month, calendarYear, taxYear, defaultMonth: month });
-    const items = [...listActiveBudgetItems(db, ctx.user.household_id), ...savingsGoalsAsBudgetItems(listSavingsGoals(db, ctx.user.household_id))];
+    const goals = listSavingsGoals(db, ctx.user.household_id);
+    const savingsAccounts = listSavingsAccounts(db, ctx.user.household_id, { activeOnly: true });
+    const items = [...listActiveBudgetItems(db, ctx.user.household_id), ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
     const transactions = listTransactions(db, ctx.user.household_id, { startDate: range.start, endDate: range.end });
     const report = buildPeriodReport({ items, transactions, range });
     const { planned, actual, variance } = report;
@@ -40,7 +43,6 @@ export function registerReportRoutes(router, db) {
       transactions
     );
     const categoryTracking = mergeCategoryExpenseTracking(breakdown, categoryBudgetRows);
-    const goals = listSavingsGoals(db, ctx.user.household_id);
     const estimates = listIncomeEstimates(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, ctx.user.household_id);
 

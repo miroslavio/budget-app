@@ -98,6 +98,16 @@ function wireModals(root = document) {
           const fieldKey = key.slice(4);
           const normalisedKey = fieldKey.slice(0, 1).toLowerCase() + fieldKey.slice(1);
           const field = dialog.querySelector(`[data-modal-field="${normalisedKey}"]`);
+          const arrayField = dialog.querySelector(`[data-modal-field-array="${normalisedKey}"]`);
+          if (!field && arrayField instanceof HTMLElement) {
+            const selectedValues = new Set(String(value || '').split(',').map((entry) => entry.trim()).filter(Boolean));
+            arrayField.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+              if (checkbox instanceof HTMLInputElement) {
+                checkbox.checked = selectedValues.has(checkbox.value);
+              }
+            });
+            return;
+          }
           if (field instanceof HTMLInputElement && field.type === 'checkbox') {
             field.checked = value === 'true' || value === '1' || value === 'checked' || value === 'on';
           } else if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
@@ -251,8 +261,9 @@ function formatSplitPercent(value) {
 function wireTransactionCategorySelects(root = document) {
   root.querySelectorAll('select[data-transaction-category-select]').forEach((select) => {
     if (!(select instanceof HTMLSelectElement)) return;
+    const group = select.closest('[data-transaction-category-group]');
     const form = select.closest('form');
-    const typeSelect = form?.querySelector('select[name="type"]');
+    const typeSelect = group?.querySelector('[data-transaction-type-select]') || form?.querySelector('[data-transaction-type-select]');
     if (!(typeSelect instanceof HTMLSelectElement)) return;
 
     const allowedKindsForType = (type) => {

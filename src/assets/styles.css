@@ -189,6 +189,12 @@ button.secondary {
   color: var(--ink);
 }
 
+.button.secondary {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
 .link-button {
   color: var(--accent-strong);
   background: transparent;
@@ -756,6 +762,14 @@ dialog.modal::backdrop {
   font-size: 1rem;
 }
 
+.option-checklist {
+  gap: 0.8rem;
+}
+
+.option-checklist .checkbox-line {
+  font-weight: 600;
+}
+
 fieldset {
   display: grid;
   gap: 0.95rem;
@@ -871,6 +885,35 @@ th {
   vertical-align: middle;
 }
 
+.import-review-table select {
+  min-width: 10rem;
+}
+
+.import-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.import-status.ready {
+  color: var(--good);
+  border-color: rgba(31, 111, 91, 0.18);
+  background: rgba(31, 111, 91, 0.08);
+}
+
+.import-status.duplicate,
+.import-status.invalid {
+  color: var(--bad);
+  border-color: rgba(167, 52, 45, 0.18);
+  background: rgba(167, 52, 45, 0.08);
+}
+
 .settings-categories-table .actions-col {
   width: 1%;
   text-align: right;
@@ -921,6 +964,12 @@ th {
 .hint,
 .empty {
   color: var(--muted);
+}
+
+.inline-hint {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .flash {
@@ -1196,8 +1245,22 @@ progress {
   stroke-width: 2;
 }
 
+.savings-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.savings-point {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
 .forecast-legend {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .forecast-positive {
@@ -1213,6 +1276,23 @@ progress {
   height: 0.2rem;
   border-radius: 999px;
   background: var(--blue);
+}
+
+.legend-line.savings-line-key {
+  background: var(--accent);
+}
+
+.savings-growth {
+  background: var(--teal);
+}
+
+.savings-extra {
+  background: var(--yellow);
+}
+
+.cell-stack {
+  display: grid;
+  gap: 0.15rem;
 }
 
 @media (max-width: 900px) {

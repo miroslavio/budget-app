@@ -6,6 +6,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createBudgetItem, deleteBudgetItem, updateBudgetItem } from '../repositories/budgetItemRepository.js';
 import { createIncomeEstimate } from '../repositories/incomeEstimateRepository.js';
+import { createSavingsAccount } from '../repositories/savingsAccountRepository.js';
+import { listSavingsGoalAccountLinks, replaceSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountRepository.js';
 import { createSavingsGoal, deleteSavingsGoal, findSavingsGoalById, updateSavingsGoal } from '../repositories/savingsGoalRepository.js';
 import { createTransaction, deleteTransaction, findTransactionById, updateTransaction } from '../repositories/transactionRepository.js';
 
@@ -156,6 +158,62 @@ test('savings goals can be updated and deleted', () => {
 
   deleteSavingsGoal(db, householdId, goal.id);
   assert.equal(findSavingsGoalById(db, householdId, goal.id), undefined);
+});
+
+test('savings goals can be linked to tracked pots', () => {
+  const db = openTestDatabase();
+  const householdId = createHousehold(db);
+  const goal = createSavingsGoal(db, {
+    householdId,
+    name: 'House deposit',
+    targetAmountPence: 2_000_000,
+    currentSavedAmountPence: 500_000,
+    monthlyContributionPence: 50_000,
+    targetDate: '2030-12-31',
+    ownerType: 'shared',
+    status: 'active'
+  });
+  const cashIsa = createSavingsAccount(db, {
+    householdId,
+    name: 'Cash ISA',
+    providerName: 'Bank',
+    accountType: 'cash_isa',
+    ownerType: 'person_a',
+    currentBalancePence: 250_000,
+    monthlyContributionPence: 20_000,
+    employerMonthlyContributionPence: 0,
+    projectedAnnualRate: 3.5,
+    projectedRateType: 'interest',
+    includeLisaBonus: false,
+    isActive: true,
+    notes: null
+  });
+  const lisa = createSavingsAccount(db, {
+    householdId,
+    name: 'Lifetime ISA',
+    providerName: 'Provider',
+    accountType: 'lifetime_isa',
+    ownerType: 'person_a',
+    currentBalancePence: 120_000,
+    monthlyContributionPence: 15_000,
+    employerMonthlyContributionPence: 0,
+    projectedAnnualRate: 4,
+    projectedRateType: 'growth',
+    includeLisaBonus: true,
+    isActive: true,
+    notes: null
+  });
+
+  replaceSavingsGoalAccountLinks(db, householdId, goal.id, [cashIsa.id, lisa.id]);
+
+  const links = listSavingsGoalAccountLinks(db, householdId);
+  assert.deepEqual(
+    links.map((row) => row.savings_account_name),
+    ['Cash ISA', 'Lifetime ISA']
+  );
+
+  deleteSavingsGoal(db, householdId, goal.id);
+  assert.equal(listSavingsGoalAccountLinks(db, householdId).length, 0);
 });
 
 function openTestDatabase() {

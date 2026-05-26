@@ -33,6 +33,7 @@ export function registerTransactionRoutes(router, db) {
         </section>
         <section class="action-row">
           <button type="button" data-open-modal="transaction-modal" data-reset-modal="true">Record transaction</button>
+          <a class="button secondary" href="/csv">Import bank statement</a>
           <dialog id="transaction-modal" class="modal" data-modal>
             <div class="modal-panel">
               <div class="modal-heading">
@@ -115,7 +116,7 @@ function transactionForm(ctx, categories, members, month) {
     <label>Description <input name="description" maxlength="255" required data-modal-field="description"></label>
     <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
     <label>Type
-      <select name="type" data-modal-field="type">
+      <select name="type" data-modal-field="type" data-transaction-type-select>
         <option value="expense">Spending</option>
         <option value="income">Income</option>
         <option value="savings">Savings</option>

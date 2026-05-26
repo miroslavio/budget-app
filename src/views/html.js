@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-05-22-nav-clarity';
+const ASSET_VERSION = '2026-05-26-savings-accounts-v2';
 
 export function escapeHtml(value) {
   return String(value ?? '')

@@ -1,4 +1,5 @@
 import { todayIso } from '../utils/dates.js';
+import { savingsAccountsAsBudgetItems } from './savingsAccountService.js';
 
 export function savingsGoalProgress(goal, today = todayIso()) {
   const target = Number(goal.target_amount_pence || 0);
@@ -39,6 +40,12 @@ export function savingsGoalsAsBudgetItems(goals) {
       person_a_percentage: 50,
       person_b_percentage: 50
     }));
+}
+
+export function plannedSavingsBudgetItems({ goals = [], accounts = [] } = {}) {
+  const accountItems = savingsAccountsAsBudgetItems(accounts);
+  if (accountItems.length) return accountItems;
+  return savingsGoalsAsBudgetItems(goals);
 }
 
 function addMonthsToDate(dateIso, months) {

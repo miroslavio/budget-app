@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { calculateMonthlyEquivalent, calculateSharedSplit, plannedMonthlySummary, actualMonthlySummary, varianceSummary } from '../services/budgetService.js';
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
 import { buildMonthlyForecast } from '../services/forecastService.js';
-import { savingsGoalProgress } from '../services/savingsService.js';
+import { buildSavingsProjection } from '../services/savingsAccountService.js';
+import { plannedSavingsBudgetItems, savingsGoalProgress } from '../services/savingsService.js';
 
 test('monthly equivalent keeps monthly amounts and spreads yearly amounts', () => {
   assert.equal(calculateMonthlyEquivalent(120000, 'yearly'), 10000);
@@ -104,6 +105,113 @@ test('savings goal progress reports percentage and estimated completion', () => 
   assert.equal(progress.remainingPence, 75000);
   assert.equal(progress.monthsRemaining, 3);
   assert.equal(progress.onTrack, true);
+});
+
+test('planned savings prefer tracked account contributions over goal contributions', () => {
+  const items = plannedSavingsBudgetItems({
+    goals: [
+      {
+        id: 1,
+        name: 'Emergency fund',
+        status: 'active',
+        owner_type: 'shared',
+        monthly_contribution_pence: 20000
+      }
+    ],
+    accounts: [
+      {
+        id: 7,
+        name: 'Cash ISA',
+        is_active: 1,
+        owner_type: 'person_a',
+        monthly_contribution_pence: 15000
+      }
+    ]
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].name, 'Cash ISA');
+  assert.equal(items[0].monthly_equivalent_pence, 15000);
+});
+
+test('savings projection compounds balances with monthly contributions', () => {
+  const projection = buildSavingsProjection(
+    [
+      {
+        id: 1,
+        name: 'Cash ISA',
+        owner_type: 'person_a',
+        account_type: 'cash_isa',
+        projected_rate_type: 'interest',
+        current_balance_pence: 100000,
+        monthly_contribution_pence: 10000,
+        projected_annual_rate: 12,
+        is_active: 1
+      }
+    ],
+    { startMonth: '2026-05', months: 2 }
+  );
+
+  assert.equal(projection.months.length, 2);
+  assert.equal(projection.months[0].contributionPence, 10000);
+  assert.equal(projection.months[0].closingBalancePence > 110000, true);
+  assert.equal(projection.accounts[0].projectedBalancePence, projection.months[1].closingBalancePence);
+});
+
+test('savings projection separates personal pension contributions from employer top-ups', () => {
+  const projection = buildSavingsProjection(
+    [
+      {
+        id: 2,
+        name: 'Workplace pension',
+        owner_type: 'person_a',
+        account_type: 'pension',
+        projected_rate_type: 'growth',
+        current_balance_pence: 0,
+        monthly_contribution_pence: 10000,
+        employer_monthly_contribution_pence: 5000,
+        projected_annual_rate: 0,
+        include_lisa_bonus: 0,
+        is_active: 1
+      }
+    ],
+    { startMonth: '2026-05', months: 2 }
+  );
+
+  assert.equal(projection.months[0].personalContributionPence, 10000);
+  assert.equal(projection.months[0].employerContributionPence, 5000);
+  assert.equal(projection.months[0].bonusPence, 0);
+  assert.equal(projection.accounts[0].totalPersonalContributionPence, 20000);
+  assert.equal(projection.accounts[0].totalEmployerContributionPence, 10000);
+  assert.equal(projection.accounts[0].projectedBalancePence, 30000);
+});
+
+test('lifetime ISA bonus respects the annual allowance and resets for a new April planning month', () => {
+  const projection = buildSavingsProjection(
+    [
+      {
+        id: 3,
+        name: 'Lifetime ISA',
+        owner_type: 'person_a',
+        account_type: 'lifetime_isa',
+        projected_rate_type: 'growth',
+        current_balance_pence: 0,
+        monthly_contribution_pence: 200000,
+        employer_monthly_contribution_pence: 0,
+        projected_annual_rate: 0,
+        include_lisa_bonus: 1,
+        is_active: 1
+      }
+    ],
+    { startMonth: '2026-01', months: 4 }
+  );
+
+  assert.deepEqual(
+    projection.months.map((row) => row.bonusPence),
+    [50000, 50000, 0, 50000]
+  );
+  assert.equal(projection.accounts[0].totalBonusPence, 150000);
+  assert.equal(projection.accounts[0].projectedBalancePence, 950000);
 });
 
 function item(name, itemType, amountPence) {

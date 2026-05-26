@@ -1,15 +1,18 @@
 import { listBudgetItems } from '../repositories/budgetItemRepository.js';
-import { findOrCreateCategory } from '../repositories/categoryRepository.js';
+import { findOrCreateCategory, listCategories } from '../repositories/categoryRepository.js';
 import { createImportBatch, addImportRows, findImportBatch, listImportRows, updateImportBatchStatus, updateImportRowStatus } from '../repositories/csvImportRepository.js';
-import { createTransaction } from '../repositories/transactionRepository.js';
-import { listTransactions } from '../repositories/transactionRepository.js';
+import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
+import { createTransaction, listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
+import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { actualMonthlySummary, plannedMonthlySummary, varianceSummary } from '../services/budgetService.js';
 import { budgetItemsCsv, generateCsv, savingsGoalsCsv, summaryCsv, transactionsCsv } from '../services/csvExportService.js';
-import { parseCsv, validateCsvTransactionRow } from '../services/csvImportService.js';
-import { savingsGoalsAsBudgetItems } from '../services/savingsService.js';
+import { buildCsvImportReview, parseCsv } from '../services/csvImportService.js';
+import { plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { currentMonth, monthRange } from '../utils/dates.js';
-import { csrfField, escapeHtml, page } from '../views/html.js';
+import { requireChoice, requireMoney, requireString } from '../utils/validation.js';
+import { csrfField, escapeHtml, formatCurrency, ownerLabel, page, typeLabel } from '../views/html.js';
+import { ownerOptions } from '../views/forms.js';
 import { html, csv } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
@@ -24,25 +27,24 @@ export function registerCsvRoutes(router, db) {
         body: `<section class="page-title">
           <div>
             <h1>Import/Export</h1>
-            <p class="page-context">Import actual transactions and export household plan, actuals, and reporting data.</p>
+            <p class="page-context">Import actuals from a bank statement CSV, then review and categorise the transactions before saving them.</p>
           </div>
         </section>
         <section class="action-row">
-          <button type="button" data-open-modal="csv-import-modal">Import transactions</button>
+          <button type="button" data-open-modal="csv-import-modal">Import bank statement</button>
           <dialog id="csv-import-modal" class="modal" data-modal>
             <div class="modal-panel">
               <div class="modal-heading">
                 <div>
-                  <h2>Import transactions</h2>
-                  <p class="hint">Upload a CSV, then map the required columns before saving transactions.</p>
+                  <h2>Import bank statement</h2>
                 </div>
                 <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
               </div>
               <form method="post" action="/csv/preview" enctype="multipart/form-data" class="stack">
                 ${csrfField(ctx)}
                 <label>CSV file <input type="file" name="csv_file" accept=".csv,text/csv" required></label>
-                <p class="hint">Required values after mapping: Date, Description, Amount, Category, Owner, Type. Dates should use YYYY-MM-DD.</p>
-                <button>Preview CSV</button>
+                <p class="hint">Upload the CSV exported by your bank. You can map statement columns first, then review categories before anything is imported.</p>
+                <button>Map statement</button>
               </form>
             </div>
           </dialog>
@@ -78,7 +80,7 @@ export function registerCsvRoutes(router, db) {
         createdBy: ctx.user.id
       });
       addImportRows(db, batchId, parsed.rows);
-      redirectWithSuccess(ctx.res, `/csv/preview?batch=${batchId}`, `${parsed.rows.length} rows parsed for preview.`);
+      redirectWithSuccess(ctx.res, `/csv/preview?batch=${batchId}`, `${parsed.rows.length} rows parsed for review.`);
     } catch (error) {
       redirectWithError(ctx.res, '/csv', error);
     }
@@ -92,38 +94,121 @@ export function registerCsvRoutes(router, db) {
     const rows = listImportRows(db, batch.id);
     const rawRows = rows.map((row) => JSON.parse(row.raw_json));
     const headers = Object.keys(rawRows[0] || {});
+    const members = listHouseholdMembers(db, ctx.user.household_id);
+
     html(
       ctx.res,
       page(ctx, {
-        title: 'Import/Export · Preview',
+        title: 'Import/Export · Map statement',
         wide: true,
         body: `<section class="hero compact">
           <div>
-            <h1>Preview import</h1>
-            <p class="page-context">Review the first rows and map the columns before saving valid rows as actual transactions.</p>
+            <h1>Map statement columns</h1>
+            <p class="page-context">Match the bank statement columns once. You can review transaction categories and owners on the next step.</p>
           </div>
         </section>
         <section class="card">
-          <form method="post" action="/csv/import" class="stack">
+          <form method="post" action="/csv/review" class="stack">
             ${csrfField(ctx)}
             <input type="hidden" name="batch_id" value="${batch.id}">
             <div class="mapping-grid">
-              ${mappingSelect('date', 'Date', headers)}
-              ${mappingSelect('description', 'Description', headers)}
-              ${mappingSelect('amount', 'Amount', headers)}
-              ${mappingSelect('category', 'Category', headers)}
-              ${mappingSelect('owner', 'Owner', headers)}
-              ${mappingSelect('type', 'Type', headers)}
+              ${mappingSelect('date', 'Date', headers, { required: true, aliases: ['date', 'transaction date', 'posted date'] })}
+              ${mappingSelect('description', 'Description', headers, { required: true, aliases: ['description', 'details', 'narrative', 'merchant'] })}
+              ${mappingSelect('amount', 'Amount', headers, { aliases: ['amount', 'value', 'transaction amount'] })}
+              ${mappingSelect('money_in', 'Money in', headers, { aliases: ['money in', 'credit', 'paid in', 'deposit'] })}
+              ${mappingSelect('money_out', 'Money out', headers, { aliases: ['money out', 'debit', 'paid out', 'withdrawal'] })}
+              ${mappingSelect('category', 'Category', headers, { optional: true, aliases: ['category', 'spend category', 'merchant category'] })}
+              ${mappingSelect('owner', 'Owner', headers, { optional: true, aliases: ['owner', 'person', 'member'] })}
+              ${mappingSelect('type', 'Type', headers, { optional: true, aliases: ['type', 'transaction type'] })}
+              <label>Default owner
+                <select name="default_owner_type" required>
+                  ${ownerOptions('shared', members)}
+                </select>
+              </label>
             </div>
-            <button>Save valid rows</button>
+            <p class="hint">Use either a single signed Amount column, or separate Money in and Money out columns. Supported date formats: YYYY-MM-DD and DD/MM/YYYY.</p>
+            <button>Review imported actuals</button>
           </form>
         </section>
         <section class="card">
-          <h2>Parsed rows</h2>
+          <h2>Statement preview</h2>
           ${previewTable(headers, rawRows.slice(0, 25))}
         </section>`
       })
     );
+  });
+
+  router.post('/csv/review', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      const batchId = Number(ctx.body.batch_id);
+      const batch = findImportBatch(db, ctx.user.household_id, batchId);
+      if (!batch) throw new Error('Import batch was not found.');
+
+      const rows = listImportRows(db, batch.id);
+      const members = listHouseholdMembers(db, ctx.user.household_id);
+      const categories = listCategories(db, ctx.user.household_id);
+      const mapping = {
+        date: requireString(ctx.body.map_date, 'Date column', 120),
+        description: requireString(ctx.body.map_description, 'Description column', 120),
+        amount: String(ctx.body.map_amount || ''),
+        moneyIn: String(ctx.body.map_money_in || ''),
+        moneyOut: String(ctx.body.map_money_out || ''),
+        category: String(ctx.body.map_category || ''),
+        owner: String(ctx.body.map_owner || ''),
+        type: String(ctx.body.map_type || '')
+      };
+
+      if (!mapping.amount && !mapping.moneyIn && !mapping.moneyOut) {
+        throw new Error('Choose either an Amount column or Money in / Money out columns.');
+      }
+
+      const reviewRows = buildCsvImportReview(
+        db,
+        ctx.user.household_id,
+        rows,
+        mapping,
+        { defaultOwnerType: requireChoice(ctx.body.default_owner_type, ['person_a', 'person_b', 'shared'], 'Default owner') },
+        members
+      );
+
+      const readyCount = reviewRows.filter((row) => row.status === 'ready').length;
+      const duplicateCount = reviewRows.filter((row) => row.status === 'duplicate').length;
+      const invalidCount = reviewRows.filter((row) => row.status === 'invalid').length;
+
+      html(
+        ctx.res,
+        page(ctx, {
+          title: 'Import/Export · Review actuals',
+          wide: true,
+          body: `<section class="hero compact">
+            <div>
+              <h1>Review imported actuals</h1>
+              <p class="page-context">${readyCount} ready to import · ${duplicateCount} possible duplicates · ${invalidCount} need attention</p>
+            </div>
+          </section>
+          <section class="grid four compact">
+            <div class="stat"><span>Ready to import</span><strong>${readyCount}</strong></div>
+            <div class="stat"><span>Possible duplicates</span><strong>${duplicateCount}</strong></div>
+            <div class="stat"><span>Need attention</span><strong>${invalidCount}</strong></div>
+            <div class="stat text-stat"><span>What happens next</span><strong>Only ready rows are saved</strong></div>
+          </section>
+          <section class="card">
+            <form method="post" action="/csv/import" class="stack">
+              ${csrfField(ctx)}
+              <input type="hidden" name="batch_id" value="${batch.id}">
+              ${reviewTable(reviewRows, categories, members)}
+              <div class="button-list">
+                <button>Import reviewed actuals</button>
+                <a class="button secondary" href="/csv/preview?batch=${batch.id}">Back to mapping</a>
+              </div>
+            </form>
+          </section>`
+        })
+      );
+    } catch (error) {
+      redirectWithError(ctx.res, `/csv/preview?batch=${Number(ctx.body.batch_id || 0) || ''}`.replace(/\?batch=$/, ''), error);
+    }
   });
 
   router.post('/csv/import', (ctx) => {
@@ -132,44 +217,42 @@ export function registerCsvRoutes(router, db) {
       const batchId = Number(ctx.body.batch_id);
       const batch = findImportBatch(db, ctx.user.household_id, batchId);
       if (!batch) throw new Error('Import batch was not found.');
-      const rows = listImportRows(db, batch.id);
-      const mapping = {
-        date: ctx.body.map_date,
-        description: ctx.body.map_description,
-        amount: ctx.body.map_amount,
-        category: ctx.body.map_category,
-        owner: ctx.body.map_owner,
-        type: ctx.body.map_type
-      };
+
+      const reviewRows = readReviewRows(ctx.body);
       let importedCount = 0;
       let errorCount = 0;
 
-      for (const row of rows) {
-        const raw = JSON.parse(row.raw_json);
+      for (const row of reviewRows) {
+        if (row.status === 'duplicate') {
+          updateImportRowStatus(db, row.id, 'duplicate', row.errorMessage || 'Possible duplicate: same date, amount, and description.');
+          errorCount += 1;
+          continue;
+        }
+
+        if (row.status === 'invalid') {
+          updateImportRowStatus(db, row.id, 'invalid', row.errorMessage || 'Row needs attention before import.');
+          errorCount += 1;
+          continue;
+        }
+
         try {
-          const validated = validateCsvTransactionRow(db, ctx.user.household_id, raw, mapping);
-          if (validated.duplicate) {
-            updateImportRowStatus(db, row.id, 'duplicate', 'Possible duplicate: same date, amount, and description.');
-            errorCount += 1;
-            continue;
-          }
+          const type = requireChoice(row.type, ['income', 'expense', 'savings'], 'Type');
           const category = findOrCreateCategory(
             db,
-            validated.categoryName,
-            validated.type === 'income' ? 'income' : validated.type === 'savings' ? 'savings' : 'expense',
+            requireString(row.categoryName, 'Category', 120),
+            type === 'income' ? 'income' : type === 'savings' ? 'savings' : 'expense',
             ctx.user.household_id
           );
           const transaction = createTransaction(db, {
             householdId: ctx.user.household_id,
-            transactionDate: validated.transactionDate,
-            description: validated.description,
-            amountPence: validated.amountPence,
-            type: validated.type,
+            transactionDate: requireString(row.transactionDate, 'Date', 10),
+            description: requireString(row.description, 'Description', 255),
+            amountPence: requireMoney(row.amount, 'Amount'),
+            type,
             categoryId: category?.id || null,
-            ownerType: validated.ownerType,
+            ownerType: requireChoice(row.ownerType, ['person_a', 'person_b', 'shared'], 'Owner'),
             source: 'csv_import',
             notes: `CSV import batch ${batch.id}`,
-            duplicateKey: validated.duplicateKey,
             csvImportBatchId: batch.id,
             createdBy: ctx.user.id
           });
@@ -182,7 +265,7 @@ export function registerCsvRoutes(router, db) {
       }
 
       updateImportBatchStatus(db, batch.id, 'imported', { errorCount, importedCount });
-      redirectWithSuccess(ctx.res, '/csv', `${importedCount} rows imported. ${errorCount} rows skipped.`);
+      redirectWithSuccess(ctx.res, '/transactions', `${importedCount} transactions imported. ${errorCount} rows skipped.`);
     } catch (error) {
       redirectWithError(ctx.res, '/csv', error);
     }
@@ -208,11 +291,23 @@ export function registerCsvRoutes(router, db) {
       return csv(ctx.res, 'savings-goals.csv', savingsGoalsCsv(listSavingsGoals(db, householdId)));
     }
     if (type === 'monthly-summary') {
-      const items = [...listBudgetItems(db, householdId), ...savingsGoalsAsBudgetItems(listSavingsGoals(db, householdId))];
+      const items = [
+        ...listBudgetItems(db, householdId),
+        ...plannedSavingsBudgetItems({
+          goals: listSavingsGoals(db, householdId),
+          accounts: listSavingsAccounts(db, householdId, { activeOnly: true })
+        })
+      ];
       return csv(ctx.res, 'monthly-budget-summary.csv', summaryCsv(plannedMonthlySummary(items, month)));
     }
     if (type === 'variance') {
-      const items = [...listBudgetItems(db, householdId), ...savingsGoalsAsBudgetItems(listSavingsGoals(db, householdId))];
+      const items = [
+        ...listBudgetItems(db, householdId),
+        ...plannedSavingsBudgetItems({
+          goals: listSavingsGoals(db, householdId),
+          accounts: listSavingsAccounts(db, householdId, { activeOnly: true })
+        })
+      ];
       const planned = plannedMonthlySummary(items, month);
       const actual = actualMonthlySummary(listTransactions(db, householdId, { startDate: range.start, endDate: range.end }));
       const variance = varianceSummary(planned, actual);
@@ -235,19 +330,24 @@ export function registerCsvRoutes(router, db) {
   });
 }
 
-function mappingSelect(key, label, headers) {
+function mappingSelect(key, label, headers, { required = false, optional = false, aliases = [] } = {}) {
+  const selectName = key === 'money_in' ? 'map_money_in' : key === 'money_out' ? 'map_money_out' : `map_${key}`;
+  const bestMatch = findBestHeader(headers, aliases.length ? aliases : [label]);
+  const options = [
+    optional || !required ? '<option value="">Not in this file</option>' : '',
+    ...headers.map((header) => `<option value="${escapeHtml(header)}" ${header === bestMatch ? 'selected' : ''}>${escapeHtml(header)}</option>`)
+  ].join('');
+
   return `<label>${label}
-    <select name="map_${key}">
-      ${headers
-        .map((header) => `<option value="${escapeHtml(header)}" ${normalise(header) === normalise(label) ? 'selected' : ''}>${escapeHtml(header)}</option>`)
-        .join('')}
+    <select name="${selectName}" ${required ? 'required' : ''}>
+      ${options}
     </select>
   </label>`;
 }
 
 function previewTable(headers, rows) {
   if (!rows.length) return '<p class="empty">No rows found.</p>';
-  return `<table>
+  return `<table class="data-table">
     <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
     <tbody>${rows
       .map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header])}</td>`).join('')}</tr>`)
@@ -255,6 +355,135 @@ function previewTable(headers, rows) {
   </table>`;
 }
 
+function reviewTable(rows, categories, members) {
+  if (!rows.length) return '<p class="empty">No rows found.</p>';
+
+  return `<table class="data-table import-review-table">
+    <thead>
+      <tr>
+        <th>Row</th>
+        <th>Date</th>
+        <th>Description</th>
+        <th>Amount</th>
+        <th>Type</th>
+        <th>Category</th>
+        <th>Owner</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${rows.map((row) => reviewRow(row, categories, members)).join('')}</tbody>
+  </table>`;
+}
+
+function reviewRow(row, categories, members) {
+  const disabled = row.status !== 'ready';
+  return `<tr data-transaction-category-group>
+    <td>
+      ${row.rowNumber}
+      <input type="hidden" name="row_${row.id}_id" value="${row.id}">
+      <input type="hidden" name="row_${row.id}_row_number" value="${row.rowNumber}">
+      <input type="hidden" name="row_${row.id}_status" value="${escapeHtml(row.status)}">
+      <input type="hidden" name="row_${row.id}_error_message" value="${escapeHtml(row.errorMessage || '')}">
+      <input type="hidden" name="row_${row.id}_transaction_date" value="${escapeHtml(row.transactionDate)}">
+      <input type="hidden" name="row_${row.id}_description" value="${escapeHtml(row.description)}">
+      <input type="hidden" name="row_${row.id}_amount" value="${escapeHtml((Number(row.amountPence || 0) / 100).toFixed(2))}">
+    </td>
+    <td>${escapeHtml(row.transactionDate || '—')}</td>
+    <td>${escapeHtml(row.description || '—')}</td>
+    <td>${row.amountPence ? formatCurrency(row.amountPence) : '—'}</td>
+    <td>
+      <select name="row_${row.id}_type" ${disabled ? 'disabled' : ''} data-transaction-type-select>
+        ${typeOptions(row.type)}
+      </select>
+    </td>
+    <td>
+      <select name="row_${row.id}_category_name" ${disabled ? 'disabled' : 'required'} data-transaction-category-select>
+        ${categoryNameOptions(categories, row.type, row.categoryName)}
+      </select>
+    </td>
+    <td>
+      <select name="row_${row.id}_owner_type" ${disabled ? 'disabled' : ''}>
+        ${ownerOptions(row.ownerType || 'shared', members)}
+      </select>
+    </td>
+    <td>${reviewStatus(row)}</td>
+  </tr>`;
+}
+
+function reviewStatus(row) {
+  if (row.status === 'duplicate') {
+    return `<span class="import-status duplicate">Possible duplicate</span><div class="hint inline-hint">${escapeHtml(row.errorMessage)}</div>`;
+  }
+
+  if (row.status === 'invalid') {
+    return `<span class="import-status invalid">Needs attention</span><div class="hint inline-hint">${escapeHtml(row.errorMessage)}</div>`;
+  }
+
+  return '<span class="import-status ready">Ready</span>';
+}
+
+function typeOptions(selectedType) {
+  return [
+    ['expense', 'Spending'],
+    ['income', 'Income'],
+    ['savings', 'Savings']
+  ]
+    .map(([value, label]) => `<option value="${value}" ${value === selectedType ? 'selected' : ''}>${label}</option>`)
+    .join('');
+}
+
+function categoryNameOptions(categories, type, selectedCategoryName = '') {
+  const allowedKinds = allowedCategoryKinds(type);
+  const filtered = categories.filter((category) => allowedKinds.includes(category.kind));
+  const options = ['<option value="">Choose a category</option>'];
+  const hasSelected = filtered.some((category) => category.name === selectedCategoryName);
+
+  if (selectedCategoryName && !hasSelected) {
+    options.push(
+      `<option value="${escapeHtml(selectedCategoryName)}" selected data-kind="${escapeHtml(allowedKinds[0] || 'expense')}">${escapeHtml(selectedCategoryName)}</option>`
+    );
+  }
+
+  for (const category of filtered) {
+    options.push(
+      `<option value="${escapeHtml(category.name)}" data-kind="${escapeHtml(category.kind)}" ${category.name === selectedCategoryName ? 'selected' : ''}>${escapeHtml(category.name)}</option>`
+    );
+  }
+
+  return options.join('');
+}
+
+function allowedCategoryKinds(type) {
+  if (type === 'income') return ['income'];
+  if (type === 'savings') return ['savings'];
+  return ['expense', 'debt'];
+}
+
+function readReviewRows(body) {
+  const rows = new Map();
+
+  for (const [key, value] of Object.entries(body)) {
+    const match = key.match(/^row_(\d+)_(.+)$/);
+    if (!match) continue;
+
+    const [, rowId, field] = match;
+    const row = rows.get(rowId) || { id: Number(rowId) };
+    row[fieldToCamelCase(field)] = value;
+    rows.set(rowId, row);
+  }
+
+  return [...rows.values()].sort((a, b) => Number(a.rowNumber || 0) - Number(b.rowNumber || 0));
+}
+
+function fieldToCamelCase(field) {
+  return field.replace(/_([a-z])/g, (_, character) => character.toUpperCase());
+}
+
+function findBestHeader(headers, aliases) {
+  const normalisedAliases = aliases.map(normalise);
+  return headers.find((header) => normalisedAliases.includes(normalise(header))) || '';
+}
+
 function normalise(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z]/g, '');
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }

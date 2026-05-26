@@ -1,125 +1,590 @@
 import { createSavingsGoal, deleteSavingsGoal, findSavingsGoalById, listSavingsGoals, updateSavingsGoal } from '../repositories/savingsGoalRepository.js';
+import { createSavingsAccount, deleteSavingsAccount, findSavingsAccountById, listSavingsAccounts, updateSavingsAccount } from '../repositories/savingsAccountRepository.js';
+import { listSavingsGoalAccountLinks, replaceSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
-import { optionalMoney, requireChoice, requireMoney, requireString } from '../utils/validation.js';
+import { checkboxValue, ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
+import { optionalMoney, optionalString, requireChoice, requireDecimal, requireMoney, requireString } from '../utils/validation.js';
+import { currentMonth } from '../utils/dates.js';
 import { savingsGoalProgress } from '../services/savingsService.js';
+import {
+  buildSavingsProjection,
+  savingsAccountSummary,
+  savingsAccountTypeLabel,
+  savingsAccountTypeOptions,
+  savingsRateTypeLabel
+} from '../services/savingsAccountService.js';
+import { savingsProjectionChart } from '../views/charts.js';
 import { actionIconButton, csrfField, escapeHtml, formatCurrency, ownerLabel, page } from '../views/html.js';
-import { moneyInputAttrs, ownerOptions } from '../views/forms.js';
+import { decimalInputAttrs, moneyInputAttrs, ownerOptions } from '../views/forms.js';
 import { html } from '../http/response.js';
-import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
 export function registerSavingsRoutes(router, db) {
-  router.get('/savings', (ctx) => {
-    if (!ensureAuthenticated(ctx)) return;
-    const goals = listSavingsGoals(db, ctx.user.household_id);
-    const members = listHouseholdMembers(db, ctx.user.household_id);
-    html(
-      ctx.res,
-      page(ctx, {
-        title: 'Savings Goals',
-        wide: true,
-        body: `<section class="page-title">
-          <div>
-            <h1>Savings Goals</h1>
-            <p class="page-context">Track target balances, monthly contributions, and shared household savings progress.</p>
-          </div>
-        </section>
-        <section class="action-row">
-          <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
-          <dialog id="savings-goal-modal" class="modal" data-modal>
-            <div class="modal-panel">
-              <div class="modal-heading">
-                <div>
-                  <h2>Savings goal details</h2>
-                </div>
-                <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
-              </div>
-              ${goalForm(ctx, members)}
-            </div>
-          </dialog>
-        </section>
-        <section class="grid one">
-          <div class="card">
-            <h2>Goals</h2>
-            ${goalsTable(ctx, goals, members)}
-          </div>
-        </section>`
-      })
-    );
-  });
+  router.get('/savings', (ctx) => renderSavingsOverview(ctx, db));
+  router.get('/savings/accounts', (ctx) => renderSavingsAccountsPage(ctx, db));
+  router.get('/savings/goals', (ctx) => renderSavingsGoalsPage(ctx, db));
 
-  router.post('/savings', (ctx) => {
-    if (!ensureAuthenticated(ctx)) return;
-    try {
-      const goalId = Number(ctx.body.id || 0) || null;
-      if (goalId && !findSavingsGoalById(db, ctx.user.household_id, goalId)) {
-        throw new Error('Savings goal was not found.');
-      }
-      const targetAmountPence = requireMoney(ctx.body.target_amount, 'Target amount');
-      const payload = {
-        householdId: ctx.user.household_id,
-        id: goalId,
-        name: requireString(ctx.body.name, 'Goal name', 120),
-        targetAmountPence,
-        currentSavedAmountPence: optionalMoney(ctx.body.current_saved_amount, 'Current saved amount'),
-        monthlyContributionPence: optionalMoney(ctx.body.monthly_contribution, 'Monthly contribution'),
-        targetDate: ctx.body.target_date || null,
-        ownerType: requireChoice(ctx.body.owner_type, ['person_a', 'person_b', 'shared'], 'Owner'),
-        status: requireChoice(ctx.body.status || 'active', ['active', 'completed', 'paused'], 'Status')
-      };
-      if (goalId) {
-        updateSavingsGoal(db, payload);
-      } else {
-        createSavingsGoal(db, payload);
-      }
-      redirectWithSuccess(ctx.res, ctx.body.return_to || '/savings', goalId ? 'Savings goal updated.' : 'Savings goal saved.');
-    } catch (error) {
-      redirectWithError(ctx.res, ctx.body.return_to || '/savings', error);
-    }
-  });
+  router.post('/savings', (ctx) => saveSavingsGoal(ctx, db));
+  router.post('/savings/goals', (ctx) => saveSavingsGoal(ctx, db));
+  router.post('/savings/delete', (ctx) => removeSavingsGoal(ctx, db));
 
-  router.post('/savings/delete', (ctx) => {
-    if (!ensureAuthenticated(ctx)) return;
-    try {
-      deleteSavingsGoal(db, ctx.user.household_id, Number(ctx.body.id));
-      redirectWithSuccess(ctx.res, ctx.body.return_to || '/savings', 'Savings goal deleted.');
-    } catch (error) {
-      redirectWithError(ctx.res, ctx.body.return_to || '/savings', error);
-    }
-  });
+  router.post('/savings/accounts', (ctx) => saveSavingsAccountAction(ctx, db));
+  router.post('/savings/accounts/delete', (ctx) => removeSavingsAccountAction(ctx, db));
 }
 
-function goalForm(ctx, members) {
-  return `<form method="post" action="/savings" class="stack">
+function renderSavingsOverview(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  const members = listHouseholdMembers(db, ctx.user.household_id);
+  const accounts = listSavingsAccounts(db, ctx.user.household_id);
+  const goalLinks = listSavingsGoalAccountLinks(db, ctx.user.household_id);
+  const goals = decorateGoalsWithLinkedAccounts(listSavingsGoals(db, ctx.user.household_id), goalLinks);
+  const summary = savingsAccountSummary(accounts);
+  const projection = buildSavingsProjection(accounts, { startMonth: currentMonth(), months: 12 });
+  const projectedYearEndPence = projection.months.at(-1)?.closingBalancePence ?? summary.totalBalancePence;
+  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const totalGoalTargetPence = activeGoals.reduce((sum, goal) => sum + Number(goal.target_amount_pence || 0), 0);
+  const currentGoalSavedPence = activeGoals.reduce((sum, goal) => sum + Number(goal.current_saved_amount_pence || 0), 0);
+  const hasSavingsData = accounts.length > 0 || goals.length > 0;
+
+  html(
+    ctx.res,
+    page(ctx, {
+      title: 'Savings',
+      wide: true,
+      body: `${savingsPageIntro('overview', 'Track real balances, monthly contributions, projected rates, and long-term savings goals.')}
+      <section class="action-row">
+        <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
+        <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
+        ${savingsAccountDialog(ctx, members, '/savings')}
+        ${savingsGoalDialog(ctx, members, accounts, '/savings')}
+      </section>
+      ${hasSavingsData ? `${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence)}
+      <section class="grid two">
+        <div class="card">
+          <h2>Accounts and pots snapshot</h2>
+          ${accountsSnapshotTable(accounts, members)}
+        </div>
+        <div class="card">
+          <h2>Savings goal progress</h2>
+          ${goalsOverview(goals)}
+        </div>
+      </section>
+      <section class="card chart-card">
+        <div class="card-heading">
+          <div>
+            <h2>Projected tracked balances over 12 months</h2>
+            <p class="hint">This uses the current balance, monthly contributions, and projected annual rate set on each active pot.</p>
+          </div>
+        </div>
+        ${savingsProjectionChart(projection, { emptyMessage: 'Add an account or pot to start projecting balances.' })}
+      </section>` : savingsEmptyState()}`
+    })
+  );
+}
+
+function renderSavingsAccountsPage(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  const members = listHouseholdMembers(db, ctx.user.household_id);
+  const accounts = listSavingsAccounts(db, ctx.user.household_id);
+  const summary = savingsAccountSummary(accounts);
+  const projectionMonths = Math.min(36, Math.max(1, Number(ctx.query.get('months') || 12)));
+  const projection = buildSavingsProjection(accounts, { startMonth: currentMonth(), months: projectionMonths });
+  const projectedYearEndPence = projection.months.at(-1)?.closingBalancePence ?? summary.totalBalancePence;
+
+  html(
+    ctx.res,
+    page(ctx, {
+      title: 'Savings · Accounts & Pots',
+      wide: true,
+      body: `${savingsPageIntro('accounts', 'Track where your cash and longer-term savings actually sit, and how each pot is expected to grow.')}
+      <section class="action-row">
+        <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
+        <form method="get" action="/savings/accounts" class="inline-form">
+          <label>Projection months <input name="months" value="${projectionMonths}" ${decimalInputAttrs({ required: true, min: '1', max: '36', decimals: 0, step: '1' })}></label>
+          <button>Update</button>
+        </form>
+        ${savingsAccountDialog(ctx, members, `/savings/accounts?months=${projectionMonths}`)}
+      </section>
+      <section class="grid four">
+        <div class="stat">
+          <span>Total tracked balance</span>
+          <strong>${formatCurrency(summary.totalBalancePence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Personal monthly contributions</span>
+          <strong>${formatCurrency(summary.monthlyContributionPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Employer pension top-ups</span>
+          <strong>${formatCurrency(summary.employerContributionPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Projected total after ${projectionMonths} months</span>
+          <strong>${formatCurrency(projectedYearEndPence)}</strong>
+        </div>
+      </section>
+      <section class="card chart-card">
+        <div class="card-heading">
+          <div>
+            <h2>Projected tracked balances</h2>
+          </div>
+        </div>
+        ${savingsProjectionChart(projection, { emptyMessage: 'Add an account or pot to start projecting balances.' })}
+      </section>
+      <section class="card">
+        <h2>Accounts and pots</h2>
+        ${savingsAccountsTable(ctx, accounts, projection, members, projectionMonths)}
+      </section>`
+    })
+  );
+}
+
+function renderSavingsGoalsPage(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  const members = listHouseholdMembers(db, ctx.user.household_id);
+  const accounts = listSavingsAccounts(db, ctx.user.household_id);
+  const goalLinks = listSavingsGoalAccountLinks(db, ctx.user.household_id);
+  const goals = decorateGoalsWithLinkedAccounts(listSavingsGoals(db, ctx.user.household_id), goalLinks);
+  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const targetPence = activeGoals.reduce((sum, goal) => sum + Number(goal.target_amount_pence || 0), 0);
+  const savedPence = activeGoals.reduce((sum, goal) => sum + Number(goal.current_saved_amount_pence || 0), 0);
+  const monthlyContributionPence = activeGoals.reduce((sum, goal) => sum + Number(goal.monthly_contribution_pence || 0), 0);
+
+  html(
+    ctx.res,
+    page(ctx, {
+      title: 'Savings · Goals',
+      wide: true,
+      body: `${savingsPageIntro('goals', 'Track long-term targets and progress separately from the real accounts and pots that hold the money.')}
+      <section class="action-row">
+        <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
+        ${savingsGoalDialog(ctx, members, accounts, '/savings/goals')}
+      </section>
+      <section class="grid four">
+        <div class="stat">
+          <span>Active goals</span>
+          <strong>${activeGoals.length}</strong>
+        </div>
+        <div class="stat">
+          <span>Total goal target</span>
+          <strong>${formatCurrency(targetPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Currently saved</span>
+          <strong>${formatCurrency(savedPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Monthly goal contributions</span>
+          <strong>${formatCurrency(monthlyContributionPence)}</strong>
+        </div>
+      </section>
+      <section class="grid one">
+        <div class="card">
+          <h2>Goals</h2>
+          ${goalsTable(ctx, goals, members, '/savings/goals')}
+        </div>
+      </section>`
+    })
+  );
+}
+
+function saveSavingsGoal(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  try {
+    const goalId = Number(ctx.body.id || 0) || null;
+    if (goalId && !findSavingsGoalById(db, ctx.user.household_id, goalId)) {
+      throw new Error('Savings goal was not found.');
+    }
+    const linkedAccountIds = parseIdList(ctx.body.linked_account_ids);
+    const targetAmountPence = requireMoney(ctx.body.target_amount, 'Target amount');
+    const payload = {
+      householdId: ctx.user.household_id,
+      id: goalId,
+      name: requireString(ctx.body.name, 'Goal name', 120),
+      targetAmountPence,
+      currentSavedAmountPence: optionalMoney(ctx.body.current_saved_amount, 'Current saved amount'),
+      monthlyContributionPence: optionalMoney(ctx.body.monthly_contribution, 'Monthly contribution'),
+      targetDate: ctx.body.target_date || null,
+      ownerType: requireChoice(ctx.body.owner_type, ['person_a', 'person_b', 'shared'], 'Owner'),
+      status: requireChoice(ctx.body.status || 'active', ['active', 'completed', 'paused'], 'Status')
+    };
+    db.exec('BEGIN');
+    try {
+      const goal = goalId ? updateSavingsGoal(db, payload) : createSavingsGoal(db, payload);
+      replaceSavingsGoalAccountLinks(db, ctx.user.household_id, goal.id, linkedAccountIds);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    redirectWithSuccess(ctx.res, ctx.body.return_to || '/savings/goals', goalId ? 'Savings goal updated.' : 'Savings goal saved.');
+  } catch (error) {
+    redirectWithError(ctx.res, ctx.body.return_to || '/savings/goals', error);
+  }
+}
+
+function removeSavingsGoal(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  try {
+    deleteSavingsGoal(db, ctx.user.household_id, Number(ctx.body.id));
+    redirectWithSuccess(ctx.res, ctx.body.return_to || '/savings/goals', 'Savings goal deleted.');
+  } catch (error) {
+    redirectWithError(ctx.res, ctx.body.return_to || '/savings/goals', error);
+  }
+}
+
+function saveSavingsAccountAction(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  try {
+    const accountId = Number(ctx.body.id || 0) || null;
+    if (accountId && !findSavingsAccountById(db, ctx.user.household_id, accountId)) {
+      throw new Error('Savings account or pot was not found.');
+    }
+
+    const projectedAnnualRate = String(ctx.body.projected_annual_rate || '').trim()
+      ? requireDecimal(ctx.body.projected_annual_rate, 'Projected annual rate', { min: 0, max: 100 })
+      : 0;
+
+    const payload = {
+      householdId: ctx.user.household_id,
+      id: accountId,
+      name: requireString(ctx.body.name, 'Name', 120),
+      providerName: optionalString(ctx.body.provider_name, 120),
+      accountType: requireChoice(
+        ctx.body.account_type,
+        ['current_account', 'easy_access_savings', 'fixed_savings', 'cash_isa', 'stocks_and_shares_isa', 'lifetime_isa', 'pension', 'other'],
+        'Account type'
+      ),
+      ownerType: requireChoice(ctx.body.owner_type, ['person_a', 'person_b', 'shared'], 'Owner'),
+      currentBalancePence: optionalMoney(ctx.body.current_balance, 'Current balance'),
+      monthlyContributionPence: optionalMoney(ctx.body.monthly_contribution, 'Monthly contribution'),
+      employerMonthlyContributionPence: 0,
+      projectedAnnualRate,
+      projectedRateType: requireChoice(ctx.body.projected_rate_type || 'interest', ['interest', 'growth'], 'Projected rate type'),
+      includeLisaBonus: false,
+      isActive: checkboxValue(ctx.body.is_active),
+      notes: optionalString(ctx.body.notes)
+    };
+
+    if (payload.accountType === 'pension') {
+      payload.employerMonthlyContributionPence = optionalMoney(ctx.body.employer_monthly_contribution, 'Employer monthly contribution');
+    }
+
+    if (payload.accountType === 'lifetime_isa') {
+      payload.includeLisaBonus = checkboxValue(ctx.body.include_lisa_bonus);
+    }
+
+    if (accountId) {
+      updateSavingsAccount(db, payload);
+    } else {
+      createSavingsAccount(db, payload);
+    }
+
+    redirectWithSuccess(
+      ctx.res,
+      ctx.body.return_to || '/savings/accounts',
+      accountId ? 'Savings account or pot updated.' : 'Savings account or pot saved.'
+    );
+  } catch (error) {
+    redirectWithError(ctx.res, ctx.body.return_to || '/savings/accounts', error);
+  }
+}
+
+function removeSavingsAccountAction(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  try {
+    deleteSavingsAccount(db, ctx.user.household_id, Number(ctx.body.id));
+    redirectWithSuccess(ctx.res, ctx.body.return_to || '/savings/accounts', 'Savings account or pot deleted.');
+  } catch (error) {
+    redirectWithError(ctx.res, ctx.body.return_to || '/savings/accounts', error);
+  }
+}
+
+function savingsPageIntro(activeKey, context) {
+  return `<section class="page-title">
+    <div>
+      <h1>Savings</h1>
+      <p class="page-context">${escapeHtml(context)}</p>
+    </div>
+  </section>
+  <nav class="period-pills section-nav" aria-label="Savings sections">
+    ${savingsSectionLink('/savings', 'Overview', activeKey === 'overview')}
+    ${savingsSectionLink('/savings/accounts', 'Accounts & Pots', activeKey === 'accounts')}
+    ${savingsSectionLink('/savings/goals', 'Goals', activeKey === 'goals')}
+  </nav>`;
+}
+
+function savingsSectionLink(href, label, active = false) {
+  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${href}">${escapeHtml(label)}</a>`;
+}
+
+function overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence) {
+  return `<section class="grid four">
+    <div class="stat">
+      <span>Total tracked balance</span>
+      <strong>${formatCurrency(summary.totalBalancePence)}</strong>
+    </div>
+    <div class="stat">
+      <span>Cash accounts</span>
+      <strong>${formatCurrency(summary.byGroup.cash)}</strong>
+    </div>
+    <div class="stat">
+      <span>ISAs and investments</span>
+      <strong>${formatCurrency(summary.byGroup.isa + summary.byGroup.investments)}</strong>
+    </div>
+    <div class="stat">
+      <span>Pensions</span>
+      <strong>${formatCurrency(summary.byGroup.pension)}</strong>
+    </div>
+  </section>
+  <section class="grid four">
+    <div class="stat">
+      <span>Personal monthly contributions</span>
+      <strong>${formatCurrency(summary.monthlyContributionPence)}</strong>
+    </div>
+    <div class="stat">
+      <span>Employer pension top-ups</span>
+      <strong>${formatCurrency(summary.employerContributionPence)}</strong>
+    </div>
+    <div class="stat">
+      <span>Projected total after 12 months</span>
+      <strong>${formatCurrency(projectedYearEndPence)}</strong>
+    </div>
+    <div class="stat">
+      <span>Goal progress</span>
+      <strong>${formatCurrency(currentGoalSavedPence)} of ${formatCurrency(totalGoalTargetPence)}</strong>
+    </div>
+  </section>`;
+}
+
+function savingsEmptyState() {
+  return `<section class="card plan-empty-state">
+    <h2>Start tracking your savings properly</h2>
+    <p>Add the real accounts and pots that hold your money, then add long-term goals separately. We&rsquo;ll use balances, monthly contributions, and projected rates to show where each pot could be heading.</p>
+    <div class="button-list">
+      <a class="button" href="/savings/accounts">Add account or pot</a>
+      <a class="button" href="/savings/goals">Add savings goal</a>
+    </div>
+  </section>`;
+}
+
+function savingsGoalDialog(ctx, members, accounts, returnTo) {
+  return `<dialog id="savings-goal-modal" class="modal" data-modal>
+    <div class="modal-panel">
+      <div class="modal-heading">
+        <div>
+          <h2>Savings goal details</h2>
+        </div>
+        <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
+      </div>
+      ${goalForm(ctx, members, accounts, returnTo)}
+    </div>
+  </dialog>`;
+}
+
+function savingsAccountDialog(ctx, members, returnTo) {
+  return `<dialog id="savings-account-modal" class="modal" data-modal>
+    <div class="modal-panel">
+      <div class="modal-heading">
+        <div>
+          <h2>Account or pot details</h2>
+        </div>
+        <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
+      </div>
+      ${accountForm(ctx, members, returnTo)}
+    </div>
+  </dialog>`;
+}
+
+function goalForm(ctx, members, accounts, returnTo) {
+  return `<form method="post" action="/savings/goals" class="stack">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
-    <input type="hidden" name="return_to" value="/savings">
+    <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
     <section class="form-section">
       <h3>Target</h3>
-    <label>Goal name <input name="name" maxlength="120" required data-modal-field="name"></label>
-    <label>Target amount <input name="target_amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="targetAmount"></label>
-    <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
+      <label>Goal name <input name="name" maxlength="120" required data-modal-field="name"></label>
+      <label>Target amount <input name="target_amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="targetAmount"></label>
+      <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     </section>
     <section class="form-section">
       <h3>Progress</h3>
-    <label>Current saved amount <input name="current_saved_amount" ${moneyInputAttrs()} data-modal-field="currentSavedAmount"></label>
-    <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
-    <label>Target date <input name="target_date" type="date" data-modal-field="targetDate"></label>
-    <label>Status
-      <select name="status" data-modal-field="status">
-        <option value="active">Active</option>
-        <option value="paused">Paused</option>
-        <option value="completed">Completed</option>
-      </select>
-    </label>
+      <label>Current saved amount <input name="current_saved_amount" ${moneyInputAttrs()} data-modal-field="currentSavedAmount"></label>
+      <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
+      <label>Target date <input name="target_date" type="date" data-modal-field="targetDate"></label>
+      <label>Status
+        <select name="status" data-modal-field="status">
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="completed">Completed</option>
+        </select>
+      </label>
+    </section>
+    <section class="form-section">
+      <h3>Linked pots</h3>
+      ${
+        accounts.length
+          ? `<fieldset class="option-checklist" data-modal-field-array="linkedAccountIds">
+              <legend>Accounts and pots linked to this goal</legend>
+              ${accounts
+                .map(
+                  (account) => `<label class="checkbox-line">
+                    <input type="checkbox" name="linked_account_ids" value="${account.id}">
+                    <span>${escapeHtml(account.name)} <small class="hint">· ${escapeHtml(savingsAccountTypeLabel(account.account_type))}</small></span>
+                  </label>`
+                )
+                .join('')}
+            </fieldset>`
+          : '<p class="hint">Track an account or pot first if you want to link this goal to where the money sits.</p>'
+      }
     </section>
     <button>Save goal</button>
   </form>`;
 }
 
-function goalsTable(ctx, goals, members) {
+function accountForm(ctx, members, returnTo) {
+  return `<form method="post" action="/savings/accounts" class="stack">
+    ${csrfField(ctx)}
+    <input type="hidden" name="id" value="" data-modal-field="id">
+    <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+    <section class="form-section">
+      <h3>Account or pot</h3>
+      <label>Name <input name="name" maxlength="120" required data-modal-field="name"></label>
+      <label>Provider or wrapper <input name="provider_name" maxlength="120" data-modal-field="providerName"></label>
+      <label>Account type
+        <select name="account_type" data-modal-field="accountType" data-controls>
+          ${savingsAccountTypeOptions().map((option) => `<option value="${option.value}">${escapeHtml(option.label)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
+    </section>
+    <section class="form-section">
+      <h3>Balance and projection</h3>
+      <label>Current balance <input name="current_balance" ${moneyInputAttrs()} data-modal-field="currentBalance"></label>
+      <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
+      <div data-controlled-by="account_type" data-show-when="pension">
+        <label>Employer monthly contribution <input name="employer_monthly_contribution" ${moneyInputAttrs()} data-modal-field="employerMonthlyContribution"></label>
+      </div>
+      <div data-controlled-by="account_type" data-show-when="lifetime_isa">
+        <label class="checkbox-line">
+          <input type="checkbox" name="include_lisa_bonus" value="1" data-modal-field="includeLisaBonus">
+          <span>Apply the 25% government bonus in projections</span>
+        </label>
+      </div>
+      <label>Projected annual rate <input name="projected_annual_rate" ${decimalInputAttrs({ min: '0', max: '100', decimals: 2, step: '0.1' })} data-modal-field="projectedAnnualRate"></label>
+      <label>Projected rate type
+        <select name="projected_rate_type" data-modal-field="projectedRateType">
+          <option value="interest">Interest</option>
+          <option value="growth">Growth</option>
+        </select>
+      </label>
+      <label class="checkbox-line">
+        <input type="checkbox" name="is_active" value="1" checked data-modal-field="isActive">
+        <span>Include this pot in projections</span>
+      </label>
+    </section>
+    <section class="form-section">
+      <h3>Notes</h3>
+      <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
+    </section>
+    <button>Save account or pot</button>
+  </form>`;
+}
+
+function goalsOverview(goals) {
+  if (!goals.length) return '<p class="empty">No savings goals yet.</p>';
+  return `<div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>`;
+}
+
+function goalProgress(goal) {
+  const progress = savingsGoalProgress(goal);
+  const status =
+    progress.onTrack === null ? 'No target date' : progress.onTrack ? 'On track' : 'Behind target';
+  return `<article class="goal">
+    <div class="goal-head"><strong>${escapeHtml(goal.name)}</strong><span>${formatCurrency(goal.current_saved_amount_pence)} of ${formatCurrency(goal.target_amount_pence)}</span></div>
+    <progress value="${progress.progressPercentage}" max="100"></progress>
+    <small class="goal-meta">${progress.progressPercentage}% · ${status}${goal.linkedAccounts?.length ? ` · ${escapeHtml(goalLinkedPotsSummary(goal))}` : ''}</small>
+  </article>`;
+}
+
+function accountsSnapshotTable(accounts, members) {
+  if (!accounts.length) return '<p class="empty">No accounts or pots tracked yet.</p>';
+
+  return `<table class="data-table">
+    <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>Balance</th><th>Monthly additions</th></tr></thead>
+    <tbody>${accounts
+      .map((account) => `<tr>
+        <td>${escapeHtml(account.name)}</td>
+        <td>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</td>
+        <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
+        <td>${formatCurrency(account.current_balance_pence)}</td>
+        <td>${monthlyAdditionsCell(account)}</td>
+      </tr>`)
+      .join('')}</tbody>
+  </table>`;
+}
+
+function savingsAccountsTable(ctx, accounts, projection, members, projectionMonths) {
+  if (!accounts.length) return '<p class="empty">No accounts or pots tracked yet.</p>';
+  const projectionByAccount = new Map(projection.accounts.map((account) => [String(account.accountId), account]));
+
+  return `<table class="data-table">
+    <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>Current balance</th><th>Monthly additions</th><th>Projected rate</th><th>Projected after ${projectionMonths} months</th><th class="actions-col"></th></tr></thead>
+    <tbody>${accounts
+      .map((account) => {
+        const projected = projectionByAccount.get(String(account.id));
+        return `<tr>
+          <td>
+            <div class="cell-stack">
+              <strong>${escapeHtml(account.name)}</strong>
+              ${account.provider_name ? `<small class="hint">${escapeHtml(account.provider_name)}</small>` : ''}
+            </div>
+          </td>
+          <td>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</td>
+          <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
+          <td>${formatCurrency(account.current_balance_pence)}</td>
+          <td>${monthlyAdditionsCell(account)}</td>
+          <td>${escapeHtml(Number(account.projected_annual_rate || 0).toFixed(2).replace(/\.00$/, ''))}% ${escapeHtml(savingsRateTypeLabel(account.projected_rate_type).toLowerCase())}</td>
+          <td>${projected ? formatCurrency(projected.projectedBalancePence) : '—'}</td>
+          <td class="actions-col">
+            <div class="table-actions">
+              ${actionIconButton({
+                label: 'Edit account or pot',
+                icon: 'edit',
+                variant: 'edit',
+                attributes: `data-open-modal="savings-account-modal"
+                data-reset-modal="true"
+                data-fill-id="${escapeHtml(account.id)}"
+                data-fill-name="${escapeHtml(account.name)}"
+                data-fill-provider-name="${escapeHtml(account.provider_name || '')}"
+                data-fill-account-type="${escapeHtml(account.account_type)}"
+                data-fill-owner-type="${escapeHtml(account.owner_type)}"
+                data-fill-current-balance="${escapeHtml((Number(account.current_balance_pence || 0) / 100).toFixed(2))}"
+                data-fill-monthly-contribution="${escapeHtml((Number(account.monthly_contribution_pence || 0) / 100).toFixed(2))}"
+                data-fill-employer-monthly-contribution="${escapeHtml((Number(account.employer_monthly_contribution_pence || 0) / 100).toFixed(2))}"
+                data-fill-projected-annual-rate="${escapeHtml(String(Number(account.projected_annual_rate || 0)))}"
+                data-fill-projected-rate-type="${escapeHtml(account.projected_rate_type)}"
+                data-fill-include-lisa-bonus="${Number(account.include_lisa_bonus) === 1 ? 'true' : 'false'}"
+                data-fill-is-active="${Number(account.is_active) === 1 ? 'true' : 'false'}"
+                data-fill-notes="${escapeHtml(account.notes || '')}"`
+              })}
+              <form method="post" action="/savings/accounts/delete" data-confirm="Delete this account or pot?">
+                ${csrfField(ctx)}
+                <input type="hidden" name="id" value="${account.id}">
+                <input type="hidden" name="return_to" value="/savings/accounts?months=${projectionMonths}">
+                ${actionIconButton({ label: 'Delete account or pot', icon: 'delete', variant: 'delete', type: 'submit' })}
+              </form>
+            </div>
+          </td>
+        </tr>`;
+      })
+      .join('')}</tbody>
+  </table>`;
+}
+
+function goalsTable(ctx, goals, members, returnTo) {
   if (!goals.length) return '<p class="empty">No savings goals yet.</p>';
   return `<table class="data-table">
-    <thead><tr><th>Goal</th><th>Owner</th><th>Progress</th><th>Remaining</th><th>Estimated completion</th><th>Status</th><th class="actions-col"></th></tr></thead>
+    <thead><tr><th>Goal</th><th>Owner</th><th>Progress</th><th>Remaining</th><th>Estimated completion</th><th>Linked pots</th><th>Status</th><th class="actions-col"></th></tr></thead>
     <tbody>${goals
       .map((goal) => {
         const progress = savingsGoalProgress(goal);
@@ -129,6 +594,7 @@ function goalsTable(ctx, goals, members) {
           <td>${progress.progressPercentage}%</td>
           <td>${formatCurrency(progress.remainingPence)}</td>
           <td>${progress.estimatedCompletionDate || 'Not enough data'}</td>
+          <td>${escapeHtml(goalLinkedPotsSummary(goal))}</td>
           <td>${goal.status}${progress.onTrack === false ? ' · behind target' : progress.onTrack === true ? ' · on track' : ''}</td>
           <td class="actions-col">
             <div class="table-actions">
@@ -145,12 +611,13 @@ function goalsTable(ctx, goals, members) {
                 data-fill-current-saved-amount="${escapeHtml((Number(goal.current_saved_amount_pence || 0) / 100).toFixed(2))}"
                 data-fill-monthly-contribution="${escapeHtml((Number(goal.monthly_contribution_pence || 0) / 100).toFixed(2))}"
                 data-fill-target-date="${escapeHtml(goal.target_date || '')}"
-                data-fill-status="${escapeHtml(goal.status)}"`
+                data-fill-status="${escapeHtml(goal.status)}"
+                data-fill-linked-account-ids="${escapeHtml(goal.linkedAccounts?.map((account) => account.id).join(',') || '')}"`
               })}
               <form method="post" action="/savings/delete" data-confirm="Delete this savings goal?">
                 ${csrfField(ctx)}
                 <input type="hidden" name="id" value="${goal.id}">
-                <input type="hidden" name="return_to" value="/savings">
+                <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
                 ${actionIconButton({ label: 'Delete savings goal', icon: 'delete', variant: 'delete', type: 'submit' })}
               </form>
             </div>
@@ -159,4 +626,54 @@ function goalsTable(ctx, goals, members) {
       })
       .join('')}</tbody>
   </table>`;
+}
+
+function decorateGoalsWithLinkedAccounts(goals, linkedAccountRows) {
+  const linkedAccountsByGoalId = new Map();
+  for (const row of linkedAccountRows) {
+    const key = String(row.goal_id);
+    const current = linkedAccountsByGoalId.get(key) || [];
+    current.push({
+      id: row.savings_account_id,
+      name: row.savings_account_name,
+      ownerType: row.owner_type,
+      accountType: row.account_type
+    });
+    linkedAccountsByGoalId.set(key, current);
+  }
+
+  return goals.map((goal) => ({
+    ...goal,
+    linkedAccounts: linkedAccountsByGoalId.get(String(goal.id)) || []
+  }));
+}
+
+function goalLinkedPotsSummary(goal) {
+  if (!goal.linkedAccounts?.length) return 'Not linked';
+  return goal.linkedAccounts.map((account) => account.name).join(', ');
+}
+
+function monthlyAdditionsCell(account) {
+  const personalContributionPence = Number(account.monthly_contribution_pence || 0);
+  const employerContributionPence = Number(account.employer_monthly_contribution_pence || 0);
+  const includeLisaBonus = Number(account.include_lisa_bonus) === 1;
+  const extras = [];
+
+  if (account.account_type === 'pension' && employerContributionPence > 0) {
+    extras.push(`Employer ${formatCurrency(employerContributionPence)}/month`);
+  }
+
+  if (account.account_type === 'lifetime_isa' && includeLisaBonus) {
+    extras.push('25% LISA bonus in projections');
+  }
+
+  return `<div class="cell-stack">
+    <strong>${formatCurrency(personalContributionPence)}</strong>
+    ${extras.map((text) => `<small class="hint">${escapeHtml(text)}</small>`).join('')}
+  </div>`;
+}
+
+function parseIdList(value) {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return [...new Set(values.flatMap((entry) => String(entry || '').split(',')).map((entry) => Number(entry)).filter((entry) => Number.isInteger(entry) && entry > 0))];
 }

@@ -146,6 +146,47 @@ CREATE TABLE IF NOT EXISTS savings_goals (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS savings_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  provider_name TEXT,
+  account_type TEXT NOT NULL CHECK (
+    account_type IN (
+      'current_account',
+      'easy_access_savings',
+      'fixed_savings',
+      'cash_isa',
+      'stocks_and_shares_isa',
+      'lifetime_isa',
+      'pension',
+      'other'
+    )
+  ),
+  owner_type TEXT NOT NULL CHECK (owner_type IN ('person_a', 'person_b', 'shared')),
+  current_balance_pence INTEGER NOT NULL DEFAULT 0,
+  monthly_contribution_pence INTEGER NOT NULL DEFAULT 0,
+  employer_monthly_contribution_pence INTEGER NOT NULL DEFAULT 0,
+  projected_annual_rate REAL NOT NULL DEFAULT 0,
+  projected_rate_type TEXT NOT NULL CHECK (projected_rate_type IN ('interest', 'growth')) DEFAULT 'interest',
+  include_lisa_bonus INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_savings_accounts_household ON savings_accounts(household_id);
+
+CREATE TABLE IF NOT EXISTS savings_goal_accounts (
+  goal_id INTEGER NOT NULL REFERENCES savings_goals(id) ON DELETE CASCADE,
+  savings_account_id INTEGER NOT NULL REFERENCES savings_accounts(id) ON DELETE CASCADE,
+  PRIMARY KEY (goal_id, savings_account_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_savings_goal_accounts_goal ON savings_goal_accounts(goal_id);
+CREATE INDEX IF NOT EXISTS idx_savings_goal_accounts_account ON savings_goal_accounts(savings_account_id);
+
 CREATE TABLE IF NOT EXISTS csv_import_batches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,

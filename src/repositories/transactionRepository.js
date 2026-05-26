@@ -100,6 +100,31 @@ export function listTransactions(db, householdId, filters = {}) {
     .all(...params);
 }
 
+export function findLatestCategorisedTransactionByDescription(db, householdId, description, type = null) {
+  const clauses = [
+    'transactions.household_id = ?',
+    'lower(trim(transactions.description)) = lower(trim(?))',
+    'transactions.category_id IS NOT NULL'
+  ];
+  const params = [householdId, description];
+
+  if (type) {
+    clauses.push('transactions.type = ?');
+    params.push(type);
+  }
+
+  return db
+    .prepare(
+      `SELECT transactions.*, categories.name AS category_name
+       FROM transactions
+       LEFT JOIN categories ON categories.id = transactions.category_id
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY transactions.transaction_date DESC, transactions.id DESC
+       LIMIT 1`
+    )
+    .get(...params);
+}
+
 export function deleteTransaction(db, householdId, id) {
   db.prepare('DELETE FROM transactions WHERE household_id = ? AND id = ?').run(householdId, id);
 }
