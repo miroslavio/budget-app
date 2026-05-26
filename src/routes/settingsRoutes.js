@@ -11,7 +11,7 @@ export function registerSettingsRoutes(router, db) {
     if (!ensureAuthenticated(ctx)) return;
     const household = findHouseholdById(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, household.id);
-    const categories = listCategories(db, null, 'expense');
+    const categories = listCategories(db, ctx.user.household_id, 'expense');
     html(
       ctx.res,
       page(ctx, {
@@ -75,7 +75,7 @@ export function registerSettingsRoutes(router, db) {
                 </tr>`
               )
               .join('')}</tbody>
-          </table>` : '<p class="empty">No categories yet.</p>'}
+          </table>` : '<p class="empty">No custom categories yet. Add categories if you want extra labels beyond the standard household list.</p>'}
           <dialog id="add-category-modal" class="modal" data-modal>
             <div class="modal-panel">
               <div class="modal-heading">
@@ -130,6 +130,7 @@ export function registerSettingsRoutes(router, db) {
     if (!ensureAuthenticated(ctx)) return;
     try {
       createCategory(db, {
+        householdId: ctx.user.household_id,
         name: requireString(ctx.body.name, 'Category name', 120),
         kind: 'expense'
       });
@@ -143,6 +144,7 @@ export function registerSettingsRoutes(router, db) {
     if (!ensureAuthenticated(ctx)) return;
     try {
       updateCategory(db, {
+        householdId: ctx.user.household_id,
         id: Number(ctx.body.id),
         kind: 'expense',
         name: requireString(ctx.body.name, 'Category name', 120)
@@ -156,7 +158,7 @@ export function registerSettingsRoutes(router, db) {
   router.post('/settings/categories/delete', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
     try {
-      deleteCategory(db, Number(ctx.body.id));
+      deleteCategory(db, ctx.user.household_id, Number(ctx.body.id));
       redirectWithSuccess(ctx.res, '/settings', 'Category deleted.');
     } catch (error) {
       redirectWithError(ctx.res, '/settings', error);

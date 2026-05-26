@@ -67,7 +67,7 @@ function nav(ctx) {
     { href: '/dashboard', label: 'Dashboard', matches: ['/dashboard'] },
     { href: '/budget-plan', label: 'Budget Plan', matches: ['/budget-plan', '/income', '/expenses'] },
     { href: '/transactions', label: 'Actuals', matches: ['/transactions'] },
-    { href: '/savings', label: 'Savings Goals', matches: ['/savings'] },
+    { href: '/savings', label: 'Savings', matches: ['/savings'] },
     { href: '/forecast', label: 'Forecast', matches: ['/forecast'] },
     { href: '/reports', label: 'Reports', matches: ['/reports'] },
     { href: '/csv', label: 'Import/Export', matches: ['/csv', '/csv/preview', '/export'] },

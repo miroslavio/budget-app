@@ -297,24 +297,36 @@ function wireSplitSliders(root = document) {
     const secondaryInput = container.querySelector('[data-split-secondary-input]');
     const primaryOutput = container.querySelector('[data-split-primary-output]');
     const secondaryOutput = container.querySelector('[data-split-secondary-output]');
+    const primaryAmount = container.querySelector('[data-split-primary-amount]');
+    const secondaryAmount = container.querySelector('[data-split-secondary-amount]');
+    const amountInput = slider.form?.querySelector('[data-split-amount-source]');
 
     const sync = () => {
       let primary = Number(slider.value || '50');
       if (!Number.isFinite(primary)) primary = 50;
       primary = Math.min(100, Math.max(0, Math.round(primary * 100) / 100));
       const secondary = Math.round((100 - primary) * 100) / 100;
+      const totalAmount = amountInput instanceof HTMLInputElement ? Number.parseFloat(String(amountInput.value || '0').replace(/,/g, '.')) || 0 : 0;
+      const primaryAmountValue = totalAmount * (primary / 100);
+      const secondaryAmountValue = totalAmount * (secondary / 100);
 
       slider.value = String(primary);
       slider.style.setProperty('--split-value', `${primary}%`);
       if (secondaryInput instanceof HTMLInputElement) secondaryInput.value = String(secondary);
       if (primaryOutput instanceof HTMLElement) primaryOutput.textContent = formatSplitPercent(primary);
       if (secondaryOutput instanceof HTMLElement) secondaryOutput.textContent = formatSplitPercent(secondary);
+      if (primaryAmount instanceof HTMLElement) primaryAmount.textContent = formatSplitCurrency(primaryAmountValue);
+      if (secondaryAmount instanceof HTMLElement) secondaryAmount.textContent = formatSplitCurrency(secondaryAmountValue);
     };
 
     if (slider.dataset.splitBound !== 'true') {
       slider.dataset.splitBound = 'true';
       slider.addEventListener('input', sync);
       slider.addEventListener('change', sync);
+      if (amountInput instanceof HTMLInputElement) {
+        amountInput.addEventListener('input', sync);
+        amountInput.addEventListener('change', sync);
+      }
     }
 
     sync();
@@ -325,6 +337,15 @@ function formatSplitPercent(value) {
   const rounded = Math.round(Number(value || 0) * 100) / 100;
   if (Number.isInteger(rounded)) return `${rounded}%`;
   return `${String(rounded).replace(/(?:\\.0+|(\\.\\d+?)0+)$/, '$1')}%`;
+}
+
+function formatSplitCurrency(value) {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(value || 0));
 }
 
 function wireTransactionCategorySelects(root = document) {

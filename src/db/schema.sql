@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS categories (
   is_default INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS household_categories (
+  household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (household_id, category_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_household_categories_category ON household_categories(category_id);
+
 CREATE TABLE IF NOT EXISTS budget_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,

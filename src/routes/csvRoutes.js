@@ -91,7 +91,7 @@ export function registerCsvRoutes(router, db) {
     const batchId = Number(ctx.query.get('batch'));
     const batch = findImportBatch(db, ctx.user.household_id, batchId);
     if (!batch) return redirectWithError(ctx.res, '/csv', 'Import batch was not found.');
-    const rows = listImportRows(db, batch.id);
+    const rows = listImportRows(db, ctx.user.household_id, batch.id);
     const rawRows = rows.map((row) => JSON.parse(row.raw_json));
     const headers = Object.keys(rawRows[0] || {});
     const members = listHouseholdMembers(db, ctx.user.household_id);
@@ -145,7 +145,7 @@ export function registerCsvRoutes(router, db) {
       const batch = findImportBatch(db, ctx.user.household_id, batchId);
       if (!batch) throw new Error('Import batch was not found.');
 
-      const rows = listImportRows(db, batch.id);
+      const rows = listImportRows(db, ctx.user.household_id, batch.id);
       const members = listHouseholdMembers(db, ctx.user.household_id);
       const categories = listCategories(db, ctx.user.household_id);
       const mapping = {
@@ -224,13 +224,13 @@ export function registerCsvRoutes(router, db) {
 
       for (const row of reviewRows) {
         if (row.status === 'duplicate') {
-          updateImportRowStatus(db, row.id, 'duplicate', row.errorMessage || 'Possible duplicate: same date, amount, and description.');
+          updateImportRowStatus(db, ctx.user.household_id, row.id, 'duplicate', row.errorMessage || 'Possible duplicate: same date, amount, and description.');
           errorCount += 1;
           continue;
         }
 
         if (row.status === 'invalid') {
-          updateImportRowStatus(db, row.id, 'invalid', row.errorMessage || 'Row needs attention before import.');
+          updateImportRowStatus(db, ctx.user.household_id, row.id, 'invalid', row.errorMessage || 'Row needs attention before import.');
           errorCount += 1;
           continue;
         }
@@ -256,15 +256,15 @@ export function registerCsvRoutes(router, db) {
             csvImportBatchId: batch.id,
             createdBy: ctx.user.id
           });
-          updateImportRowStatus(db, row.id, 'imported', null, transaction.id);
+          updateImportRowStatus(db, ctx.user.household_id, row.id, 'imported', null, transaction.id);
           importedCount += 1;
         } catch (error) {
-          updateImportRowStatus(db, row.id, 'invalid', error.message);
+          updateImportRowStatus(db, ctx.user.household_id, row.id, 'invalid', error.message);
           errorCount += 1;
         }
       }
 
-      updateImportBatchStatus(db, batch.id, 'imported', { errorCount, importedCount });
+      updateImportBatchStatus(db, ctx.user.household_id, batch.id, 'imported', { errorCount, importedCount });
       redirectWithSuccess(ctx.res, '/transactions', `${importedCount} transactions imported. ${errorCount} rows skipped.`);
     } catch (error) {
       redirectWithError(ctx.res, '/csv', error);

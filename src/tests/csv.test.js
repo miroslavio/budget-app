@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from '../db/database.js';
+import { addImportRows, createImportBatch, listImportRows, updateImportBatchStatus, updateImportRowStatus } from '../repositories/csvImportRepository.js';
 import { parseCsv, parseImportedDate, buildCsvImportReview } from '../services/csvImportService.js';
 import { generateCsv } from '../services/csvExportService.js';
 
@@ -52,6 +53,41 @@ test('statement import review infers spending from money out and reuses past cat
   assert.equal(reviewRows[0].type, 'expense');
   assert.equal(reviewRows[0].categoryName, 'Groceries');
   assert.equal(reviewRows[0].amountPence, 5430);
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('CSV import rows are scoped to the household batch owner', () => {
+  const { db, tempDir } = createTestDatabase();
+
+  db.prepare('INSERT INTO households (id, name, invite_code) VALUES (1, ?, ?)').run('First household', 'invite-one');
+  db.prepare('INSERT INTO households (id, name, invite_code) VALUES (2, ?, ?)').run('Second household', 'invite-two');
+
+  const firstBatchId = createImportBatch(db, { householdId: 1, originalFilename: 'first.csv', createdBy: null });
+  const secondBatchId = createImportBatch(db, { householdId: 2, originalFilename: 'second.csv', createdBy: null });
+
+  addImportRows(db, firstBatchId, [{ rowNumber: 2, raw: { Date: '2026-05-26', Description: 'Tesco', Amount: '54.30' } }]);
+  addImportRows(db, secondBatchId, [{ rowNumber: 2, raw: { Date: '2026-05-26', Description: 'Asda', Amount: '12.00' } }]);
+
+  const firstHouseholdRows = listImportRows(db, 1, firstBatchId);
+  const secondHouseholdRows = listImportRows(db, 2, secondBatchId);
+  const hiddenRows = listImportRows(db, 1, secondBatchId);
+
+  assert.equal(firstHouseholdRows.length, 1);
+  assert.equal(secondHouseholdRows.length, 1);
+  assert.equal(hiddenRows.length, 0);
+
+  updateImportRowStatus(db, 1, secondHouseholdRows[0].id, 'invalid', 'Wrong household should not update this row.');
+  assert.equal(listImportRows(db, 2, secondBatchId)[0].status, 'preview');
+
+  updateImportRowStatus(db, 1, firstHouseholdRows[0].id, 'valid');
+  assert.equal(listImportRows(db, 1, firstBatchId)[0].status, 'valid');
+
+  updateImportBatchStatus(db, 2, firstBatchId, 'imported', { errorCount: 1, importedCount: 0 });
+  assert.equal(db.prepare('SELECT status FROM csv_import_batches WHERE id = ?').get(firstBatchId).status, 'preview');
+
+  updateImportBatchStatus(db, 1, firstBatchId, 'imported', { errorCount: 0, importedCount: 1 });
+  assert.equal(db.prepare('SELECT status FROM csv_import_batches WHERE id = ?').get(firstBatchId).status, 'imported');
 
   fs.rmSync(tempDir, { recursive: true, force: true });
 });

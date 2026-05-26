@@ -483,7 +483,7 @@ function flexibleSpendingTable(ctx, rows, month, returnTo) {
   if (!rows.length) return '<p class="empty">No flexible spending targets for this month yet.</p>';
 
   return `<table class="data-table category-budget-table">
-    <thead><tr><th>Category</th><th>Target</th><th>Actual spending</th><th>Status</th><th class="actions-col"></th></tr></thead>
+    <thead><tr><th>Category</th><th>Target</th><th>Actual spending</th><th>Status</th><th>Source</th><th class="actions-col"></th></tr></thead>
     <tbody>${rows
       .map((row) => {
         const actions = row.budgetId
@@ -526,6 +526,7 @@ function flexibleSpendingTable(ctx, rows, month, returnTo) {
           <td>${row.budgetPence ? formatCurrency(row.budgetPence) : '—'}</td>
           <td>${formatCurrency(row.actualExpensePence)}</td>
           <td>${escapeHtml(overallTargetStatus(row.budgetPence, row.actualExpensePence))}</td>
+          <td>${escapeHtml(targetSourceLabel(row))}</td>
           <td class="actions-col">${actions}</td>
         </tr>`;
       })
@@ -535,6 +536,12 @@ function flexibleSpendingTable(ctx, rows, month, returnTo) {
 
 function flexibleSpendingReturnTo(month) {
   return `/budget-plan/flexible-spending?month=${encodeURIComponent(month)}`;
+}
+
+function targetSourceLabel(row) {
+  if (!row.budgetId) return 'No target';
+  if (row.budgetScope === 'month_override') return `Override for ${monthLabel(row.budgetMonth)}`;
+  return 'Default target';
 }
 
 function formDisclosure(itemType, ctx, categories, members, returnTo) {
@@ -667,7 +674,7 @@ function expenseForm(ctx, categories, members, returnTo) {
     <label>Name <input name="name" required maxlength="120" data-modal-field="name"></label>
     <label>Category <select name="category_id" data-modal-field="categoryId">${categoryOptions(expenseCategories)}</select></label>
     <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
-    <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
+    <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount" data-split-amount-source></label>
     <label>Frequency <select name="frequency" data-modal-field="frequency">${frequencyOptions('monthly')}</select></label>
     </section>
     <fieldset data-controlled-by="owner_type" data-show-when="shared">
@@ -681,15 +688,17 @@ function expenseForm(ctx, categories, members, returnTo) {
       <div class="split-slider-card" data-controlled-by="split_type" data-show-when="manual_percentage" hidden>
         <input type="hidden" name="person_b_percentage" value="50" data-modal-field="personBPercentage" data-split-secondary-input>
         <div class="split-slider-summary">
-          <div class="split-share">
-            <span class="split-share-label">${escapeHtml(firstMemberLabel)}</span>
-            <strong data-split-primary-output>50%</strong>
-          </div>
-          <div class="split-share split-share-end">
-            <span class="split-share-label">${escapeHtml(secondMemberLabel)}</span>
-            <strong data-split-secondary-output>50%</strong>
-          </div>
+        <div class="split-share">
+          <span class="split-share-label">${escapeHtml(firstMemberLabel)}</span>
+          <strong data-split-primary-output>50%</strong>
+          <small class="hint" data-split-primary-amount>£0.00</small>
         </div>
+        <div class="split-share split-share-end">
+          <span class="split-share-label">${escapeHtml(secondMemberLabel)}</span>
+          <strong data-split-secondary-output>50%</strong>
+          <small class="hint" data-split-secondary-amount>£0.00</small>
+        </div>
+      </div>
         <input
           name="person_a_percentage"
           type="range"

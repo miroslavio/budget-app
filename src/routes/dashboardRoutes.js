@@ -10,7 +10,7 @@ import { buildPeriodReport } from '../services/reportService.js';
 import { savingsGoalProgress, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
-import { escapeHtml, formatCurrency, movementStat, page, signedStat, stat, ownerLabel, varianceLabel } from '../views/html.js';
+import { escapeHtml, formatCurrency, movementStat, page, stat, ownerLabel, varianceLabel } from '../views/html.js';
 import { pieChart } from '../views/charts.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated } from './helpers.js';
@@ -32,6 +32,9 @@ export function registerDashboardRoutes(router, db) {
     const { planned, actual, variance } = report;
     const chartOwner = ctx.query.get('chart_owner') || 'household';
     const plannedExpenseSeries = plannedExpenseCategorySeries(items, { owner: chartOwner, months: report.months });
+    const hasPlannedData = planned.plannedIncomePence > 0 || planned.plannedExpensePence > 0 || planned.plannedSavingsPence > 0;
+    const hasActualData = actual.actualIncomePence > 0 || actual.actualExpensePence > 0 || actual.actualSavingsPence > 0;
+    const hasUsefulDashboardData = hasPlannedData || hasActualData || goals.length > 0;
 
     html(
       ctx.res,
@@ -60,18 +63,20 @@ export function registerDashboardRoutes(router, db) {
           </div>
         </section>
 
+        ${hasUsefulDashboardData ? '' : dashboardEmptyState()}
+
         <section class="grid four">
           ${stat('Planned income', planned.plannedIncomePence, 'good')}
           ${stat('Planned expenses', planned.plannedExpensePence)}
           ${stat('Planned savings', planned.plannedSavingsPence)}
-          ${movementStat('Planned surplus / deficit', planned.plannedSurplusPence)}
+          ${movementStat('Planned surplus / deficit', planned.plannedSurplusPence, 'Planned income minus planned bills, flexible spending targets, and planned savings contributions.')}
         </section>
 
         <section class="grid four">
           ${stat('Actual income', actual.actualIncomePence, 'good')}
           ${stat('Actual expenses', actual.actualExpensePence)}
           ${stat('Actual savings', actual.actualSavingsPence)}
-          ${movementStat('Actual monthly movement', actual.actualSurplusPence)}
+          ${movementStat('Actual monthly movement', actual.actualSurplusPence, 'Actual income minus actual spending and actual savings movements for the selected period.')}
         </section>
 
         <section class="card chart-card" id="planned-expenses-chart">
@@ -129,6 +134,20 @@ export function registerDashboardRoutes(router, db) {
       })
     );
   });
+}
+
+function dashboardEmptyState() {
+  return `<section class="card plan-empty-state">
+    <h2>No budget plan yet</h2>
+    <p>Your budget is not fully set up yet. Add planned income, bills, flexible spending, and savings to see a useful monthly position and forecast.</p>
+    <div class="button-list">
+      <a class="button" href="/budget-plan/income">Add income</a>
+      <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
+      <a class="button" href="/budget-plan/flexible-spending">Add flexible spending target</a>
+      <a class="button" href="/forecast">Set opening balance</a>
+      <a class="button secondary" href="/transactions">Record or import actuals</a>
+    </div>
+  </section>`;
 }
 
 function resolveDashboardPeriod(periodKey, selectedMonth) {
