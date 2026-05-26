@@ -65,11 +65,46 @@ function wireAutoSubmit(root = document) {
   });
 }
 
+function wireViewToggles(root = document) {
+  root.querySelectorAll('[data-view-toggle-group]').forEach((group) => {
+    const buttons = [...group.querySelectorAll('[data-view-toggle][data-view-value]')];
+    if (!buttons.length) return;
+
+    const targetName = buttons[0].getAttribute('data-view-toggle');
+    if (!targetName) return;
+
+    const panels = [...root.querySelectorAll(`[data-view-panel="${targetName}"][data-view-value]`)];
+    if (!panels.length) return;
+
+    const activate = (value) => {
+      buttons.forEach((button) => {
+        const isActive = button.getAttribute('data-view-value') === value;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+
+      panels.forEach((panel) => {
+        panel.hidden = panel.getAttribute('data-view-value') !== value;
+      });
+    };
+
+    buttons.forEach((button) => {
+      if (button.dataset.viewToggleBound === 'true') return;
+      button.dataset.viewToggleBound = 'true';
+      button.addEventListener('click', () => activate(button.getAttribute('data-view-value') || ''));
+    });
+
+    const defaultButton = buttons.find((button) => button.classList.contains('active')) || buttons[0];
+    activate(defaultButton.getAttribute('data-view-value') || '');
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   refreshConditionalSections();
   wireDetailsActions();
   wireEnterSubmit();
   wireAutoSubmit();
+  wireViewToggles();
   wireNumberInputs();
   wireSplitSliders();
   wireTransactionCategorySelects();
@@ -213,10 +248,44 @@ function wireNumberInputs(root = document) {
       event.preventDefault();
     });
 
+    input.addEventListener(
+      'wheel',
+      (event) => {
+        if (document.activeElement !== input) return;
+
+        event.preventDefault();
+        input.blur();
+        scrollWheelTarget(input, event.deltaX, event.deltaY);
+      },
+      { passive: false }
+    );
+
     input.addEventListener('input', sanitise);
     input.addEventListener('paste', () => window.setTimeout(sanitise, 0));
     sanitise();
   });
+}
+
+function scrollWheelTarget(input, deltaX, deltaY) {
+  const container = findScrollableAncestor(input);
+  if (container) {
+    container.scrollBy({ left: deltaX, top: deltaY, behavior: 'auto' });
+    return;
+  }
+
+  window.scrollBy({ left: deltaX, top: deltaY, behavior: 'auto' });
+}
+
+function findScrollableAncestor(element) {
+  let current = element.parentElement;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    const canScrollY = /(auto|scroll)/.test(style.overflowY) && current.scrollHeight > current.clientHeight;
+    const canScrollX = /(auto|scroll)/.test(style.overflowX) && current.scrollWidth > current.clientWidth;
+    if (canScrollY || canScrollX) return current;
+    current = current.parentElement;
+  }
+  return null;
 }
 
 function wireSplitSliders(root = document) {

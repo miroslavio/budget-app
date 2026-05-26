@@ -1,9 +1,8 @@
 import { findHouseholdById, updateHouseholdSettings } from '../repositories/householdRepository.js';
 import { createCategory, deleteCategory, listCategories, updateCategory } from '../repositories/categoryRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
-import { optionalMoney, requireString } from '../utils/validation.js';
-import { actionIconButton, csrfField, escapeHtml, formatCurrency, moneyInputValue, page } from '../views/html.js';
-import { moneyInputAttrs } from '../views/forms.js';
+import { requireString } from '../utils/validation.js';
+import { actionIconButton, csrfField, escapeHtml, page } from '../views/html.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
@@ -29,7 +28,6 @@ export function registerSettingsRoutes(router, db) {
             <form method="post" action="/settings" class="stack">
               ${csrfField(ctx)}
               <label>Household name <input name="name" value="${escapeHtml(household.name)}" maxlength="120" required></label>
-              <label>Opening balance for forecast <input name="opening_balance" value="${moneyInputValue(household.opening_balance_pence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
               <button>Save settings</button>
             </form>
           </div>
@@ -42,7 +40,6 @@ export function registerSettingsRoutes(router, db) {
                 .join('')}</tbody>
             </table>
             <p class="hint">Household invite code: <strong>${escapeHtml(household.invite_code)}</strong></p>
-            <p class="hint">Opening balance currently used by forecast: ${formatCurrency(household.opening_balance_pence)}</p>
           </div>
         </section>
         <section class="card">
@@ -118,9 +115,10 @@ export function registerSettingsRoutes(router, db) {
   router.post('/settings', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
     try {
+      const household = findHouseholdById(db, ctx.user.household_id);
       updateHouseholdSettings(db, ctx.user.household_id, {
         name: requireString(ctx.body.name, 'Household name', 120),
-        openingBalancePence: optionalMoney(ctx.body.opening_balance, 'Opening balance', { allowNegative: true, minPence: null })
+        openingBalancePence: household.opening_balance_pence
       });
       redirectWithSuccess(ctx.res, '/settings', 'Settings saved.');
     } catch (error) {

@@ -57,6 +57,11 @@ a {
   z-index: 5;
 }
 
+#planned-spending-chart,
+#planned-expenses-chart {
+  scroll-margin-top: 5.5rem;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -423,6 +428,10 @@ h2 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.forecast-summary-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .grid.one {
   grid-template-columns: 1fr;
 }
@@ -459,6 +468,10 @@ h2 {
 
 .chart-filter label {
   min-width: 12rem;
+}
+
+.view-toggle-pills {
+  flex-wrap: nowrap;
 }
 
 .action-row {
@@ -506,6 +519,18 @@ h2 {
   font-size: clamp(1rem, 2vw, 1.25rem);
   letter-spacing: -0.02em;
   line-height: 1.25;
+}
+
+.context-value {
+  font-weight: 700;
+}
+
+.context-value.good {
+  color: var(--good);
+}
+
+.context-value.bad {
+  color: var(--bad);
 }
 
 .stack {
@@ -1065,6 +1090,11 @@ progress {
   margin-top: 1rem;
 }
 
+.view-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
 .budget-form {
   gap: 1rem;
 }
@@ -1211,9 +1241,18 @@ progress {
   min-height: 260px;
 }
 
-.axis-line {
+.axis-line,
+.guide-line {
   stroke: var(--line);
+}
+
+.axis-line {
   stroke-width: 2;
+}
+
+.guide-line {
+  stroke-width: 1.2;
+  stroke-dasharray: 4 6;
 }
 
 .axis-label,
@@ -1223,12 +1262,9 @@ progress {
   font-weight: 700;
 }
 
-.movement-bar.positive {
-  fill: rgba(31, 111, 91, 0.78);
-}
-
-.movement-bar.negative {
-  fill: rgba(167, 52, 45, 0.78);
+.closing-area {
+  fill: rgba(54, 109, 226, 0.08);
+  stroke: none;
 }
 
 .closing-line {
@@ -1243,6 +1279,11 @@ progress {
   fill: var(--blue);
   stroke: var(--panel);
   stroke-width: 2;
+}
+
+.closing-hit {
+  fill: transparent;
+  stroke: transparent;
 }
 
 .savings-line {
@@ -1261,6 +1302,10 @@ progress {
 
 .forecast-legend {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.legend-row.simple {
+  grid-template-columns: 0.9rem auto;
 }
 
 .forecast-positive {
@@ -1293,6 +1338,16 @@ progress {
 .cell-stack {
   display: grid;
   gap: 0.15rem;
+}
+
+.forecast-movement.positive {
+  color: var(--good);
+  font-weight: 700;
+}
+
+.forecast-movement.negative {
+  color: var(--bad);
+  font-weight: 700;
 }
 
 @media (max-width: 900px) {
@@ -1380,7 +1435,8 @@ progress {
   .grid.two,
   .grid.two.uneven,
   .grid.three,
-  .grid.four {
+  .grid.four,
+  .forecast-summary-grid {
     grid-template-columns: 1fr;
   }
 

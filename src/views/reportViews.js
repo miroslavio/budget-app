@@ -1,5 +1,5 @@
 import { savingsGoalProgress } from '../services/savingsService.js';
-import { escapeHtml, formatCurrency, formatSignedCurrency, ownerLabel, page } from './html.js';
+import { escapeHtml, formatCurrency, movementStat, ownerLabel, page, signedValueLabel, varianceLabel } from './html.js';
 
 export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, planned, actual, variance, breakdown, goals, estimates, members = [] }) {
   return page(ctx, {
@@ -25,16 +25,16 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
           <tr><th>Planned income</th><td>${formatCurrency(planned.plannedIncomePence)}</td></tr>
           <tr><th>Planned expenses</th><td>${formatCurrency(planned.plannedExpensePence)}</td></tr>
           <tr><th>Planned savings</th><td>${formatCurrency(planned.plannedSavingsPence)}</td></tr>
-          <tr><th>Planned surplus / deficit</th><td>${formatSignedCurrency(planned.plannedSurplusPence)}</td></tr>
+          <tr><th>Planned surplus / deficit</th><td>${signedValueLabel(planned.plannedSurplusPence)}</td></tr>
         </tbody></table>
       </div>
       <div class="card">
         <h2>Planned versus actual</h2>
         <table><tbody>
-          <tr><th>Income variance</th><td>${formatSignedCurrency(variance.incomeVariancePence)}</td></tr>
-          <tr><th>Expense variance</th><td>${formatSignedCurrency(variance.expenseVariancePence)}</td></tr>
-          <tr><th>Savings variance</th><td>${formatSignedCurrency(variance.savingsVariancePence)}</td></tr>
-          <tr><th>Surplus variance</th><td>${formatSignedCurrency(variance.surplusVariancePence)}</td></tr>
+          <tr><th>Income variance</th><td>${varianceLabel(variance.incomeVariancePence, 'income')}</td></tr>
+          <tr><th>Expense variance</th><td>${varianceLabel(variance.expenseVariancePence, 'expense')}</td></tr>
+          <tr><th>Savings variance</th><td>${varianceLabel(variance.savingsVariancePence, 'savings')}</td></tr>
+          <tr><th>Surplus variance</th><td>${varianceLabel(variance.surplusVariancePence, 'surplus')}</td></tr>
         </tbody></table>
       </div>
     </section>
@@ -45,7 +45,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
         <div class="stat good"><span>Actual income</span><strong>${formatCurrency(actual.actualIncomePence)}</strong></div>
         <div class="stat"><span>Actual expenses</span><strong>${formatCurrency(actual.actualExpensePence)}</strong></div>
         <div class="stat"><span>Actual savings</span><strong>${formatCurrency(actual.actualSavingsPence)}</strong></div>
-        <div class="stat"><span>Actual surplus / deficit</span><strong>${formatSignedCurrency(actual.actualSurplusPence)}</strong></div>
+        ${movementStat('Actual monthly movement', actual.actualSurplusPence)}
       </div>
     </section>
 
@@ -84,7 +84,7 @@ function categoryTable(rows) {
           <td>${row.budgetPence ? formatCurrency(row.budgetPence) : '—'}</td>
           <td>${formatCurrency(row.plannedExpensePence)}</td>
           <td>${formatCurrency(row.actualExpensePence)}</td>
-          <td>${formatSignedCurrency(row.budgetVariancePence)}</td>
+          <td>${varianceLabel(row.budgetVariancePence, 'budget')}</td>
         </tr>`
       )
       .join('')}</tbody>

@@ -14,6 +14,9 @@ export function pieChart(series, { title = 'Expenses', emptyMessage = 'No expens
     <svg class="pie-chart" viewBox="0 0 220 220" aria-hidden="true">
       ${segments
         .map((segment) => {
+          if (segment.percentage >= 0.999999) {
+            return `<circle cx="${centre}" cy="${centre}" r="${radius}" fill="${segment.colour}"></circle>`;
+          }
           const start = pointOnCircle(centre, centre, radius, segment.start);
           const end = pointOnCircle(centre, centre, radius, segment.end);
           const path = `M ${centre} ${centre} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${segment.largeArc} 1 ${end.x} ${end.y} Z`;
@@ -43,48 +46,56 @@ export function cashflowForecastChart(forecast) {
 
   const width = 920;
   const height = 340;
-  const padding = { top: 28, right: 28, bottom: 54, left: 78 };
+  const padding = { top: 24, right: 28, bottom: 54, left: 92 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const values = forecast.flatMap((row) => [row.netMovementPence, row.closingBalancePence, row.openingBalancePence]);
-  const minValue = Math.min(0, ...values);
-  const maxValue = Math.max(0, ...values);
+  const values = forecast.flatMap((row) => [row.openingBalancePence, row.closingBalancePence]);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawRange = rawMax - rawMin;
+  const pad = Math.max(10_000, rawRange ? rawRange * 0.12 : Math.max(Math.abs(rawMax || 0), 50_000) * 0.12);
+  const minValue = rawMin - pad;
+  const maxValue = rawMax + pad;
   const range = maxValue - minValue || 1;
   const step = plotWidth / Math.max(1, forecast.length);
-  const barWidth = Math.min(42, step * 0.52);
-  const zeroY = yFor(0, minValue, range, padding, plotHeight);
+  const guideValues = [maxValue, minValue + range / 2, minValue];
   const linePoints = forecast.map((row, index) => {
     const x = padding.left + step * index + step / 2;
     const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
     return `${round(x)},${round(y)}`;
   });
+  const areaPoints = [
+    `${padding.left + step / 2},${height - padding.bottom}`,
+    ...linePoints,
+    `${padding.left + step * (forecast.length - 1) + step / 2},${height - padding.bottom}`
+  ].join(' ');
 
-  return `<div class="cashflow-chart-block" role="img" aria-label="Monthly cashflow forecast chart">
+  return `<div class="cashflow-chart-block" role="img" aria-label="Projected closing balance chart">
     <svg class="cashflow-chart" viewBox="0 0 ${width} ${height}" aria-hidden="true">
-      <line class="axis-line" x1="${padding.left}" y1="${zeroY}" x2="${width - padding.right}" y2="${zeroY}"></line>
-      <text class="axis-label" x="12" y="${zeroY + 4}">${formatCurrency(0)}</text>
-      ${forecast
-        .map((row, index) => {
-          const x = padding.left + step * index + step / 2 - barWidth / 2;
-          const barY = yFor(Math.max(0, row.netMovementPence), minValue, range, padding, plotHeight);
-          const barBottom = yFor(Math.min(0, row.netMovementPence), minValue, range, padding, plotHeight);
-          const y = Math.min(barY, barBottom);
-          const h = Math.max(2, Math.abs(barBottom - barY));
-          const tone = row.netMovementPence >= 0 ? 'positive' : 'negative';
-          return `<rect class="movement-bar ${tone}" x="${round(x)}" y="${round(y)}" width="${round(barWidth)}" height="${round(h)}"></rect>`;
+      ${guideValues
+        .map((value) => {
+          const y = yFor(value, minValue, range, padding, plotHeight);
+          return `<line class="guide-line" x1="${padding.left}" y1="${round(y)}" x2="${width - padding.right}" y2="${round(y)}"></line>
+            <text class="axis-label" x="12" y="${round(y + 4)}">${formatCurrency(Math.round(value))}</text>`;
         })
         .join('')}
+      <polyline class="closing-area" points="${areaPoints}"></polyline>
       <polyline class="closing-line" points="${linePoints.join(' ')}"></polyline>
       ${forecast
         .map((row, index) => {
           const x = padding.left + step * index + step / 2;
           const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
-          return `<circle class="closing-point" cx="${round(x)}" cy="${round(y)}" r="4"></circle>`;
+          return `<g>
+            <circle class="closing-hit" cx="${round(x)}" cy="${round(y)}" r="16">
+              <title>${forecastTooltip(row)}</title>
+            </circle>
+            <circle class="closing-point" cx="${round(x)}" cy="${round(y)}" r="4"></circle>
+          </g>`;
         })
         .join('')}
       ${forecast
         .filter((_, index) => index % Math.ceil(forecast.length / 6) === 0)
-        .map((row, index, rows) => {
+        .map((row) => {
           const originalIndex = forecast.indexOf(row);
           const x = padding.left + step * originalIndex + step / 2;
           return `<text class="month-label" x="${round(x)}" y="${height - 20}" text-anchor="middle">${escapeHtml(shortMonth(row.month))}</text>`;
@@ -92,9 +103,7 @@ export function cashflowForecastChart(forecast) {
         .join('')}
     </svg>
     <div class="chart-legend forecast-legend">
-      <div class="legend-row"><span class="legend-swatch forecast-positive"></span><span>Positive monthly movement</span><strong>${formatSignedCurrency(totalPositive(forecast))}</strong></div>
-      <div class="legend-row"><span class="legend-swatch forecast-negative"></span><span>Negative monthly movement</span><strong>${formatSignedCurrency(totalNegative(forecast))}</strong></div>
-      <div class="legend-row"><span class="legend-line"></span><span>Projected closing balance</span><strong>${formatCurrency(forecast[forecast.length - 1].closingBalancePence)}</strong></div>
+      <div class="legend-row simple"><span class="legend-line"></span><span>Projected closing balance</span></div>
     </div>
   </div>`;
 }
@@ -141,9 +150,9 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
     </svg>
     <div class="chart-legend forecast-legend">
       <div class="legend-row"><span class="legend-line savings-line-key"></span><span>Tracked balances</span><strong>${formatCurrency(projection.months[projection.months.length - 1].closingBalancePence)}</strong></div>
-      <div class="legend-row"><span class="legend-swatch forecast-positive"></span><span>Personal contributions</span><strong>${formatSignedCurrency(totalSavingsPersonalContributions(projection.months))}</strong></div>
-      <div class="legend-row"><span class="legend-swatch savings-extra"></span><span>Employer and LISA top-ups</span><strong>${formatSignedCurrency(totalSavingsExtraAdditions(projection.months))}</strong></div>
-      <div class="legend-row"><span class="legend-swatch savings-growth"></span><span>Projected growth / interest</span><strong>${formatSignedCurrency(totalSavingsGrowth(projection.months))}</strong></div>
+      <div class="legend-row"><span class="legend-swatch forecast-positive"></span><span>Personal contributions</span><strong>${formatCurrency(totalSavingsPersonalContributions(projection.months))}</strong></div>
+      <div class="legend-row"><span class="legend-swatch savings-extra"></span><span>Employer and LISA top-ups</span><strong>${formatCurrency(totalSavingsExtraAdditions(projection.months))}</strong></div>
+      <div class="legend-row"><span class="legend-swatch savings-growth"></span><span>Projected growth / interest</span><strong>${formatCurrency(totalSavingsGrowth(projection.months))}</strong></div>
     </div>
   </div>`;
 }
@@ -169,12 +178,15 @@ function shortMonth(month) {
   return `${name.slice(0, 3)} ${year.slice(2)}`;
 }
 
-function totalPositive(forecast) {
-  return forecast.reduce((sum, row) => sum + Math.max(0, row.netMovementPence), 0);
-}
-
-function totalNegative(forecast) {
-  return forecast.reduce((sum, row) => sum + Math.min(0, row.netMovementPence), 0);
+function forecastTooltip(row) {
+  return [
+    monthLabel(row.month),
+    `Income: ${formatCurrency(row.expectedIncomePence)}`,
+    `Expenses: ${formatCurrency(row.expectedExpensesPence)}`,
+    `Savings: ${formatCurrency(row.expectedSavingsPence)}`,
+    `Net movement: ${formatSignedCurrency(row.netMovementPence)}`,
+    `Projected closing balance: ${formatCurrency(row.closingBalancePence)}`
+  ].join('\n');
 }
 
 function totalSavingsPersonalContributions(months) {

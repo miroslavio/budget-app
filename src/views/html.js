@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-05-26-savings-accounts-v2';
+const ASSET_VERSION = '2026-05-26-chart-owner-anchor';
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -118,6 +118,57 @@ export function stat(label, pence, tone = '') {
 export function signedStat(label, pence) {
   const tone = pence < 0 ? 'bad' : pence > 0 ? 'good' : '';
   return `<div class="stat ${tone}"><span>${escapeHtml(label)}</span><strong>${formatSignedCurrency(pence)}</strong></div>`;
+}
+
+export function movementStat(label, pence, note = '') {
+  const tone = pence < 0 ? 'bad' : pence > 0 ? 'good' : '';
+  return `<div class="stat ${tone}"><span>${escapeHtml(label)}</span><strong>${formatSignedCurrency(pence)}</strong>${note ? `<small class="plan-stat-note">${escapeHtml(note)}</small>` : ''}</div>`;
+}
+
+export function signedValueLabel(pence) {
+  const value = Number(pence || 0);
+  const tone = value < 0 ? 'bad' : value > 0 ? 'good' : '';
+  return `<span class="context-value ${escapeHtml(tone)}">${formatSignedCurrency(value)}</span>`;
+}
+
+export function varianceText(pence, kind = 'generic') {
+  const value = Number(pence || 0);
+  const amount = formatCurrency(Math.abs(value));
+  if (value === 0) {
+    return { text: 'On track', tone: '' };
+  }
+
+  switch (kind) {
+    case 'income':
+      return value > 0
+        ? { text: `${amount} above plan`, tone: 'good' }
+        : { text: `${amount} below plan`, tone: 'bad' };
+    case 'expense':
+      return value > 0
+        ? { text: `${amount} over plan`, tone: 'bad' }
+        : { text: `${amount} under plan`, tone: 'good' };
+    case 'savings':
+      return value > 0
+        ? { text: `${amount} above target`, tone: 'good' }
+        : { text: `${amount} below target`, tone: 'bad' };
+    case 'surplus':
+      return value > 0
+        ? { text: `${amount} ahead of plan`, tone: 'good' }
+        : { text: `${amount} below plan`, tone: 'bad' };
+    case 'budget':
+      return value > 0
+        ? { text: `${amount} over budget`, tone: 'bad' }
+        : { text: `${amount} under budget`, tone: 'good' };
+    default:
+      return value > 0
+        ? { text: `${amount} above plan`, tone: 'good' }
+        : { text: `${amount} below plan`, tone: 'bad' };
+  }
+}
+
+export function varianceLabel(pence, kind = 'generic') {
+  const { text, tone } = varianceText(pence, kind);
+  return `<span class="context-value ${escapeHtml(tone)}">${escapeHtml(text)}</span>`;
 }
 
 export function ownerLabel(ownerType, members = []) {

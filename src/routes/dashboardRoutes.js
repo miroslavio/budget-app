@@ -10,7 +10,7 @@ import { buildPeriodReport } from '../services/reportService.js';
 import { savingsGoalProgress, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
-import { escapeHtml, formatCurrency, formatSignedCurrency, page, signedStat, stat, ownerLabel } from '../views/html.js';
+import { escapeHtml, formatCurrency, movementStat, page, signedStat, stat, ownerLabel, varianceLabel } from '../views/html.js';
 import { pieChart } from '../views/charts.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated } from './helpers.js';
@@ -64,17 +64,17 @@ export function registerDashboardRoutes(router, db) {
           ${stat('Planned income', planned.plannedIncomePence, 'good')}
           ${stat('Planned expenses', planned.plannedExpensePence)}
           ${stat('Planned savings', planned.plannedSavingsPence)}
-          ${signedStat('Planned surplus / deficit', planned.plannedSurplusPence)}
+          ${movementStat('Planned surplus / deficit', planned.plannedSurplusPence)}
         </section>
 
         <section class="grid four">
           ${stat('Actual income', actual.actualIncomePence, 'good')}
           ${stat('Actual expenses', actual.actualExpensePence)}
           ${stat('Actual savings', actual.actualSavingsPence)}
-          ${signedStat('Actual surplus / deficit', actual.actualSurplusPence)}
+          ${movementStat('Actual monthly movement', actual.actualSurplusPence)}
         </section>
 
-        <section class="card chart-card">
+        <section class="card chart-card" id="planned-expenses-chart">
           <div class="card-heading">
             <div>
               <h2>Planned expenses by category</h2>
@@ -93,10 +93,10 @@ export function registerDashboardRoutes(router, db) {
             <h2>Variance summary</h2>
             <table>
               <tbody>
-                <tr><th>Income variance</th><td>${formatSignedCurrency(variance.incomeVariancePence)}</td></tr>
-                <tr><th>Expense variance</th><td>${formatSignedCurrency(variance.expenseVariancePence)}</td></tr>
-                <tr><th>Savings variance</th><td>${formatSignedCurrency(variance.savingsVariancePence)}</td></tr>
-                <tr><th>Surplus variance</th><td>${formatSignedCurrency(variance.surplusVariancePence)}</td></tr>
+                <tr><th>Income variance</th><td>${varianceLabel(variance.incomeVariancePence, 'income')}</td></tr>
+                <tr><th>Expense variance</th><td>${varianceLabel(variance.expenseVariancePence, 'expense')}</td></tr>
+                <tr><th>Savings variance</th><td>${varianceLabel(variance.savingsVariancePence, 'savings')}</td></tr>
+                <tr><th>Surplus variance</th><td>${varianceLabel(variance.surplusVariancePence, 'surplus')}</td></tr>
               </tbody>
             </table>
           </div>
@@ -203,7 +203,7 @@ function chartOwnerPill(basePath, ownerKey, label, selectedOwner, periodKey, sel
     chart_owner: ownerKey
   });
   const active = selectedOwner === ownerKey;
-  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
+  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}#planned-expenses-chart">${escapeHtml(label)}</a>`;
 }
 
 function yearlyTable(items) {

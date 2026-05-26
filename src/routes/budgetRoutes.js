@@ -184,7 +184,7 @@ function renderBillsPlanPage(ctx, db) {
         <h2>Planned bills and regular costs</h2>
         ${itemsTable(ctx, items, members, 'expense', 'No planned costs yet.', returnTo)}
       </section>
-      <section class="card chart-card">
+      <section class="card chart-card" id="planned-spending-chart">
         <div class="card-heading">
           <div>
             <h2>Planned spending by category</h2>
@@ -275,6 +275,11 @@ function renderPlannedSavingsPage(ctx, db) {
       <section class="action-row">
         <a class="button" href="/savings/accounts">Add savings contribution</a>
         <a class="button" href="/savings/goals">View full Savings Goals</a>
+      </section>
+      <section class="card">
+        <h2>How planned savings works</h2>
+        <p>Your own monthly savings contributions are treated as money set aside from planned income, so they reduce what is left after bills and flexible spending.</p>
+        <p class="hint">Employer pension contributions and Lifetime ISA bonuses do not reduce the household budget. They are shown only in savings projections.</p>
       </section>
       <section class="grid two">
         <div class="stat">
@@ -574,7 +579,7 @@ function categoryBudgetForm(ctx, categories, budgetMonth, returnTo) {
 }
 function expenseChartOwnerPill(ownerKey, label, selectedOwner, budgetMonth, basePath = '/budget-plan/bills') {
   const active = selectedOwner === ownerKey;
-  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?month=${encodeURIComponent(budgetMonth)}&chart_owner=${encodeURIComponent(ownerKey)}">${escapeHtml(label)}</a>`;
+  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?month=${encodeURIComponent(budgetMonth)}&chart_owner=${encodeURIComponent(ownerKey)}#planned-spending-chart">${escapeHtml(label)}</a>`;
 }
 
 function incomeForm(ctx, members, returnTo) {

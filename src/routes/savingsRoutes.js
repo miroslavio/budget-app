@@ -51,13 +51,13 @@ function renderSavingsOverview(ctx, db) {
       title: 'Savings',
       wide: true,
       body: `${savingsPageIntro('overview', 'Track real balances, monthly contributions, projected rates, and long-term savings goals.')}
-      <section class="action-row">
+      ${savingsAccountDialog(ctx, members, '/savings')}
+      ${savingsGoalDialog(ctx, members, accounts, '/savings')}
+      ${hasSavingsData ? `<section class="action-row">
         <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
         <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
-        ${savingsAccountDialog(ctx, members, '/savings')}
-        ${savingsGoalDialog(ctx, members, accounts, '/savings')}
       </section>
-      ${hasSavingsData ? `${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence)}
+      ${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence)}
       <section class="grid two">
         <div class="card">
           <h2>Accounts and pots snapshot</h2>
@@ -361,8 +361,8 @@ function savingsEmptyState() {
     <h2>Start tracking your savings properly</h2>
     <p>Add the real accounts and pots that hold your money, then add long-term goals separately. We&rsquo;ll use balances, monthly contributions, and projected rates to show where each pot could be heading.</p>
     <div class="button-list">
-      <a class="button" href="/savings/accounts">Add account or pot</a>
-      <a class="button" href="/savings/goals">Add savings goal</a>
+      <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
+      <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
     </div>
   </section>`;
 }
@@ -455,28 +455,34 @@ function accountForm(ctx, members, returnTo) {
           ${savingsAccountTypeOptions().map((option) => `<option value="${option.value}">${escapeHtml(option.label)}</option>`).join('')}
         </select>
       </label>
+      <p class="inline-hint">Choose the wrapper or account the money actually sits in, such as a current account, cash savings account, ISA, pension, or another pot.</p>
       <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     </section>
     <section class="form-section">
       <h3>Balance and projection</h3>
       <label>Current balance <input name="current_balance" ${moneyInputAttrs()} data-modal-field="currentBalance"></label>
       <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
+      <p class="inline-hint">This is the amount you personally plan to add each month. It is the figure counted in the household budget.</p>
       <div data-controlled-by="account_type" data-show-when="pension">
         <label>Employer monthly contribution <input name="employer_monthly_contribution" ${moneyInputAttrs()} data-modal-field="employerMonthlyContribution"></label>
+        <p class="inline-hint">For pensions, add the employer top-up separately. It affects the projection, but not your household spending budget.</p>
       </div>
       <div data-controlled-by="account_type" data-show-when="lifetime_isa">
         <label class="checkbox-line">
           <input type="checkbox" name="include_lisa_bonus" value="1" data-modal-field="includeLisaBonus">
           <span>Apply the 25% government bonus in projections</span>
         </label>
+        <p class="inline-hint">Use this if you want the projection to include the usual Lifetime ISA bonus on eligible contributions.</p>
       </div>
       <label>Projected annual rate <input name="projected_annual_rate" ${decimalInputAttrs({ min: '0', max: '100', decimals: 2, step: '0.1' })} data-modal-field="projectedAnnualRate"></label>
+      <p class="inline-hint">Use a cautious yearly estimate. This is only for forward planning and does not need to match a provider exactly.</p>
       <label>Projected rate type
         <select name="projected_rate_type" data-modal-field="projectedRateType">
           <option value="interest">Interest</option>
           <option value="growth">Growth</option>
         </select>
       </label>
+      <p class="inline-hint"><strong>Interest</strong> suits cash savings and current accounts. <strong>Growth</strong> suits pensions and investments where returns may rise and fall over time.</p>
       <label class="checkbox-line">
         <input type="checkbox" name="is_active" value="1" checked data-modal-field="isActive">
         <span>Include this pot in projections</span>
