@@ -422,13 +422,27 @@ h2 {
 }
 
 .budget-plan-month-controls {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.65rem;
-  justify-items: end;
+  justify-content: flex-end;
+}
+
+.budget-plan-month-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.budget-plan-current-month {
+  font-weight: 800;
+  color: var(--muted);
 }
 
 .compact-month-form label {
-  min-width: 13rem;
+  min-width: 11rem;
 }
 
 .grid.two {
@@ -598,6 +612,10 @@ h2 {
   align-content: start;
 }
 
+.plan-completeness-card .hint {
+  max-width: 32rem;
+}
+
 .plan-check-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -619,6 +637,17 @@ h2 {
   color: var(--ink);
 }
 
+.plan-check-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.plan-check-link:hover,
+.plan-check-link:focus-visible {
+  color: var(--ink);
+}
+
 .plan-check-marker {
   display: inline-grid;
   place-items: center;
@@ -635,9 +664,27 @@ h2 {
   background: rgba(31, 111, 91, 0.1);
 }
 
+.plan-balance-card .hint.caution {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .plan-empty-state {
   display: grid;
   gap: 1rem;
+}
+
+.savings-explainer-card {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.savings-explainer-card p {
+  margin: 0;
+}
+
+.projection-summary-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .setup-checklist {
@@ -698,6 +745,18 @@ h2 {
 
 .setup-done {
   font-weight: 800;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.setup-actions form {
+  margin: 0;
 }
 
 .inline-form,
@@ -782,8 +841,16 @@ th.actions-col {
   border-color: rgba(23, 33, 27, 0.12);
 }
 
+.action-icon-button.view {
+  color: var(--ink);
+  background: rgba(23, 33, 27, 0.04);
+  border-color: rgba(23, 33, 27, 0.12);
+}
+
 .action-icon-button.edit:hover,
-.action-icon-button.edit:focus-visible {
+.action-icon-button.edit:focus-visible,
+.action-icon-button.view:hover,
+.action-icon-button.view:focus-visible {
   background: rgba(23, 33, 27, 0.09);
   border-color: rgba(23, 33, 27, 0.2);
 }
@@ -1117,6 +1184,66 @@ th {
 
 .financial-table {
   table-layout: fixed;
+}
+
+.income-plan-table tfoot th,
+.income-plan-table tfoot td {
+  font-weight: 800;
+  background: rgba(23, 33, 27, 0.04);
+}
+
+.income-breakdown-row td {
+  padding-top: 0;
+}
+
+.inline-detail-card {
+  padding: 0.35rem 0 0.1rem;
+}
+
+.inline-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.44);
+}
+
+.inline-detail-grid.compact {
+  grid-template-columns: 1fr;
+}
+
+.inline-detail-grid section {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.inline-detail-grid h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.inline-detail-grid dl {
+  margin: 0;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.inline-detail-grid dl div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+}
+
+.inline-detail-grid dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.inline-detail-grid dd {
+  margin: 0;
+  text-align: right;
 }
 
 .financial-table th:first-child,
@@ -1624,7 +1751,8 @@ progress {
   .grid.two.uneven,
   .grid.three,
   .grid.four,
-  .forecast-summary-grid {
+  .forecast-summary-grid,
+  .projection-summary-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1649,6 +1777,7 @@ progress {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
+  .setup-actions,
   .setup-step .button,
   .setup-done {
     grid-column: 2;
@@ -1660,6 +1789,10 @@ progress {
   }
 
   .plan-check-list {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-detail-grid {
     grid-template-columns: 1fr;
   }
 

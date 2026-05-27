@@ -50,7 +50,7 @@ function renderSavingsOverview(ctx, db) {
     page(ctx, {
       title: 'Savings',
       wide: true,
-      body: `${savingsPageIntro('overview', 'Track real balances, monthly contributions, projected rates, and long-term savings goals.')}
+      body: `${savingsPageIntro('overview', 'Track where your savings are held, what you are saving for, and how your balances may grow over time.')}
       ${savingsAccountDialog(ctx, members, '/savings')}
       ${savingsGoalDialog(ctx, members, accounts, '/savings')}
       ${hasSavingsData ? `<section class="action-row">
@@ -58,6 +58,7 @@ function renderSavingsOverview(ctx, db) {
         <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
       </section>
       ${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence)}
+      ${projectionBreakdownCard(summary, projection, 12)}
       <section class="grid two">
         <div class="card">
           <h2>Accounts and pots snapshot</h2>
@@ -120,8 +121,10 @@ function renderSavingsAccountsPage(ctx, db) {
         <div class="stat">
           <span>Projected total after ${projectionMonths} months</span>
           <strong>${formatCurrency(projectedYearEndPence)}</strong>
+          <small class="plan-stat-note">Includes current balances, planned monthly contributions, top-ups, and projected growth.</small>
         </div>
       </section>
+      ${projectionBreakdownCard(summary, projection, projectionMonths)}
       <section class="card chart-card">
         <div class="card-heading">
           <div>
@@ -310,7 +313,10 @@ function savingsPageIntro(activeKey, context) {
     ${savingsSectionLink('/savings', 'Overview', activeKey === 'overview')}
     ${savingsSectionLink('/savings/accounts', 'Accounts & Pots', activeKey === 'accounts')}
     ${savingsSectionLink('/savings/goals', 'Goals', activeKey === 'goals')}
-  </nav>`;
+  </nav>
+  <section class="card savings-explainer-card">
+    <p><strong>Accounts and pots</strong> are where your savings are held. <strong>Goals</strong> are what you are saving for.</p>
+  </section>`;
 }
 
 function savingsSectionLink(href, label, active = false) {
@@ -348,11 +354,57 @@ function overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, cur
     <div class="stat">
       <span>Projected total after 12 months</span>
       <strong>${formatCurrency(projectedYearEndPence)}</strong>
+      <small class="plan-stat-note">Includes current balances, planned monthly contributions, top-ups, and projected growth.</small>
     </div>
     <div class="stat">
       <span>Goal progress</span>
-      <strong>${formatCurrency(currentGoalSavedPence)} of ${formatCurrency(totalGoalTargetPence)}</strong>
+      <strong>${totalGoalTargetPence > 0 ? `${formatCurrency(currentGoalSavedPence)} of ${formatCurrency(totalGoalTargetPence)}` : 'No goals yet'}</strong>
+      ${totalGoalTargetPence > 0 ? '' : '<small class="plan-stat-note">Add a goal to track progress towards an emergency fund, holiday, house deposit, or other target.</small>'}
     </div>
+  </section>`;
+}
+
+function projectionBreakdownCard(summary, projection, months) {
+  if (!projection.accounts.length) return '';
+  const totals = projection.accounts.reduce(
+    (aggregate, account) => {
+      aggregate.personalContributionPence += Number(account.totalPersonalContributionPence || 0);
+      aggregate.topUpsPence += Number(account.totalEmployerContributionPence || 0) + Number(account.totalBonusPence || 0);
+      aggregate.growthPence += Number(account.totalGrowthPence || 0);
+      return aggregate;
+    },
+    { personalContributionPence: 0, topUpsPence: 0, growthPence: 0 }
+  );
+  const projectedTotalPence = projection.months.at(-1)?.closingBalancePence ?? summary.totalBalancePence;
+  return `<section class="card">
+    <div class="card-heading">
+      <div>
+        <h2>Projection summary</h2>
+        <p class="hint">Shows how the projected total builds over the next ${months} months.</p>
+      </div>
+    </div>
+    <section class="grid projection-summary-grid">
+      <div class="stat">
+        <span>Starting balance</span>
+        <strong>${formatCurrency(summary.totalBalancePence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Personal contributions</span>
+        <strong>${formatCurrency(totals.personalContributionPence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Employer and LISA top-ups</span>
+        <strong>${formatCurrency(totals.topUpsPence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Projected growth / interest</span>
+        <strong>${formatCurrency(totals.growthPence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Projected total</span>
+        <strong>${formatCurrency(projectedTotalPence)}</strong>
+      </div>
+    </section>
   </section>`;
 }
 
@@ -497,7 +549,9 @@ function accountForm(ctx, members, returnTo) {
 }
 
 function goalsOverview(goals) {
-  if (!goals.length) return '<p class="empty">No savings goals yet.</p>';
+  if (!goals.length) {
+    return '<div class="empty-state compact"><h3>No savings goals yet</h3><p>Add a goal to track progress towards an emergency fund, holiday, house deposit, or other target.</p></div>';
+  }
   return `<div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>`;
 }
 
@@ -588,7 +642,9 @@ function savingsAccountsTable(ctx, accounts, projection, members, projectionMont
 }
 
 function goalsTable(ctx, goals, members, returnTo) {
-  if (!goals.length) return '<p class="empty">No savings goals yet.</p>';
+  if (!goals.length) {
+    return '<div class="empty-state compact"><h3>No savings goals yet</h3><p>Add a goal to track progress towards an emergency fund, holiday, house deposit, or other target.</p></div>';
+  }
   return `<table class="data-table">
     <thead><tr><th>Goal</th><th>Owner</th><th>Progress</th><th>Remaining</th><th>Estimated completion</th><th>Linked pots</th><th>Status</th><th class="actions-col"></th></tr></thead>
     <tbody>${goals

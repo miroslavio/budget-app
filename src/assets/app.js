@@ -99,12 +99,29 @@ function wireViewToggles(root = document) {
   });
 }
 
+function wireRowToggles(root = document) {
+  root.querySelectorAll('[data-toggle-row]').forEach((button) => {
+    if (!(button instanceof HTMLButtonElement) || button.dataset.toggleRowBound === 'true') return;
+    button.dataset.toggleRowBound = 'true';
+    button.addEventListener('click', () => {
+      const targetId = button.dataset.toggleRow;
+      if (!targetId) return;
+      const row = document.getElementById(targetId);
+      if (!(row instanceof HTMLElement)) return;
+      const willOpen = row.hasAttribute('hidden');
+      row.toggleAttribute('hidden', !willOpen);
+      button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   refreshConditionalSections();
   wireDetailsActions();
   wireEnterSubmit();
   wireAutoSubmit();
   wireViewToggles();
+  wireRowToggles();
   wireNumberInputs();
   wireSplitSliders();
   wireTransactionCategorySelects();

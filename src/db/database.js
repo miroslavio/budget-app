@@ -44,6 +44,10 @@ export function runMigrations(db) {
   for (const migration of migrations) {
     const alreadyApplied = db.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(migration);
     if (alreadyApplied) continue;
+    if (migration === '009_add_skip_planned_savings.sql' && tableHasColumn(db, 'households', 'skip_planned_savings')) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {
@@ -55,4 +59,8 @@ export function runMigrations(db) {
       throw error;
     }
   }
+}
+
+function tableHasColumn(db, tableName, columnName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().some((column) => column.name === columnName);
 }

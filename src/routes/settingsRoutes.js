@@ -144,7 +144,8 @@ export function registerSettingsRoutes(router, db) {
       const household = findHouseholdById(db, ctx.user.household_id);
       updateHouseholdSettings(db, ctx.user.household_id, {
         name: requireString(ctx.body.name, 'Household name', 120),
-        openingBalancePence: household.opening_balance_pence
+        openingBalancePence: household.opening_balance_pence,
+        skipPlannedSavings: household.skip_planned_savings
       });
       redirectWithSuccess(ctx.res, '/settings', 'Settings saved.');
     } catch (error) {

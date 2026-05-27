@@ -6,7 +6,7 @@ export function resetHouseholdData(db, householdId) {
     deleteHouseholdFinancialData(db, householdId);
     db.prepare('DELETE FROM household_categories WHERE household_id = ?').run(householdId);
     cleanupUnusedCustomCategories(db, customCategoryIds);
-    db.prepare('UPDATE households SET opening_balance_pence = 0 WHERE id = ?').run(householdId);
+    db.prepare('UPDATE households SET opening_balance_pence = 0, skip_planned_savings = 0 WHERE id = ?').run(householdId);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

@@ -10,6 +10,7 @@ test('setup checklist shows incomplete required steps', () => {
 
   assert.match(html, /Set up your budget plan/);
   assert.match(html, /Add planned income/);
+  assert.match(html, /0 of 1 essentials complete/);
 });
 
 test('setup checklist hides when only optional steps remain', () => {
@@ -19,4 +20,19 @@ test('setup checklist hides when only optional steps remain', () => {
   ]);
 
   assert.equal(html, '');
+});
+
+test('setup checklist can render multi-action essential steps', () => {
+  const html = renderSetupChecklist([
+    {
+      title: 'Add planned savings contributions',
+      description: 'Include planned savings or skip them for now.',
+      complete: false,
+      actionHtml: '<a class="button secondary" href="/budget-plan/planned-savings">Add planned savings</a><form method="post"><button class="button secondary">Skip for now</button></form>'
+    }
+  ]);
+
+  assert.match(html, /Add planned savings/);
+  assert.match(html, /Skip for now/);
+  assert.match(html, /setup-actions/);
 });

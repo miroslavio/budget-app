@@ -88,7 +88,8 @@ export function registerForecastRoutes(router, db) {
       const household = findHouseholdById(db, ctx.user.household_id);
       updateHouseholdSettings(db, ctx.user.household_id, {
         name: household.name,
-        openingBalancePence: optionalMoney(ctx.body.opening_balance, 'Opening balance', { allowNegative: true, minPence: null })
+        openingBalancePence: optionalMoney(ctx.body.opening_balance, 'Opening balance', { allowNegative: true, minPence: null }),
+        skipPlannedSavings: household.skip_planned_savings
       });
       const startMonth = ctx.body.start_month || currentMonth();
       const months = Math.min(36, Math.max(1, Number(ctx.body.months || 12)));

@@ -1,9 +1,10 @@
 import { escapeHtml } from './html.js';
 
 export function renderSetupChecklist(items) {
-  const incompleteItems = items.filter((item) => !item.complete && !item.optional);
-  if (!incompleteItems.length) return '';
-  const completedCount = items.filter((item) => item.complete).length;
+  const essentialItems = items.filter((item) => !item.optional);
+  const incompleteEssentials = essentialItems.filter((item) => !item.complete);
+  if (!incompleteEssentials.length) return '';
+  const completedEssentials = essentialItems.filter((item) => item.complete).length;
 
   return `<section class="card setup-checklist" aria-labelledby="setup-checklist-title">
     <div class="card-heading">
@@ -11,7 +12,7 @@ export function renderSetupChecklist(items) {
         <h2 id="setup-checklist-title">Set up your budget plan</h2>
         <p class="hint">Your budget is not fully set up yet. Complete these steps to see a useful dashboard and forecast.</p>
       </div>
-      <span class="setup-progress">${completedCount} of ${items.length} done</span>
+      <span class="setup-progress">${completedEssentials} of ${essentialItems.length} essentials complete</span>
     </div>
     <div class="setup-steps">
       ${items.map((item) => setupStep(item)).join('')}
@@ -29,6 +30,8 @@ function setupStep(item) {
     </div>
     ${complete
       ? '<span class="setup-done">Done</span>'
+      : item.actionHtml
+        ? `<div class="setup-actions">${item.actionHtml}</div>`
       : item.optional
         ? `<a class="button secondary" href="${escapeHtml(item.href)}">${escapeHtml(item.action || 'Review')}</a>`
         : `<a class="button secondary" href="${escapeHtml(item.href)}">${escapeHtml(item.action || 'Open')}</a>`}

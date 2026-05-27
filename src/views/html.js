@@ -67,7 +67,7 @@ function nav(ctx) {
     { href: '/dashboard', label: 'Dashboard', matches: ['/dashboard'] },
     { href: '/budget-plan', label: 'Budget Plan', matches: ['/budget-plan', '/income', '/expenses'] },
     { href: '/transactions', label: 'Actuals', matches: ['/transactions'] },
-    { href: '/savings', label: 'Savings', matches: ['/savings'] },
+    { href: '/savings', label: 'Savings & goals', matches: ['/savings'] },
     { href: '/forecast', label: 'Forecast', matches: ['/forecast'] },
     { href: '/reports', label: 'Reports', matches: ['/reports'] },
     { href: '/csv', label: 'Import/Export', matches: ['/csv', '/csv/preview', '/export'] },
@@ -215,6 +215,11 @@ function actionIcon(name) {
     case 'plus':
       return `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
         <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+    case 'view':
+      return `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="2.7" fill="none" stroke="currentColor" stroke-width="1.8"/>
       </svg>`;
     case 'edit':
     default:

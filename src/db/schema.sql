@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS households (
   name TEXT NOT NULL,
   invite_code TEXT NOT NULL UNIQUE,
   opening_balance_pence INTEGER NOT NULL DEFAULT 0,
+  skip_planned_savings INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

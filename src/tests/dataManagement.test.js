@@ -24,6 +24,7 @@ test('reset household data keeps members and clears financial records', () => {
   assert.equal(count(db, 'csv_import_batches'), 0);
   assert.equal(count(db, 'csv_import_rows'), 0);
   assert.equal(db.prepare('SELECT opening_balance_pence FROM households WHERE id = 1').get().opening_balance_pence, 0);
+  assert.equal(db.prepare('SELECT skip_planned_savings FROM households WHERE id = 1').get().skip_planned_savings, 0);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM categories WHERE name = 'One-off reset category'").get().count, 0);
 
   fs.rmSync(tempDir, { recursive: true, force: true });
@@ -46,11 +47,12 @@ test('delete household removes accounts, sessions and household data', () => {
 });
 
 function seedHouseholdWithData(db, householdId) {
-  db.prepare('INSERT INTO households (id, name, invite_code, opening_balance_pence) VALUES (?, ?, ?, ?)').run(
+  db.prepare('INSERT INTO households (id, name, invite_code, opening_balance_pence, skip_planned_savings) VALUES (?, ?, ?, ?, ?)').run(
     householdId,
     'Delete Test',
     `invite-${householdId}`,
-    12345
+    12345,
+    1
   );
   db.prepare(
     `INSERT INTO users (id, email, password_hash, password_salt, display_name, household_id, person_key)

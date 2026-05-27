@@ -64,6 +64,7 @@ function renderBudgetPlanOverview(ctx, db) {
   const incomeItems = plan.activeItems.filter((item) => item.item_type === 'income');
   const expenseItems = plan.activeItems.filter((item) => item.item_type === 'expense');
   const savingsItems = plan.activeItems.filter((item) => item.item_type === 'savings');
+  const completeness = planCompleteness(expenseItems, month);
   const hasPlanData =
     plan.plannedIncomePence > 0 ||
     billsAndRegularCostsPence > 0 ||
@@ -89,7 +90,7 @@ function renderBudgetPlanOverview(ctx, db) {
         plannedSavingsContributionsPence,
         plannedSurplusPence,
         yearlyCostsPence: yearlyMonthlyEquivalentPence(expenseItems),
-        expenseItems
+        completeness
       })}
       ${budgetPlanTable([
         {
@@ -111,21 +112,20 @@ function renderBudgetPlanOverview(ctx, db) {
         {
           section: 'Flexible spending',
           monthlyPlannedPence: flexibleSpendingTargetPence,
-          yearlyItemsIncluded: '—',
-          ownerSummary: effectiveBudgets.length ? 'Shared household' : '—',
+          yearlyItemsIncluded: 'None',
+          ownerSummary: effectiveBudgets.length ? 'Shared household' : 'None',
           actionHref: `/budget-plan/flexible-spending?month=${encodeURIComponent(month)}`,
           actionLabel: 'Review targets'
         },
         {
-          section: 'Savings contributions',
+          section: 'Planned savings',
           monthlyPlannedPence: plannedSavingsContributionsPence,
           yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(savingsItems)),
           ownerSummary: ownerSummary(savingsItems, members),
           actionHref: '/budget-plan/planned-savings',
-          actionLabel: 'Review savings'
+          actionLabel: 'Review planned savings'
         }
-      ])}
-      ${budgetPlanQuickActions()}` : budgetPlanEmptyState()}</div>`
+      ])}` : budgetPlanEmptyState()}</div>`
     })
   );
 }
@@ -148,7 +148,7 @@ function renderIncomePlanPage(ctx, db) {
       <section class="grid one">
         <div class="card">
           <h2>Planned income</h2>
-          ${itemsTable(ctx, items, members, 'income', 'No planned income yet.', returnTo)}
+          ${incomeItemsTable(ctx, items, members, returnTo)}
         </div>
       </section>`
     })
@@ -280,7 +280,7 @@ function renderPlannedSavingsPage(ctx, db) {
       wide: true,
       body: `${budgetPlanPageIntro('planned-savings', 'What savings contributions are included in the monthly budget?', `Current month · ${monthLabel(month)}`)}
       <section class="action-row">
-        <a class="button" href="/savings/accounts">Add savings contribution</a>
+        <a class="button" href="/savings/accounts">Add planned saving</a>
         <a class="button" href="/savings/goals">View full Savings Goals</a>
       </section>
       <section class="card">
@@ -290,17 +290,17 @@ function renderPlannedSavingsPage(ctx, db) {
       </section>
       <section class="grid two">
         <div class="stat">
-          <span>Planned savings contributions</span>
+          <span>Planned savings</span>
           <strong>${formatCurrency(totalPlannedSavingsPence)}</strong>
         </div>
         <div class="stat">
-          <span>Active contributions in plan</span>
+          <span>Savings contributions in plan</span>
           <strong>${plannedSavingsItems.length}</strong>
           <small class="plan-stat-note">${savingsAccounts.length ? 'Monthly contributions from active accounts and pots are included in the plan.' : 'Monthly contributions from active savings goals are included in the plan until you start tracking accounts and pots.'}</small>
         </div>
       </section>
       <section class="card">
-        <h2>Planned savings contributions</h2>
+        <h2>Planned savings</h2>
         ${plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts)}
       </section>`
     })
@@ -327,12 +327,13 @@ function budgetPlanPageIntro(activeKey, context, secondaryLabel = '', controls =
 
 function budgetPlanMonthControls(month) {
   return `<div class="budget-plan-month-controls">
-    <nav class="period-pills" aria-label="Budget Plan month">
-      <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, -1))}">Previous month</a>
-      <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, 1))}">Next month</a>
+    <nav class="budget-plan-month-nav" aria-label="Budget Plan month">
+      <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, -1))}">&lsaquo; Previous</a>
+      <span class="budget-plan-current-month">${escapeHtml(monthLabel(month))}</span>
+      <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, 1))}">Next &rsaquo;</a>
     </nav>
     <form method="get" action="/budget-plan" class="inline-form compact-month-form" data-submit-on-change>
-      <label>Month <input type="month" name="month" value="${escapeHtml(month)}"></label>
+      <label>Pick month <input type="month" name="month" value="${escapeHtml(month)}"></label>
     </form>
   </div>`;
 }
@@ -348,23 +349,24 @@ function budgetPlanSummaryCards({
   plannedSavingsContributionsPence,
   plannedSurplusPence,
   yearlyCostsPence,
-  expenseItems
+  completeness
 }) {
   const balanceLabel = plannedSurplusPence >= 0 ? 'Available after planned commitments' : 'Shortfall after planned commitments';
   const balanceTone = plannedSurplusPence >= 0 ? 'good' : 'bad';
   return `<section class="grid four">
     ${planSummaryStat('Planned income', plannedIncomePence)}
-    ${planSummaryStat('Bills & regular costs', billsAndRegularCostsPence, yearlyCostsPence > 0 ? `Annual costs included: ${formatCurrency(yearlyCostsPence)}/month smoothed` : '')}
+    ${planSummaryStat('Bills & regular costs', billsAndRegularCostsPence, yearlyCostsPence > 0 ? `${formatCurrency(yearlyCostsPence)}/month from annual items` : 'Annual costs included: None')}
     ${planSummaryStat('Flexible spending target', flexibleSpendingTargetPence)}
-    ${planSummaryStat('Planned savings contributions', plannedSavingsContributionsPence)}
+    ${planSummaryStat('Planned savings', plannedSavingsContributionsPence)}
   </section>
   <section class="grid two budget-plan-status-row">
     <div class="card plan-balance-card ${balanceTone}">
       <span class="plan-balance-label">${balanceLabel}</span>
       <strong>${formatCurrency(Math.abs(plannedSurplusPence))}</strong>
       <p class="hint">Planned income minus bills, flexible spending targets, and savings contributions.</p>
+      ${completeness.missingCount ? '<p class="hint caution">This figure may change as you add missing common costs.</p>' : ''}
     </div>
-    ${planCompletenessCard(expenseItems)}
+    ${planCompletenessCard(completeness)}
   </section>`;
 }
 
@@ -402,19 +404,6 @@ function budgetPlanTable(rows) {
   </section>`;
 }
 
-function budgetPlanQuickActions() {
-  return `<section class="card">
-    <h2>Quick actions</h2>
-    <div class="button-list">
-      <a class="button" href="/budget-plan/income">Add income</a>
-      <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
-      <a class="button" href="/budget-plan/flexible-spending">Add spending target</a>
-      <a class="button" href="/savings/accounts">Add savings contribution</a>
-      <a class="button secondary" href="/transactions">Go to Actuals</a>
-    </div>
-  </section>`;
-}
-
 function budgetPlanEmptyState() {
   return `<section class="card plan-empty-state">
     <h2>Start your budget plan</h2>
@@ -423,7 +412,7 @@ function budgetPlanEmptyState() {
       <a class="button" href="/budget-plan/income">Add income</a>
       <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
       <a class="button" href="/budget-plan/flexible-spending">Add spending target</a>
-      <a class="button" href="/savings/accounts">Add savings contribution</a>
+      <a class="button" href="/savings/accounts">Add planned saving</a>
     </div>
   </section>`;
 }
@@ -435,48 +424,64 @@ function yearlyMonthlyEquivalentPence(items) {
 }
 
 function yearlyItemsLabel(monthlyEquivalentPence) {
-  return monthlyEquivalentPence > 0 ? `${formatCurrency(monthlyEquivalentPence)}/month smoothed` : '—';
+  return monthlyEquivalentPence > 0 ? `${formatCurrency(monthlyEquivalentPence)}/month from annual items` : 'None';
 }
 
-function planCompletenessCard(expenseItems = []) {
+function planCompleteness(expenseItems = [], month = currentMonth()) {
   const checks = [
     {
       label: 'Rent or mortgage',
-      terms: ['rent', 'mortgage']
+      terms: ['rent', 'mortgage'],
+      suggestedCategories: ['Rent', 'Mortgage']
     },
     {
       label: 'Council tax',
-      terms: ['council tax']
+      terms: ['council tax'],
+      suggestedCategories: ['Council tax']
     },
     {
       label: 'Utilities',
-      terms: ['utilities', 'utility', 'energy', 'electric', 'gas', 'water', 'broadband', 'mobile phone', 'tv licence']
+      terms: ['utilities', 'utility', 'energy', 'electric', 'gas', 'water', 'broadband', 'mobile phone', 'tv licence'],
+      suggestedCategories: ['Utilities', 'Energy bill', 'Broadband', 'Mobile phone', 'TV licence']
     },
     {
       label: 'Insurance',
-      terms: ['insurance']
+      terms: ['insurance'],
+      suggestedCategories: ['Insurance']
     },
     {
       label: 'Subscriptions',
-      terms: ['subscription', 'subscriptions']
+      terms: ['subscription', 'subscriptions'],
+      suggestedCategories: ['Subscriptions']
     }
-  ].map((check) => ({ ...check, complete: planIncludesTerms(expenseItems, check.terms) }));
-  const completeCount = checks.filter((check) => check.complete).length;
+  ].map((check) => ({
+    ...check,
+    complete: planIncludesTerms(expenseItems, check.terms),
+    href: `/budget-plan/bills?month=${encodeURIComponent(month)}&suggested_category=${encodeURIComponent(check.suggestedCategories.join('|'))}`
+  }));
+  const foundCount = checks.filter((check) => check.complete).length;
+  const missingCount = checks.length - foundCount;
 
+  return { checks, foundCount, missingCount };
+}
+
+function planCompletenessCard(completeness) {
   return `<div class="card plan-completeness-card">
     <div class="card-heading compact">
       <div>
-        <h2>Plan completeness</h2>
-        <p class="hint">Common household costs to check before trusting the available amount.</p>
+        <h2>Common costs checked</h2>
+        <p class="hint">A guide to common household costs. Some items may not apply to your household.</p>
       </div>
-      <span class="setup-progress">${completeCount} of ${checks.length}</span>
+      <span class="setup-progress">${completeness.foundCount} found, ${completeness.missingCount} not added</span>
     </div>
     <ul class="plan-check-list">
-      ${checks
+      ${completeness.checks
         .map(
           (check) => `<li class="${check.complete ? 'complete' : ''}">
             <span class="plan-check-marker" aria-hidden="true">${check.complete ? '&#10003;' : '&#9675;'}</span>
-            <span>${escapeHtml(check.label)}</span>
+            ${check.complete
+              ? `<span>${escapeHtml(check.label)}</span>`
+              : `<a class="plan-check-link" href="${escapeHtml(check.href)}">${escapeHtml(check.label)}</a>`}
           </li>`
         )
         .join('')}
@@ -492,8 +497,11 @@ function planIncludesTerms(items, terms) {
 }
 
 function ownerSummary(items, members) {
-  const labels = [...new Set(items.map((item) => ownerLabel(item.owner_type, members)).filter(Boolean))];
-  return labels.length ? labels.join(' + ') : '—';
+  const owners = [...new Set(items.map((item) => item.owner_type).filter(Boolean))];
+  if (!owners.length) return 'None';
+  if (owners.includes('shared')) return 'Shared household';
+  if (owners.length === 1) return ownerLabel(owners[0], members);
+  return 'Multiple household members';
 }
 
 function overallTargetStatus(targetPence, actualPence) {
@@ -741,6 +749,7 @@ function incomeForm(ctx, members, returnTo) {
 
 function expenseForm(ctx, categories, members, returnTo) {
   const expenseCategories = categories.filter((category) => ['expense', 'debt'].includes(category.kind));
+  const suggestedCategoryId = suggestedExpenseCategoryId(ctx, expenseCategories);
   const firstMemberLabel = ownerLabel('person_a', members);
   const secondMemberLabel = ownerLabel('person_b', members);
   return `<form method="post" action="/expenses" class="stack budget-form">
@@ -750,7 +759,7 @@ function expenseForm(ctx, categories, members, returnTo) {
     <section class="form-section">
       <h3>Cost details</h3>
     <label>Name <input name="name" required maxlength="120" data-modal-field="name"></label>
-    <label>Category <select name="category_id" data-modal-field="categoryId">${categoryOptions(expenseCategories)}</select></label>
+    <label>Category <select name="category_id" data-modal-field="categoryId">${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
     <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount" data-split-amount-source></label>
     <label>Frequency <select name="frequency" data-modal-field="frequency">${frequencyOptions('monthly')}</select></label>
@@ -799,6 +808,238 @@ function expenseForm(ctx, categories, members, returnTo) {
     </section>
     <button>Save expense</button>
   </form>`;
+}
+
+function suggestedExpenseCategoryId(ctx, categories) {
+  const suggestedCategories = String(ctx.query.get('suggested_category') || '')
+    .split('|')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (!suggestedCategories.length) return '';
+  return categories.find((category) => suggestedCategories.includes(String(category.name || '').trim().toLowerCase()))?.id || '';
+}
+
+function incomeItemsTable(ctx, items, members, returnTo = '/budget-plan/income') {
+  if (!items.length) {
+    return `<div class="empty-state compact">
+      <h3>No planned income yet</h3>
+      <p>Add salary, regular income, benefits, or estimated take-home pay to start building your budget plan.</p>
+      <button type="button" data-open-modal="income-modal" data-reset-modal="true">Add planned income</button>
+    </div>`;
+  }
+
+  const totalPlannedMonthlyPence = items.reduce((total, item) => total + Number(item.monthly_equivalent_pence || 0), 0);
+  return `<table class="data-table income-plan-table">
+    <thead><tr><th>Name</th><th>Owner</th><th>Frequency</th><th>Planned monthly</th><th>Status</th><th class="actions-col">Actions</th></tr></thead>
+    <tbody>${items.map((item) => incomeTableRows(ctx, item, members, returnTo)).join('')}</tbody>
+    <tfoot>
+      <tr>
+        <th scope="row">Total planned income</th>
+        <td></td>
+        <td></td>
+        <td>${formatCurrency(totalPlannedMonthlyPence)}</td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>`;
+}
+
+function incomeTableRows(ctx, item, members, returnTo) {
+  const breakdownId = `income-breakdown-${item.id}`;
+  return `<tr>
+      <td>
+        <div class="cell-stack">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small class="hint">${escapeHtml(incomeMethodSummary(item))}</small>
+        </div>
+      </td>
+      <td>${escapeHtml(ownerLabel(item.owner_type, members))}</td>
+      <td>${escapeHtml(incomeFrequencySummary(item))}</td>
+      <td>${formatCurrency(item.monthly_equivalent_pence)}</td>
+      <td>${escapeHtml(itemStatusLabel(item))}</td>
+      <td class="actions-col">
+        <div class="table-actions">
+          ${actionIconButton({
+            label: 'View income breakdown',
+            icon: 'view',
+            variant: 'view',
+            attributes: `aria-expanded="false" data-toggle-row="${escapeHtml(breakdownId)}"`
+          })}
+          ${actionIconButton({
+            label: 'Edit income',
+            icon: 'edit',
+            variant: 'edit',
+            attributes: `data-open-modal="income-modal"
+              data-reset-modal="true"
+              ${incomeEditAttributes(item)}`
+          })}
+          <form method="post" action="/budget-item/toggle">
+            ${csrfField(ctx)}
+            <input type="hidden" name="id" value="${item.id}">
+            <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+            <input type="hidden" name="is_active" value="${item.is_active ? '0' : '1'}">
+            ${actionIconButton({
+              label: Number(item.is_active) === 1 ? 'Pause income' : 'Resume income',
+              icon: Number(item.is_active) === 1 ? 'pause' : 'play',
+              variant: Number(item.is_active) === 1 ? 'warn' : 'good',
+              type: 'submit'
+            })}
+          </form>
+          <form method="post" action="/budget-item/delete" data-confirm="Delete this income item?">
+            ${csrfField(ctx)}
+            <input type="hidden" name="id" value="${item.id}">
+            <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+            ${actionIconButton({ label: 'Delete income', icon: 'delete', variant: 'delete', type: 'submit' })}
+          </form>
+        </div>
+      </td>
+    </tr>
+    <tr id="${escapeHtml(breakdownId)}" class="income-breakdown-row" hidden>
+      <td colspan="6">${incomeBreakdownCard(item)}</td>
+    </tr>`;
+}
+
+function incomeMethodSummary(item) {
+  if (item.income_entry_mode === 'estimated_from_gross') {
+    return `Estimated from gross salary · ${formatTaxYearLabel(item.estimate_tax_year || '')} tax year · ${studentLoanMethodSummary(item)}`;
+  }
+  if (item.frequency === 'yearly') return 'Yearly income';
+  return 'Manual net income';
+}
+
+function incomeFrequencySummary(item) {
+  if (item.income_entry_mode === 'estimated_from_gross') {
+    return `Gross salary, ${formatCurrency(item.estimate_gross_annual_salary_pence || 0)}/year`;
+  }
+  if (item.frequency === 'yearly') {
+    return `Yearly, ${formatCurrency(item.amount_pence || 0)}/year`;
+  }
+  return `Net income, ${formatCurrency(item.amount_pence || 0)}/month`;
+}
+
+function itemStatusLabel(item) {
+  if (item.end_date && item.end_date < todayIso()) return 'Ended';
+  return Number(item.is_active) === 1 ? 'Active' : 'Paused';
+}
+
+function incomeBreakdownCard(item) {
+  if (item.income_entry_mode === 'estimated_from_gross') {
+    return `<div class="inline-detail-card">
+      <div class="inline-detail-grid">
+        <section>
+          <h3>Gross pay</h3>
+          <dl>
+            <div><dt>Gross annual salary</dt><dd>${formatCurrency(item.estimate_gross_annual_salary_pence || 0)}</dd></div>
+          </dl>
+        </section>
+        <section>
+          <h3>Deductions</h3>
+          <dl>
+            <div><dt>Income Tax</dt><dd>${formatCurrency(0 - Number(item.estimate_income_tax_pence || 0))}</dd></div>
+            <div><dt>National Insurance</dt><dd>${formatCurrency(0 - Number(item.estimate_national_insurance_pence || 0))}</dd></div>
+            <div><dt>Student loan repayment</dt><dd>${formatCurrency(0 - Number(item.estimate_student_loan_repayment_pence || 0))}</dd></div>
+            ${Number(item.estimate_has_postgraduate_loan) ? `<div><dt>Postgraduate loan repayment</dt><dd>${formatCurrency(0 - Number(item.estimate_postgraduate_loan_repayment_pence || 0))}</dd></div>` : ''}
+            ${Number(item.estimate_pension_contribution_pence || 0) > 0 ? `<div><dt>Pension contribution</dt><dd>${formatCurrency(0 - Number(item.estimate_pension_contribution_pence || 0))}</dd></div>` : ''}
+            ${Number(item.estimate_other_deductions_pence || 0) > 0 ? `<div><dt>Other deductions</dt><dd>${formatCurrency(0 - Number(item.estimate_other_deductions_pence || 0))}</dd></div>` : ''}
+          </dl>
+        </section>
+        <section>
+          <h3>Estimated take-home pay</h3>
+          <dl>
+            <div><dt>Estimated net annual income</dt><dd>${formatCurrency(item.estimate_net_annual_income_pence || 0)}</dd></div>
+            <div><dt>Estimated net monthly income</dt><dd>${formatCurrency(item.estimate_net_monthly_income_pence || 0)}</dd></div>
+            <div><dt>Monthly amount used in budget plan</dt><dd>${formatCurrency(item.monthly_equivalent_pence || 0)}</dd></div>
+          </dl>
+        </section>
+        <section>
+          <h3>Assumptions</h3>
+          <dl>
+            <div><dt>Income entry method</dt><dd>Estimated from gross salary</dd></div>
+            <div><dt>Tax year</dt><dd>${escapeHtml(formatTaxYearLabel(item.estimate_tax_year || ''))}</dd></div>
+            <div><dt>Student loan</dt><dd>${escapeHtml(studentLoanAssumptionLabel(item))}</dd></div>
+            <div><dt>Postgraduate loan</dt><dd>${Number(item.estimate_has_postgraduate_loan) ? 'Yes' : 'No'}</dd></div>
+            <div><dt>Pension treatment</dt><dd>${escapeHtml(pensionTreatmentLabel(item))}</dd></div>
+            <div><dt>Pay frequency</dt><dd>${escapeHtml(capitalise(item.estimate_pay_frequency || item.frequency || 'monthly'))}</dd></div>
+            <div><dt>Calculation type</dt><dd>Budgeting estimate</dd></div>
+          </dl>
+        </section>
+      </div>
+    </div>`;
+  }
+
+  const enteredAmountLabel = item.frequency === 'yearly'
+    ? `${formatCurrency(item.amount_pence || 0)}/year`
+    : `${formatCurrency(item.amount_pence || 0)}/month`;
+
+  if (item.frequency === 'yearly') {
+    return `<div class="inline-detail-card">
+      <div class="inline-detail-grid compact">
+        <section>
+          <h3>Yearly income</h3>
+          <dl>
+            <div><dt>Entered amount</dt><dd>${enteredAmountLabel}</dd></div>
+            <div><dt>Monthly equivalent</dt><dd>${formatCurrency(item.monthly_equivalent_pence || 0)}/month</dd></div>
+            <div><dt>Calculation</dt><dd>${formatCurrency(item.amount_pence || 0)} ÷ 12</dd></div>
+            <div><dt>Monthly amount used in budget plan</dt><dd>${formatCurrency(item.monthly_equivalent_pence || 0)}</dd></div>
+          </dl>
+        </section>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="inline-detail-card">
+    <div class="inline-detail-grid compact">
+      <section>
+        <h3>Manual net income</h3>
+        <dl>
+          <div><dt>Entered amount</dt><dd>${enteredAmountLabel}</dd></div>
+          <div><dt>Monthly amount used in budget plan</dt><dd>${formatCurrency(item.monthly_equivalent_pence || 0)}</dd></div>
+          <div><dt>Tax calculation</dt><dd>No tax calculation applied.</dd></div>
+        </dl>
+      </section>
+    </div>
+  </div>`;
+}
+
+function studentLoanMethodSummary(item) {
+  const labels = parseEstimateStudentLoanPlans(item).map((plan) => studentLoanPlanLabel(plan));
+  if (Number(item.estimate_has_postgraduate_loan)) labels.push('Postgraduate Loan');
+  return labels.length ? labels.join(' + ') : 'No student loan';
+}
+
+function studentLoanAssumptionLabel(item) {
+  const labels = parseEstimateStudentLoanPlans(item).map((plan) => studentLoanPlanLabel(plan));
+  return labels.length ? labels.join(' + ') : 'No undergraduate student loan';
+}
+
+function studentLoanPlanLabel(plan) {
+  return {
+    plan_1: 'Plan 1',
+    plan_2: 'Plan 2',
+    plan_4: 'Plan 4',
+    plan_5: 'Plan 5'
+  }[plan] || plan;
+}
+
+function pensionTreatmentLabel(item) {
+  if ((item.estimate_pension_contribution_type || 'none') === 'none') return 'Not set';
+  return {
+    pre_tax: 'Pre-tax',
+    post_tax: 'Post-tax'
+  }[item.estimate_pension_contribution_tax_treatment] || 'Not set';
+}
+
+function formatTaxYearLabel(taxYear) {
+  if (!taxYear) return 'Tax year not set';
+  const [start, end] = String(taxYear).split('-');
+  if (!start || !end) return taxYear;
+  return `${start}/${String(end).slice(-2)}`;
+}
+
+function capitalise(value) {
+  const text = String(value || '');
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
 }
 
 function itemsTable(ctx, items, members, itemType, emptyMessage = 'No items yet.', returnTo = itemType === 'income' ? '/budget-plan/income' : '/budget-plan/bills') {
