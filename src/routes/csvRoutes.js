@@ -51,11 +51,11 @@ export function registerCsvRoutes(router, db) {
         </section>
         <section class="grid one">
           <div class="card">
-            <h2>Export CSV</h2>
+            <h2>Export data</h2>
             <div class="button-list">
-              <a class="button" href="/export?type=income">Income items</a>
-              <a class="button" href="/export?type=expenses">Expense items</a>
-              <a class="button" href="/export?type=transactions">Transactions</a>
+              <a class="button" href="/export?type=income">Budget Plan income</a>
+              <a class="button" href="/export?type=expenses">Budget Plan costs</a>
+              <a class="button" href="/export?type=transactions">Actual transactions</a>
               <a class="button" href="/export?type=monthly-summary">Monthly budget summary</a>
               <a class="button" href="/export?type=variance">Monthly variance report</a>
               <a class="button" href="/export?type=savings">Savings goals</a>
@@ -172,9 +172,10 @@ export function registerCsvRoutes(router, db) {
         members
       );
 
-      const readyCount = reviewRows.filter((row) => row.status === 'ready').length;
-      const duplicateCount = reviewRows.filter((row) => row.status === 'duplicate').length;
-      const invalidCount = reviewRows.filter((row) => row.status === 'invalid').length;
+      const reviewStatuses = reviewRows.map((row) => reviewStatusMeta(row));
+      const readyCount = reviewStatuses.filter((status) => status.key === 'ready').length;
+      const duplicateCount = reviewStatuses.filter((status) => status.key === 'duplicate').length;
+      const attentionCount = reviewStatuses.filter((status) => ['needs_category', 'needs_owner', 'invalid'].includes(status.key)).length;
 
       html(
         ctx.res,
@@ -184,13 +185,13 @@ export function registerCsvRoutes(router, db) {
           body: `<section class="hero compact">
             <div>
               <h1>Review imported actuals</h1>
-              <p class="page-context">${readyCount} ready to import · ${duplicateCount} possible duplicates · ${invalidCount} need attention</p>
+              <p class="page-context">${readyCount} ready to import · ${duplicateCount} possible duplicates · ${attentionCount} need attention</p>
             </div>
           </section>
           <section class="grid four compact">
             <div class="stat"><span>Ready to import</span><strong>${readyCount}</strong></div>
             <div class="stat"><span>Possible duplicates</span><strong>${duplicateCount}</strong></div>
-            <div class="stat"><span>Need attention</span><strong>${invalidCount}</strong></div>
+            <div class="stat"><span>Need attention</span><strong>${attentionCount}</strong></div>
             <div class="stat text-stat"><span>What happens next</span><strong>Only ready rows are saved</strong></div>
           </section>
           <section class="card">
@@ -231,6 +232,13 @@ export function registerCsvRoutes(router, db) {
 
         if (row.status === 'invalid') {
           updateImportRowStatus(db, ctx.user.household_id, row.id, 'invalid', row.errorMessage || 'Row needs attention before import.');
+          errorCount += 1;
+          continue;
+        }
+
+        const reviewStatus = reviewStatusMeta(row);
+        if (reviewStatus.key !== 'ready') {
+          updateImportRowStatus(db, ctx.user.household_id, row.id, 'invalid', reviewStatus.nextAction);
           errorCount += 1;
           continue;
         }
@@ -377,6 +385,7 @@ function reviewTable(rows, categories, members) {
 
 function reviewRow(row, categories, members) {
   const disabled = row.status !== 'ready';
+  const status = reviewStatusMeta(row);
   return `<tr data-transaction-category-group>
     <td>
       ${row.rowNumber}
@@ -397,12 +406,12 @@ function reviewRow(row, categories, members) {
       </select>
     </td>
     <td>
-      <select name="row_${row.id}_category_name" ${disabled ? 'disabled' : 'required'} data-transaction-category-select>
+      <select name="row_${row.id}_category_name" ${disabled ? 'disabled' : 'required'} ${status.key === 'needs_category' ? 'aria-invalid="true"' : ''} data-transaction-category-select>
         ${categoryNameOptions(categories, row.type, row.categoryName)}
       </select>
     </td>
     <td>
-      <select name="row_${row.id}_owner_type" ${disabled ? 'disabled' : ''}>
+      <select name="row_${row.id}_owner_type" ${disabled ? 'disabled' : ''} ${status.key === 'needs_owner' ? 'aria-invalid="true"' : ''}>
         ${ownerOptions(row.ownerType || 'shared', members)}
       </select>
     </td>
@@ -411,15 +420,48 @@ function reviewRow(row, categories, members) {
 }
 
 function reviewStatus(row) {
+  const status = reviewStatusMeta(row);
+  return `<span class="import-status ${escapeHtml(status.key)}">${escapeHtml(status.label)}</span><div class="hint inline-hint">${escapeHtml(status.nextAction)}</div>`;
+}
+
+function reviewStatusMeta(row) {
   if (row.status === 'duplicate') {
-    return `<span class="import-status duplicate">Possible duplicate</span><div class="hint inline-hint">${escapeHtml(row.errorMessage)}</div>`;
+    return {
+      key: 'duplicate',
+      label: 'Possible duplicate',
+      nextAction: row.errorMessage || 'A similar transaction already exists. Review before importing.'
+    };
   }
 
   if (row.status === 'invalid') {
-    return `<span class="import-status invalid">Needs attention</span><div class="hint inline-hint">${escapeHtml(row.errorMessage)}</div>`;
+    return {
+      key: 'invalid',
+      label: 'Invalid',
+      nextAction: row.errorMessage || 'This row cannot be imported until the highlighted issue is fixed.'
+    };
   }
 
-  return '<span class="import-status ready">Ready</span>';
+  if (!String(row.categoryName || '').trim()) {
+    return {
+      key: 'needs_category',
+      label: 'Needs category',
+      nextAction: 'Choose a category before importing this row.'
+    };
+  }
+
+  if (!String(row.ownerType || '').trim()) {
+    return {
+      key: 'needs_owner',
+      label: 'Needs owner',
+      nextAction: 'Choose an owner before importing this row.'
+    };
+  }
+
+  return {
+    key: 'ready',
+    label: 'Ready',
+    nextAction: 'This row is valid and ready to import.'
+  };
 }
 
 function typeOptions(selectedType) {

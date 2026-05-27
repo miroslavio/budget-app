@@ -1,8 +1,11 @@
 import { findHouseholdById, updateHouseholdSettings } from '../repositories/householdRepository.js';
 import { createCategory, deleteCategory, listCategories, updateCategory } from '../repositories/categoryRepository.js';
+import { resetHouseholdData, deleteHouseholdAndUsers } from '../repositories/dataManagementRepository.js';
+import { deleteSession } from '../repositories/sessionRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { requireString } from '../utils/validation.js';
 import { actionIconButton, csrfField, escapeHtml, page } from '../views/html.js';
+import { clearSessionCookie } from '../middleware/session.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
@@ -28,6 +31,7 @@ export function registerSettingsRoutes(router, db) {
             <form method="post" action="/settings" class="stack">
               ${csrfField(ctx)}
               <label>Household name <input name="name" value="${escapeHtml(household.name)}" maxlength="120" required></label>
+              <p class="hint">Household invite code: <strong>${escapeHtml(household.invite_code)}</strong></p>
               <button>Save settings</button>
             </form>
           </div>
@@ -39,7 +43,6 @@ export function registerSettingsRoutes(router, db) {
                 .map((member) => `<tr><td>${escapeHtml(member.display_name)}</td><td>${escapeHtml(member.email)}</td></tr>`)
                 .join('')}</tbody>
             </table>
-            <p class="hint">Household invite code: <strong>${escapeHtml(household.invite_code)}</strong></p>
           </div>
         </section>
         <section class="card">
@@ -107,6 +110,29 @@ export function registerSettingsRoutes(router, db) {
               </form>
             </div>
           </dialog>
+        </section>
+        <section class="card danger-zone">
+          <h2>Danger zone</h2>
+          <div class="grid two compact">
+            <form method="post" action="/settings/reset-data" class="stack" data-confirm="Reset all household financial data? This keeps member logins but removes budget items, actuals, imports, savings, categories, and forecast assumptions.">
+              ${csrfField(ctx)}
+              <div>
+                <h3>Reset household data</h3>
+                <p class="hint">Keeps the household and member logins, but clears Budget Plan, Actuals, imports, savings, custom categories, and the forecast opening balance.</p>
+              </div>
+              <label>Type RESET to confirm <input name="confirmation" autocomplete="off" required></label>
+              <button class="danger-button">Reset data</button>
+            </form>
+            <form method="post" action="/settings/delete-household" class="stack" data-confirm="Delete this household and all member accounts? This cannot be undone.">
+              ${csrfField(ctx)}
+              <div>
+                <h3>Delete household and accounts</h3>
+                <p class="hint">Deletes the household, all member accounts, sessions, and all financial data. Use this when you want to register again as a first-time user.</p>
+              </div>
+              <label>Type ${escapeHtml(household.name)} to confirm <input name="confirmation" autocomplete="off" required></label>
+              <button class="danger-button">Delete household</button>
+            </form>
+          </div>
         </section>`
       })
     );
@@ -160,6 +186,37 @@ export function registerSettingsRoutes(router, db) {
     try {
       deleteCategory(db, ctx.user.household_id, Number(ctx.body.id));
       redirectWithSuccess(ctx.res, '/settings', 'Category deleted.');
+    } catch (error) {
+      redirectWithError(ctx.res, '/settings', error);
+    }
+  });
+
+  router.post('/settings/reset-data', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      if (String(ctx.body.confirmation || '').trim() !== 'RESET') {
+        throw new Error('Type RESET to confirm resetting household data.');
+      }
+      resetHouseholdData(db, ctx.user.household_id);
+      redirectWithSuccess(ctx.res, '/dashboard', 'Household data reset. You can now set up a fresh budget.');
+    } catch (error) {
+      redirectWithError(ctx.res, '/settings', error);
+    }
+  });
+
+  router.post('/settings/delete-household', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      const household = findHouseholdById(db, ctx.user.household_id);
+      if (String(ctx.body.confirmation || '').trim() !== household.name) {
+        throw new Error(`Type ${household.name} to confirm deleting this household.`);
+      }
+      const householdId = ctx.user.household_id;
+      const sessionId = ctx.sessionId;
+      deleteHouseholdAndUsers(db, householdId);
+      if (sessionId) deleteSession(db, sessionId);
+      clearSessionCookie(ctx.res, ctx.secure);
+      redirectWithSuccess(ctx.res, '/register', 'Household deleted. Create a new account to start again.');
     } catch (error) {
       redirectWithError(ctx.res, '/settings', error);
     }

@@ -30,6 +30,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
       </div>
       <div class="card">
         <h2>Planned versus actual</h2>
+        <p class="hint">Planned figures come from Budget Plan. Actual figures come from transactions recorded in Actuals. Variance shows the difference for the selected period.</p>
         <table><tbody>
           <tr><th>Income variance</th><td>${varianceLabel(variance.incomeVariancePence, 'income')}</td></tr>
           <tr><th>Expense variance</th><td>${varianceLabel(variance.expenseVariancePence, 'expense')}</td></tr>
@@ -52,6 +53,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
     <section class="grid two">
       <div class="card">
         <h2>Category budget tracking</h2>
+        <p class="hint">Budget targets are flexible spending targets. Actual expenses come from spending transactions in Actuals.</p>
         ${categoryTable(breakdown)}
       </div>
       <div class="card">
@@ -67,6 +69,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
       </div>
       <div class="card">
         <h2>Take-home pay estimate breakdown</h2>
+        <p class="hint">Take-home pay is an estimate for budgeting based on the selected tax year, Income Tax, National Insurance, pension settings, student loan settings, and other deductions.</p>
         ${estimateTable(estimates)}
       </div>
     </section>`

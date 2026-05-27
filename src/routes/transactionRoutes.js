@@ -139,7 +139,16 @@ function transactionForm(ctx, categories, members, month) {
 }
 
 function transactionsTable(ctx, transactions, members, month) {
-  if (!transactions.length) return '<p class="empty">No transactions for this month.</p>';
+  if (!transactions.length) {
+    return `<div class="empty-state compact">
+      <h3>No actual transactions for this month</h3>
+      <p>Add a transaction or import a bank statement to compare your plan with reality.</p>
+      <div class="button-list">
+        <button type="button" data-open-modal="transaction-modal" data-reset-modal="true">Record transaction</button>
+        <a class="button secondary" href="/csv">Import bank statement</a>
+      </div>
+    </div>`;
+  }
   return `<table class="data-table">
     <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th>Owner</th><th>Amount</th><th class="actions-col"></th></tr></thead>
     <tbody>${transactions

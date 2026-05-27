@@ -412,6 +412,25 @@ h2 {
   margin: 0;
 }
 
+.budget-plan-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.budget-plan-layout > * {
+  margin: 0;
+}
+
+.budget-plan-month-controls {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: end;
+}
+
+.compact-month-form label {
+  min-width: 13rem;
+}
+
 .grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -452,6 +471,10 @@ h2 {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.card-heading.compact {
+  margin-bottom: 0.75rem;
 }
 
 .budget-card-actions {
@@ -562,9 +585,119 @@ h2 {
   font-weight: 700;
 }
 
+.budget-plan-status-row {
+  align-items: stretch;
+}
+
+.budget-plan-status-row > * {
+  min-height: 100%;
+}
+
+.plan-completeness-card {
+  display: grid;
+  align-content: start;
+}
+
+.plan-check-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.8rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.plan-check-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.plan-check-list li.complete {
+  color: var(--ink);
+}
+
+.plan-check-marker {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(23, 33, 27, 0.05);
+  flex: 0 0 auto;
+}
+
+.plan-check-list li.complete .plan-check-marker {
+  color: var(--good);
+  background: rgba(31, 111, 91, 0.1);
+}
+
 .plan-empty-state {
   display: grid;
   gap: 1rem;
+}
+
+.setup-checklist {
+  gap: 1rem;
+}
+
+.setup-progress {
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.setup-steps {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.setup-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.setup-step h3 {
+  margin: 0 0 0.15rem;
+  font-size: 1rem;
+}
+
+.setup-step p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.setup-status {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(23, 33, 27, 0.04);
+}
+
+.setup-step.complete {
+  background: rgba(31, 111, 91, 0.07);
+  border-color: rgba(31, 111, 91, 0.16);
+}
+
+.setup-step.complete .setup-status,
+.setup-done {
+  color: var(--good);
+}
+
+.setup-done {
+  font-weight: 800;
 }
 
 .inline-form,
@@ -694,6 +827,25 @@ th.actions-col {
   border-color: rgba(167, 52, 45, 0.28);
 }
 
+.danger-zone {
+  border-color: rgba(167, 52, 45, 0.22);
+}
+
+.danger-zone h3 {
+  margin-bottom: 0.35rem;
+}
+
+button.danger-button {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+
+button.danger-button:hover,
+button.danger-button:focus-visible {
+  background: #862b26;
+  border-color: #862b26;
+}
+
 .checkbox-line {
   display: flex;
   grid-template-columns: none;
@@ -727,6 +879,13 @@ textarea {
   background: white;
   color: var(--ink);
   font: inherit;
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px rgba(157, 79, 29, 0.12);
 }
 
 dialog.modal {
@@ -939,6 +1098,13 @@ th {
   background: rgba(167, 52, 45, 0.08);
 }
 
+.import-status.needs_category,
+.import-status.needs_owner {
+  color: var(--warn);
+  border-color: rgba(157, 79, 29, 0.2);
+  background: rgba(157, 79, 29, 0.1);
+}
+
 .settings-categories-table .actions-col {
   width: 1%;
   text-align: right;
@@ -988,6 +1154,27 @@ th {
 
 .hint,
 .empty {
+  color: var(--muted);
+}
+
+.empty-state {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
+
+.empty-state.compact {
+  padding: 0.9rem;
+}
+
+.empty-state h3,
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state p {
   color: var(--muted);
 }
 
@@ -1426,6 +1613,7 @@ progress {
   }
 
   .dashboard-toolbar-controls,
+  .budget-plan-month-controls,
   .period-pills {
     width: 100%;
     justify-items: start;
@@ -1457,7 +1645,21 @@ progress {
     grid-template-columns: 1fr;
   }
 
+  .setup-step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .setup-step .button,
+  .setup-done {
+    grid-column: 2;
+    justify-self: start;
+  }
+
   .split-slider-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-check-list {
     grid-template-columns: 1fr;
   }
 

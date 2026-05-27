@@ -57,6 +57,7 @@ export function registerForecastRoutes(router, db) {
             <div>
               <h2>Forecast opening balance</h2>
               <p class="hint">This is the amount available at the start of ${escapeHtml(monthLabel(startMonth))}. The forecast uses it as the starting point and carries the projected closing balance forward month by month.</p>
+              <p class="hint">Forecast uses your current Budget Plan and this opening balance. Actual transactions are not used unless they are included in the plan.</p>
             </div>
             ${
               hasUnsavedOpeningBalance
@@ -114,7 +115,7 @@ function forecastDetailCard(forecast) {
     <div class="card-heading">
       <div>
         <h2>Forecast detail</h2>
-        <p class="hint">Switch between the balance trend and the exact monthly figures behind it.</p>
+        <p class="hint">Projected closing balance = opening balance plus planned income, minus planned expenses and planned savings.</p>
       </div>
       <div class="period-pills view-toggle-pills" data-view-toggle-group="forecast-detail">
         <button type="button" class="period-pill active" data-view-toggle="forecast-detail" data-view-value="chart" aria-pressed="true">Chart</button>

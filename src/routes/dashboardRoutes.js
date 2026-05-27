@@ -4,14 +4,17 @@ import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
+import { listCategoryBudgets, listCategoryBudgetDefaults } from '../repositories/categoryBudgetRepository.js';
 import { yearlyItems } from '../services/budgetService.js';
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
+import { buildMonthlyForecast } from '../services/forecastService.js';
 import { buildPeriodReport } from '../services/reportService.js';
 import { savingsGoalProgress, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, movementStat, page, stat, ownerLabel, varianceLabel } from '../views/html.js';
 import { pieChart } from '../views/charts.js';
+import { renderSetupChecklist } from '../views/setupChecklist.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated } from './helpers.js';
 
@@ -25,16 +28,45 @@ export function registerDashboardRoutes(router, db) {
     const items = listActiveBudgetItems(db, household.id);
     const goals = listSavingsGoals(db, household.id);
     const savingsAccounts = listSavingsAccounts(db, household.id, { activeOnly: true });
+    const categoryBudgetDefaults = listCategoryBudgetDefaults(db, household.id);
+    const categoryBudgetOverrides = listCategoryBudgets(db, household.id);
     const planningItems = [...items, ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
     const period = resolveDashboardPeriod(selectedPeriod, selectedMonth);
     const transactions = listTransactions(db, household.id, { startDate: period.range.start, endDate: period.range.end });
+    const allTransactions = listTransactions(db, household.id);
     const report = buildPeriodReport({ items: planningItems, transactions, range: period.range });
     const { planned, actual, variance } = report;
     const chartOwner = ctx.query.get('chart_owner') || 'household';
     const plannedExpenseSeries = plannedExpenseCategorySeries(items, { owner: chartOwner, months: report.months });
     const hasPlannedData = planned.plannedIncomePence > 0 || planned.plannedExpensePence > 0 || planned.plannedSavingsPence > 0;
     const hasActualData = actual.actualIncomePence > 0 || actual.actualExpensePence > 0 || actual.actualSavingsPence > 0;
-    const hasUsefulDashboardData = hasPlannedData || hasActualData || goals.length > 0;
+    const setupChecklist = renderSetupChecklist(setupChecklistItems({
+      household,
+      members,
+      items,
+      goals,
+      savingsAccounts,
+      categoryBudgetDefaults,
+      categoryBudgetOverrides,
+      transactions: allTransactions
+    }));
+    const dashboardContent = dashboardStateContent({
+      setupChecklist,
+      hasPlannedData,
+      hasActualData,
+      planned,
+      actual,
+      variance,
+      items,
+      goals,
+      members,
+      planningItems,
+      household,
+      plannedExpenseSeries,
+      chartOwner,
+      period,
+      selectedMonth
+    });
 
     html(
       ctx.res,
@@ -63,77 +95,245 @@ export function registerDashboardRoutes(router, db) {
           </div>
         </section>
 
-        ${hasUsefulDashboardData ? '' : dashboardEmptyState()}
-
-        <section class="grid four">
-          ${stat('Planned income', planned.plannedIncomePence, 'good')}
-          ${stat('Planned expenses', planned.plannedExpensePence)}
-          ${stat('Planned savings', planned.plannedSavingsPence)}
-          ${movementStat('Planned surplus / deficit', planned.plannedSurplusPence, 'Planned income minus planned bills, flexible spending targets, and planned savings contributions.')}
-        </section>
-
-        <section class="grid four">
-          ${stat('Actual income', actual.actualIncomePence, 'good')}
-          ${stat('Actual expenses', actual.actualExpensePence)}
-          ${stat('Actual savings', actual.actualSavingsPence)}
-          ${movementStat('Actual monthly movement', actual.actualSurplusPence, 'Actual income minus actual spending and actual savings movements for the selected period.')}
-        </section>
-
-        <section class="card chart-card" id="planned-expenses-chart">
-          <div class="card-heading">
-            <div>
-              <h2>Planned expenses by category</h2>
-            </div>
-            <nav class="period-pills chart-owner-pills" aria-label="Expense chart view">
-              ${chartOwnerPill('/dashboard', 'household', 'Household', chartOwner, period.key, selectedMonth)}
-              ${chartOwnerPill('/dashboard', 'person_a', ownerLabel('person_a', members), chartOwner, period.key, selectedMonth)}
-              ${chartOwnerPill('/dashboard', 'person_b', ownerLabel('person_b', members), chartOwner, period.key, selectedMonth)}
-            </nav>
-          </div>
-          ${pieChart(plannedExpenseSeries, { title: 'Planned expenses by category', emptyMessage: 'Add planned expenses to build this chart.' })}
-        </section>
-
-        <section class="grid two">
-          <div class="card">
-            <h2>Variance summary</h2>
-            <table>
-              <tbody>
-                <tr><th>Income variance</th><td>${varianceLabel(variance.incomeVariancePence, 'income')}</td></tr>
-                <tr><th>Expense variance</th><td>${varianceLabel(variance.expenseVariancePence, 'expense')}</td></tr>
-                <tr><th>Savings variance</th><td>${varianceLabel(variance.savingsVariancePence, 'savings')}</td></tr>
-                <tr><th>Surplus variance</th><td>${varianceLabel(variance.surplusVariancePence, 'surplus')}</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="card">
-            <h2>Yearly costs in your plan</h2>
-            ${yearlyTable(yearlyItems(items))}
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Savings goal progress</h2>
-          ${goals.length ? `<div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>` : '<p class="empty">No savings goals yet.</p>'}
-        </section>
-
-        <section class="card">
-          <h2>Ownership snapshot</h2>
-          <table class="data-table financial-table ownership-table">
-            <thead><tr><th>Owner</th><th>Planned income</th><th>Planned expenses</th><th>Planned savings</th></tr></thead>
-            <tbody>
-              ${Object.entries(planned.byOwner)
-                  .map(
-                    ([owner, totals]) =>
-                    `<tr><td>${escapeHtml(ownerLabel(owner, members))}</td><td>${formatCurrency(totals.income)}</td><td>${formatCurrency(totals.expense)}</td><td>${formatCurrency(totals.savings)}</td></tr>`
-                  )
-                .join('')}
-            </tbody>
-          </table>
-        </section>
+        ${dashboardContent}
         </div>`
       })
     );
   });
+}
+
+function dashboardStateContent({
+  setupChecklist,
+  hasPlannedData,
+  hasActualData,
+  planned,
+  actual,
+  variance,
+  items,
+  goals,
+  members,
+  planningItems,
+  household,
+  plannedExpenseSeries,
+  chartOwner,
+  period,
+  selectedMonth
+}) {
+  if (setupChecklist) {
+    return `<div class="dashboard-state setup-state">
+      ${setupChecklist}
+    </div>`;
+  }
+
+  if (!hasPlannedData) {
+    return dashboardEmptyState();
+  }
+
+  if (!hasActualData) {
+    return `<div class="dashboard-state plan-ready-state">
+      ${plannedSummaryCards(planned)}
+      <section class="card plan-empty-state">
+        <h2>No actuals recorded yet</h2>
+        <p>Once you record or import actual income and spending, this section will compare your plan with reality.</p>
+        <div class="button-list">
+          <a class="button" href="/transactions">Record actuals</a>
+          <a class="button secondary" href="/csv">Import bank statement</a>
+        </div>
+      </section>
+    </div>`;
+  }
+
+  return `<div class="dashboard-state active-state">
+    ${plannedSummaryCards(planned)}
+    ${actualSummaryCards(actual)}
+    ${forecastSnapshot(planningItems, household)}
+    ${categoryBreakdownCard(plannedExpenseSeries, chartOwner, period, selectedMonth, members)}
+    <section class="grid two">
+      ${varianceSummaryCard(variance)}
+      ${yearlyItems(items).length ? `<div class="card">
+        <h2>Yearly costs in your plan</h2>
+        ${yearlyTable(yearlyItems(items))}
+      </div>` : ''}
+    </section>
+    ${goals.length ? `<section class="card">
+      <h2>Savings goal progress</h2>
+      <div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>
+    </section>` : ''}
+    ${ownershipSnapshotCard(planned, members)}
+  </div>`;
+}
+
+function plannedSummaryCards(planned) {
+  return `<section class="grid four">
+    ${stat('Planned income', planned.plannedIncomePence, 'good')}
+    ${stat('Planned bills and spending', planned.plannedExpensePence)}
+    ${stat('Planned savings', planned.plannedSavingsPence)}
+    ${movementStat('Available after planned commitments', planned.plannedSurplusPence, 'Planned income minus planned bills, spending, and planned savings.')}
+  </section>`;
+}
+
+function actualSummaryCards(actual) {
+  return `<section class="grid four">
+    ${stat('Actual income', actual.actualIncomePence, 'good')}
+    ${stat('Actual spending', actual.actualExpensePence)}
+    ${stat('Actual savings', actual.actualSavingsPence)}
+    ${movementStat('Actual monthly movement', actual.actualSurplusPence, 'Actual income minus actual spending and actual savings movements for the selected period.')}
+  </section>`;
+}
+
+function varianceSummaryCard(variance) {
+  return `<div class="card">
+    <h2>Variance summary</h2>
+    <table>
+      <tbody>
+        <tr><th>Income variance</th><td>${varianceLabel(variance.incomeVariancePence, 'income')}</td></tr>
+        <tr><th>Spending variance</th><td>${varianceLabel(variance.expenseVariancePence, 'expense')}</td></tr>
+        <tr><th>Savings variance</th><td>${varianceLabel(variance.savingsVariancePence, 'savings')}</td></tr>
+        <tr><th>Available amount variance</th><td>${varianceLabel(variance.surplusVariancePence, 'surplus')}</td></tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function categoryBreakdownCard(plannedExpenseSeries, chartOwner, period, selectedMonth, members) {
+  if (!plannedExpenseSeries.length) return '';
+  return `<section class="card chart-card" id="planned-expenses-chart">
+    <div class="card-heading">
+      <div>
+        <h2>Planned bills and spending by category</h2>
+      </div>
+      <nav class="period-pills chart-owner-pills" aria-label="Spending chart view">
+        ${chartOwnerPill('/dashboard', 'household', 'Household', chartOwner, period.key, selectedMonth)}
+        ${chartOwnerPill('/dashboard', 'person_a', ownerLabel('person_a', members), chartOwner, period.key, selectedMonth)}
+        ${members.some((member) => member.person_key === 'person_b') ? chartOwnerPill('/dashboard', 'person_b', ownerLabel('person_b', members), chartOwner, period.key, selectedMonth) : ''}
+      </nav>
+    </div>
+    ${pieChart(plannedExpenseSeries, { title: 'Planned bills and spending by category', emptyMessage: 'Add planned spending to build this chart.' })}
+  </section>`;
+}
+
+function forecastSnapshot(planningItems, household) {
+  const forecast = buildMonthlyForecast({
+    items: planningItems,
+    startMonth: currentMonth(),
+    months: 3,
+    openingBalancePence: household.opening_balance_pence
+  });
+  const hasForecastData = forecast.some((row) => row.expectedIncomePence > 0 || row.expectedExpensesPence > 0 || row.expectedSavingsPence > 0);
+  if (!hasForecastData) return '';
+
+  const finalRow = forecast.at(-1);
+  const lowestRow = forecast.reduce((lowest, row) => (row.closingBalancePence < lowest.closingBalancePence ? row : lowest), forecast[0]);
+  return `<section class="grid three">
+    ${stat('Forecast opening balance', forecast[0].openingBalancePence)}
+    <div class="stat ${finalRow.closingBalancePence < 0 ? 'bad' : finalRow.closingBalancePence > 0 ? 'good' : ''}">
+      <span>Forecast closing balance</span>
+      <strong>${formatCurrency(finalRow.closingBalancePence)}</strong>
+      <small class="plan-stat-note">After ${escapeHtml(monthLabel(finalRow.month))}</small>
+    </div>
+    <div class="stat ${lowestRow.closingBalancePence < 0 ? 'bad' : ''}">
+      <span>Lowest forecast balance</span>
+      <strong>${formatCurrency(lowestRow.closingBalancePence)}</strong>
+      <small class="plan-stat-note">${escapeHtml(monthLabel(lowestRow.month))}</small>
+    </div>
+  </section>`;
+}
+
+function ownershipSnapshotCard(planned, members) {
+  const rows = Object.entries(planned.byOwner).filter(([owner, totals]) => {
+    if (owner === 'person_b' && !members.some((member) => member.person_key === 'person_b')) {
+      return totals.income || totals.expense || totals.savings;
+    }
+    return true;
+  });
+  if (!rows.length) return '';
+
+  return `<section class="card">
+    <h2>Ownership snapshot</h2>
+    <table class="data-table financial-table ownership-table">
+      <thead><tr><th>Owner</th><th>Planned income</th><th>Planned bills and spending</th><th>Planned savings</th></tr></thead>
+      <tbody>
+        ${rows
+          .map(
+            ([owner, totals]) =>
+              `<tr><td>${escapeHtml(ownerLabel(owner, members))}</td><td>${formatCurrency(totals.income)}</td><td>${formatCurrency(totals.expense)}</td><td>${formatCurrency(totals.savings)}</td></tr>`
+          )
+          .join('')}
+      </tbody>
+    </table>
+  </section>`;
+}
+
+function setupChecklistItems({
+  household,
+  members,
+  items,
+  goals,
+  savingsAccounts,
+  categoryBudgetDefaults,
+  categoryBudgetOverrides,
+  transactions
+}) {
+  const hasIncome = items.some((item) => item.item_type === 'income');
+  const hasBills = items.some((item) => item.item_type === 'expense');
+  const hasFlexibleTargets = categoryBudgetDefaults.length > 0 || categoryBudgetOverrides.length > 0;
+  const hasSavingsContributions =
+    goals.some((goal) => Number(goal.monthly_contribution_pence || 0) > 0) ||
+    savingsAccounts.some((account) => Number(account.monthly_contribution_pence || 0) > 0);
+
+  return [
+    {
+      title: 'Add household members',
+      description: 'Add the second member if this is a two-person household budget.',
+      href: '/settings',
+      action: 'Open settings',
+      complete: members.length >= 2
+    },
+    {
+      title: 'Add planned income',
+      description: 'Add expected salary, regular income, or estimated take-home pay.',
+      href: '/budget-plan/income',
+      action: 'Add income',
+      complete: hasIncome
+    },
+    {
+      title: 'Add bills and regular costs',
+      description: 'Add committed costs such as rent, mortgage, council tax, utilities, subscriptions, and insurance.',
+      href: '/budget-plan/bills',
+      action: 'Add planned cost',
+      complete: hasBills
+    },
+    {
+      title: 'Set flexible spending targets',
+      description: 'Set monthly targets for variable spending such as groceries, transport, eating out, and personal spending.',
+      href: '/budget-plan/flexible-spending',
+      action: 'Set targets',
+      complete: hasFlexibleTargets
+    },
+    {
+      title: 'Add planned savings contributions',
+      description: 'Include personal savings contributions from household income if they should reduce available cash.',
+      href: '/budget-plan/planned-savings',
+      action: 'Review savings',
+      complete: hasSavingsContributions
+    },
+    {
+      title: 'Review forecast opening balance',
+      description: 'Set the cash balance available at the start of your forecast period.',
+      href: '/forecast',
+      action: 'Open forecast',
+      optional: true,
+      complete: Number(household.opening_balance_pence || 0) !== 0
+    },
+    {
+      title: 'Record or import actuals',
+      description: 'Add actual income, spending, and savings movements so reports can compare plan with reality.',
+      href: '/transactions',
+      action: 'Open actuals',
+      optional: true,
+      complete: transactions.length > 0
+    }
+  ];
 }
 
 function dashboardEmptyState() {
