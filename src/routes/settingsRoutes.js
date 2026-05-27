@@ -6,29 +6,29 @@ import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { requireString } from '../utils/validation.js';
 import { actionIconButton, csrfField, escapeHtml, page } from '../views/html.js';
 import { clearSessionCookie } from '../middleware/session.js';
-import { html } from '../http/response.js';
+import { html, redirect } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
 
 export function registerSettingsRoutes(router, db) {
   router.get('/settings', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
+    redirect(ctx.res, '/settings/household');
+  });
+
+  router.get('/settings/household', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
     const household = findHouseholdById(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, household.id);
-    const categories = listCategories(db, ctx.user.household_id, 'expense');
     html(
       ctx.res,
       page(ctx, {
-        title: 'Settings',
+        title: 'Settings · Household',
         wide: true,
-        body: `<section class="page-title">
-          <div>
-            <h1>Settings</h1>
-          </div>
-        </section>
+        body: `${settingsPageIntro('household')}
         <section class="grid two">
           <div class="card">
             <h2>Household</h2>
-            <form method="post" action="/settings" class="stack">
+            <form method="post" action="/settings/household" class="stack">
               ${csrfField(ctx)}
               <label>Household name <input name="name" value="${escapeHtml(household.name)}" maxlength="120" required></label>
               <p class="hint">Household invite code: <strong>${escapeHtml(household.invite_code)}</strong></p>
@@ -44,7 +44,20 @@ export function registerSettingsRoutes(router, db) {
                 .join('')}</tbody>
             </table>
           </div>
-        </section>
+        </section>`
+      })
+    );
+  });
+
+  router.get('/settings/categories', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    const categories = listCategories(db, ctx.user.household_id, 'expense');
+    html(
+      ctx.res,
+      page(ctx, {
+        title: 'Settings · Expense categories',
+        wide: true,
+        body: `${settingsPageIntro('categories')}
         <section class="card">
           <div class="card-heading">
             <div>
@@ -87,10 +100,12 @@ export function registerSettingsRoutes(router, db) {
                 </div>
                 <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
               </div>
-              <form method="post" action="/settings/categories" class="stack">
+              <form method="post" action="/settings/categories" class="stack modal-form">
                 ${csrfField(ctx)}
                 <label>Category name <input name="name" maxlength="120" required></label>
-                <button>Add category</button>
+                <div class="modal-footer">
+                  <button>Add category</button>
+                </div>
               </form>
             </div>
           </dialog>
@@ -102,15 +117,30 @@ export function registerSettingsRoutes(router, db) {
                 </div>
                 <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
               </div>
-              <form method="post" action="/settings/categories/update" class="stack">
+              <form method="post" action="/settings/categories/update" class="stack modal-form">
                 ${csrfField(ctx)}
                 <input type="hidden" name="id" data-modal-field="id">
                 <label>Category name <input name="name" data-modal-field="name" maxlength="120" required></label>
-                <button>Save category</button>
+                <div class="modal-footer">
+                  <button>Save category</button>
+                </div>
               </form>
             </div>
           </dialog>
-        </section>
+        </section>`
+      })
+    );
+  });
+
+  router.get('/settings/danger-zone', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    const household = findHouseholdById(db, ctx.user.household_id);
+    html(
+      ctx.res,
+      page(ctx, {
+        title: 'Settings · Danger zone',
+        wide: true,
+        body: `${settingsPageIntro('danger-zone')}
         <section class="card danger-zone">
           <h2>Danger zone</h2>
           <div class="grid two compact">
@@ -138,7 +168,7 @@ export function registerSettingsRoutes(router, db) {
     );
   });
 
-  router.post('/settings', (ctx) => {
+  router.post('/settings/household', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
     try {
       const household = findHouseholdById(db, ctx.user.household_id);
@@ -147,9 +177,9 @@ export function registerSettingsRoutes(router, db) {
         openingBalancePence: household.opening_balance_pence,
         skipPlannedSavings: household.skip_planned_savings
       });
-      redirectWithSuccess(ctx.res, '/settings', 'Settings saved.');
+      redirectWithSuccess(ctx.res, '/settings/household', 'Settings saved.');
     } catch (error) {
-      redirectWithError(ctx.res, '/settings', error);
+      redirectWithError(ctx.res, '/settings/household', error);
     }
   });
 
@@ -161,9 +191,9 @@ export function registerSettingsRoutes(router, db) {
         name: requireString(ctx.body.name, 'Category name', 120),
         kind: 'expense'
       });
-      redirectWithSuccess(ctx.res, '/settings', 'Category added.');
+      redirectWithSuccess(ctx.res, '/settings/categories', 'Category added.');
     } catch (error) {
-      redirectWithError(ctx.res, '/settings', error);
+      redirectWithError(ctx.res, '/settings/categories', error);
     }
   });
 
@@ -176,9 +206,9 @@ export function registerSettingsRoutes(router, db) {
         kind: 'expense',
         name: requireString(ctx.body.name, 'Category name', 120)
       });
-      redirectWithSuccess(ctx.res, '/settings', 'Category updated.');
+      redirectWithSuccess(ctx.res, '/settings/categories', 'Category updated.');
     } catch (error) {
-      redirectWithError(ctx.res, '/settings', error);
+      redirectWithError(ctx.res, '/settings/categories', error);
     }
   });
 
@@ -186,9 +216,9 @@ export function registerSettingsRoutes(router, db) {
     if (!ensureAuthenticated(ctx)) return;
     try {
       deleteCategory(db, ctx.user.household_id, Number(ctx.body.id));
-      redirectWithSuccess(ctx.res, '/settings', 'Category deleted.');
+      redirectWithSuccess(ctx.res, '/settings/categories', 'Category deleted.');
     } catch (error) {
-      redirectWithError(ctx.res, '/settings', error);
+      redirectWithError(ctx.res, '/settings/categories', error);
     }
   });
 
@@ -201,7 +231,7 @@ export function registerSettingsRoutes(router, db) {
       resetHouseholdData(db, ctx.user.household_id);
       redirectWithSuccess(ctx.res, '/dashboard', 'Household data reset. You can now set up a fresh budget.');
     } catch (error) {
-      redirectWithError(ctx.res, '/settings', error);
+      redirectWithError(ctx.res, '/settings/danger-zone', error);
     }
   });
 
@@ -219,7 +249,24 @@ export function registerSettingsRoutes(router, db) {
       clearSessionCookie(ctx.res, ctx.secure);
       redirectWithSuccess(ctx.res, '/register', 'Household deleted. Create a new account to start again.');
     } catch (error) {
-      redirectWithError(ctx.res, '/settings', error);
+      redirectWithError(ctx.res, '/settings/danger-zone', error);
     }
   });
+}
+
+function settingsPageIntro(activeKey) {
+  return `<section class="page-title">
+    <div>
+      <h1>Settings</h1>
+    </div>
+  </section>
+  <nav class="period-pills section-nav" aria-label="Settings sections">
+    ${settingsSectionLink('/settings/household', 'Household & members', activeKey === 'household')}
+    ${settingsSectionLink('/settings/categories', 'Expense categories', activeKey === 'categories')}
+    ${settingsSectionLink('/settings/danger-zone', 'Danger zone', activeKey === 'danger-zone')}
+  </nav>`;
+}
+
+function settingsSectionLink(href, label, active = false) {
+  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${href}">${escapeHtml(label)}</a>`;
 }

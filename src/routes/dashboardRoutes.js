@@ -161,15 +161,16 @@ function dashboardStateContent({
   }
 
   if (!hasActualData) {
+    const yearlyCostItems = yearlyItems(items);
     return `<div class="dashboard-state plan-ready-state">
       ${plannedSummaryCards(planned)}
       ${forecastSnapshot(planningItems, household, flexibleSpendingByMonth)}
       <section class="grid two">
-        ${yearlyItems(items).length ? `<div class="card">
+        ${yearlyCostItems.length ? `<div class="card">
           <h2>Yearly costs smoothed monthly</h2>
-          ${yearlyTable(yearlyItems(items))}
+          ${yearlyTable(yearlyCostItems)}
         </div>` : ''}
-        ${ownershipSnapshotCard(planned, members)}
+        ${ownershipSnapshotCard(planned, members, { fullWidth: !yearlyCostItems.length })}
       </section>
       ${goals.length ? `<section class="card">
         <h2>Savings goal progress</h2>
@@ -354,7 +355,7 @@ function applyFlexibleSpendingToForecast(forecast, flexibleSpendingByMonth = new
   });
 }
 
-function ownershipSnapshotCard(planned, members) {
+function ownershipSnapshotCard(planned, members, options = {}) {
   const rows = Object.entries(planned.byOwner).filter(([owner, totals]) => {
     if (owner === 'person_b' && !members.some((member) => member.person_key === 'person_b')) {
       return totals.income || totals.expense || totals.savings;
@@ -363,7 +364,7 @@ function ownershipSnapshotCard(planned, members) {
   });
   if (!rows.length) return '';
 
-  return `<section class="card">
+  return `<section class="card ${options.fullWidth ? 'grid-span-two' : ''}">
     <h2>Ownership snapshot</h2>
     <table class="data-table financial-table ownership-table">
       <thead><tr><th>Owner</th><th>Planned income</th><th>Planned bills and spending</th><th>Planned savings</th></tr></thead>

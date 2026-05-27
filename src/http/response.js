@@ -50,6 +50,22 @@ export function csv(res, filename, body) {
   res.end(body);
 }
 
+export function json(res, body, status = 200) {
+  const payload = JSON.stringify(body);
+  if (typeof res.status === 'function') {
+    res
+      .status(status)
+      .type('json')
+      .send(payload);
+    return;
+  }
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.end(payload);
+}
+
 export function notFound(res) {
   html(res, '<h1>Not found</h1>', 404);
 }

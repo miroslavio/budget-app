@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireNumberInputs();
   wireSplitSliders();
   wireTransactionCategorySelects();
+  wireIncomeEstimateForms();
   wireConfirmActions();
   wireModals();
   wireMobileNav();
@@ -171,6 +172,7 @@ function wireModals(root = document) {
       wireNumberInputs(dialog);
       wireSplitSliders(dialog);
       wireTransactionCategorySelects(dialog);
+      wireIncomeEstimateForms(dialog);
       dialog.showModal();
     });
   });
@@ -190,15 +192,261 @@ function wireModals(root = document) {
 }
 
 function wireConfirmActions(root = document) {
+  const dialog = document.getElementById('confirm-modal');
+  if (!(dialog instanceof HTMLDialogElement)) return;
+
+  const title = dialog.querySelector('#confirm-modal-title');
+  const message = dialog.querySelector('#confirm-modal-message');
+  const confirmButton = dialog.querySelector('[data-confirm-accept]');
+  const cancelButtons = dialog.querySelectorAll('[data-confirm-cancel], [data-close-confirm-modal]');
+
+  let pendingForm = null;
+
+  const closeDialog = () => {
+    pendingForm = null;
+    dialog.close();
+  };
+
+  cancelButtons.forEach((button) => {
+    if (!(button instanceof HTMLElement) || button.dataset.confirmBound === 'true') return;
+    button.dataset.confirmBound = 'true';
+    button.addEventListener('click', closeDialog);
+  });
+
+  if (confirmButton instanceof HTMLButtonElement && confirmButton.dataset.confirmBound !== 'true') {
+    confirmButton.dataset.confirmBound = 'true';
+    confirmButton.addEventListener('click', () => {
+      if (!pendingForm) return;
+      const form = pendingForm;
+      closeDialog();
+      form.submit();
+    });
+  }
+
+  if (dialog.dataset.confirmDismissBound !== 'true') {
+    dialog.dataset.confirmDismissBound = 'true';
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) closeDialog();
+    });
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      closeDialog();
+    });
+  }
+
   root.querySelectorAll('form[data-confirm]').forEach((form) => {
+    if (!(form instanceof HTMLFormElement) || form.dataset.confirmBound === 'true') return;
+    form.dataset.confirmBound = 'true';
     form.addEventListener('submit', (event) => {
-      const message = form.dataset.confirm;
-      if (!message) return;
-      if (!window.confirm(message)) {
-        event.preventDefault();
+      if (form.dataset.confirmed === 'true') {
+        form.dataset.confirmed = 'false';
+        return;
       }
+
+      const confirmMessage = form.dataset.confirm;
+      if (!confirmMessage) return;
+
+      event.preventDefault();
+      pendingForm = form;
+
+      if (title instanceof HTMLElement) {
+        title.textContent = form.dataset.confirmTitle || 'Confirm action';
+      }
+      if (message instanceof HTMLElement) {
+        message.textContent = confirmMessage;
+      }
+      if (confirmButton instanceof HTMLButtonElement) {
+        confirmButton.textContent = form.dataset.confirmActionLabel || inferConfirmActionLabel(confirmMessage);
+        confirmButton.focus();
+      }
+
+      dialog.showModal();
     });
   });
+}
+
+function inferConfirmActionLabel(confirmMessage) {
+  const message = String(confirmMessage || '').toLowerCase();
+  if (message.startsWith('delete')) return 'Delete';
+  if (message.startsWith('reset')) return 'Reset';
+  if (message.startsWith('remove')) return 'Remove';
+  return 'Confirm';
+}
+
+function wireIncomeEstimateForms(root = document) {
+  root.querySelectorAll('form[data-income-estimate-form]').forEach((form) => {
+    if (!(form instanceof HTMLFormElement) || form.dataset.incomeEstimateBound === 'true') return;
+    form.dataset.incomeEstimateBound = 'true';
+
+    const modeField = form.querySelector('[name="income_entry_mode"]');
+    const manualAmountField = form.querySelector('[name="manual_amount"]');
+    const manualFrequencyField = form.querySelector('[name="manual_frequency"]');
+    const saveButton = form.querySelector('button[name="action"][value="save"]');
+    const calculateButton = form.querySelector('[data-calculate-income-estimate]');
+    const summaryRoot = form.querySelector('[data-income-summary]');
+    const manualSummary = summaryRoot?.querySelector('[data-income-summary-view="manual_net"]');
+    const estimatedSummary = summaryRoot?.querySelector('[data-income-summary-view="estimated_from_gross"]');
+    const emptyState = summaryRoot?.querySelector('[data-income-estimate-empty]');
+    const results = summaryRoot?.querySelector('[data-income-estimate-results]');
+    const errorBox = summaryRoot?.querySelector('[data-income-estimate-error]');
+
+    const updateSummaryMode = () => {
+      const isEstimated = modeField instanceof HTMLSelectElement && modeField.value === 'estimated_from_gross';
+      if (manualSummary instanceof HTMLElement) manualSummary.hidden = isEstimated;
+      if (estimatedSummary instanceof HTMLElement) estimatedSummary.hidden = !isEstimated;
+    };
+
+    const updateManualSummary = () => {
+      const amount = parseMoneyValue(manualAmountField);
+      const frequency = manualFrequencyField instanceof HTMLSelectElement ? manualFrequencyField.value : 'monthly';
+      const monthly = frequency === 'yearly' ? Math.round(amount / 12) : amount;
+      setText(form, '[data-summary-manual-amount]', formatCurrencyFromPence(amount));
+      setText(form, '[data-summary-manual-frequency]', capitalise(frequency));
+      setText(form, '[data-summary-manual-monthly]', formatCurrencyFromPence(monthly));
+    };
+
+    const resetEstimateStates = () => {
+      if (errorBox instanceof HTMLElement) {
+        errorBox.hidden = true;
+        errorBox.textContent = '';
+      }
+    };
+
+    const calculateEstimate = async () => {
+      if (!(modeField instanceof HTMLSelectElement) || modeField.value !== 'estimated_from_gross') return true;
+
+      resetEstimateStates();
+      if (!form.reportValidity()) return false;
+
+      const formData = new FormData(form);
+      try {
+        calculateButton?.setAttribute('aria-busy', 'true');
+        const response = await fetch('/income/estimate', {
+          method: 'POST',
+          body: new URLSearchParams([...formData.entries()].map(([key, value]) => [key, String(value)])),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          }
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Unable to calculate the estimate.');
+        }
+        renderIncomeEstimate(summaryRoot, payload.estimate);
+        return true;
+      } catch (error) {
+        if (errorBox instanceof HTMLElement) {
+          errorBox.hidden = false;
+          errorBox.textContent = error.message || String(error);
+        }
+        return false;
+      } finally {
+        calculateButton?.removeAttribute('aria-busy');
+      }
+    };
+
+    form.querySelectorAll('[data-income-summary-trigger]').forEach((field) => {
+      field.addEventListener('change', () => {
+        updateSummaryMode();
+        updateManualSummary();
+      });
+      field.addEventListener('input', () => {
+        updateSummaryMode();
+        updateManualSummary();
+      });
+    });
+
+    if (calculateButton instanceof HTMLButtonElement) {
+      calculateButton.addEventListener('click', async () => {
+        await calculateEstimate();
+      });
+    }
+
+    if (saveButton instanceof HTMLButtonElement) {
+      saveButton.addEventListener('click', async (event) => {
+        if (!(modeField instanceof HTMLSelectElement) || modeField.value !== 'estimated_from_gross') return;
+        event.preventDefault();
+        const ok = await calculateEstimate();
+        if (!ok) return;
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit(saveButton);
+        } else {
+          form.submit();
+        }
+      });
+    }
+
+    updateSummaryMode();
+    updateManualSummary();
+
+    if (modeField instanceof HTMLSelectElement && modeField.value === 'estimated_from_gross') {
+      const grossSalaryField = form.querySelector('[name="gross_annual_salary"]');
+      if (grossSalaryField instanceof HTMLInputElement && grossSalaryField.value) {
+        calculateEstimate();
+      } else {
+        if (emptyState instanceof HTMLElement) emptyState.hidden = false;
+        if (results instanceof HTMLElement) results.hidden = true;
+      }
+    }
+  });
+}
+
+function renderIncomeEstimate(summaryRoot, estimate) {
+  if (!(summaryRoot instanceof HTMLElement)) return;
+  const emptyState = summaryRoot.querySelector('[data-income-estimate-empty]');
+  const results = summaryRoot.querySelector('[data-income-estimate-results]');
+  if (emptyState instanceof HTMLElement) emptyState.hidden = true;
+  if (results instanceof HTMLElement) results.hidden = false;
+
+  setText(summaryRoot, '[data-estimate-gross]', formatCurrencyFromPence(estimate.grossAnnualSalaryPence));
+  setText(summaryRoot, '[data-estimate-income-tax]', formatNegativeCurrencyFromPence(estimate.estimatedIncomeTaxPence));
+  setText(summaryRoot, '[data-estimate-ni]', formatNegativeCurrencyFromPence(estimate.estimatedNationalInsurancePence));
+  setText(summaryRoot, '[data-estimate-student-loan]', formatNegativeCurrencyFromPence(estimate.estimatedStudentLoanRepaymentPence));
+  setText(summaryRoot, '[data-estimate-net-annual]', formatCurrencyFromPence(estimate.estimatedNetAnnualIncomePence));
+  setText(summaryRoot, '[data-estimate-net-monthly]', formatCurrencyFromPence(estimate.estimatedNetMonthlyIncomePence));
+  setText(summaryRoot, '[data-estimate-budget-monthly]', formatCurrencyFromPence(estimate.plannedMonthlyPence));
+  setText(summaryRoot, '[data-estimate-tax-year]', estimate.taxYear || '—');
+  setText(summaryRoot, '[data-estimate-student-loan-plan]', estimate.studentLoanPlan || '—');
+  setText(summaryRoot, '[data-estimate-postgraduate-status]', estimate.postgraduateLoanStatus || '—');
+  setText(summaryRoot, '[data-estimate-pension-treatment]', estimate.pensionTreatment || '—');
+
+  toggleEstimateRow(summaryRoot, '[data-estimate-postgraduate-row]', estimate.estimatedPostgraduateLoanRepaymentPence > 0);
+  setText(summaryRoot, '[data-estimate-postgraduate]', formatNegativeCurrencyFromPence(estimate.estimatedPostgraduateLoanRepaymentPence || 0));
+  toggleEstimateRow(summaryRoot, '[data-estimate-pension-row]', estimate.pensionContributionPence > 0);
+  setText(summaryRoot, '[data-estimate-pension]', formatNegativeCurrencyFromPence(estimate.pensionContributionPence || 0));
+  toggleEstimateRow(summaryRoot, '[data-estimate-other-row]', estimate.estimatedOtherDeductionsPence > 0);
+  setText(summaryRoot, '[data-estimate-other]', formatNegativeCurrencyFromPence(estimate.estimatedOtherDeductionsPence || 0));
+}
+
+function toggleEstimateRow(root, selector, visible) {
+  const row = root.querySelector(selector);
+  if (row instanceof HTMLElement) row.hidden = !visible;
+}
+
+function setText(root, selector, value) {
+  const element = root.querySelector(selector);
+  if (element instanceof HTMLElement) element.textContent = value;
+}
+
+function parseMoneyValue(field) {
+  if (!(field instanceof HTMLInputElement)) return 0;
+  const value = Number.parseFloat(String(field.value || '').replace(/,/g, '.'));
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100);
+}
+
+function formatCurrencyFromPence(pence) {
+  const value = Number(pence || 0);
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value / 100);
+}
+
+function formatNegativeCurrencyFromPence(pence) {
+  return `-${formatCurrencyFromPence(Math.abs(Number(pence || 0)))}`;
+}
+
+function capitalise(value) {
+  const text = String(value || '');
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
 }
 
 function wireNumberInputs(root = document) {

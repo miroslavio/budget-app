@@ -106,7 +106,7 @@ export function registerTransactionRoutes(router, db) {
 }
 
 function transactionForm(ctx, categories, members, month) {
-  return `<form method="post" action="/transactions" class="stack">
+  return `<form method="post" action="/transactions" class="stack modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="/transactions?month=${escapeHtml(month)}">
@@ -134,7 +134,9 @@ function transactionForm(ctx, categories, members, month) {
     <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <button>Save transaction</button>
+    <div class="modal-footer">
+      <button>Save transaction</button>
+    </div>
   </form>`;
 }
 

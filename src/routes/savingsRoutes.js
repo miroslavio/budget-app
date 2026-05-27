@@ -448,7 +448,7 @@ function savingsAccountDialog(ctx, members, returnTo) {
 }
 
 function goalForm(ctx, members, accounts, returnTo) {
-  return `<form method="post" action="/savings/goals" class="stack">
+  return `<form method="post" action="/savings/goals" class="stack modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
@@ -489,12 +489,14 @@ function goalForm(ctx, members, accounts, returnTo) {
           : '<p class="hint">Track an account or pot first if you want to link this goal to where the money sits.</p>'
       }
     </section>
-    <button>Save goal</button>
+    <div class="modal-footer">
+      <button>Save goal</button>
+    </div>
   </form>`;
 }
 
 function accountForm(ctx, members, returnTo) {
-  return `<form method="post" action="/savings/accounts" class="stack">
+  return `<form method="post" action="/savings/accounts" class="stack modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
@@ -544,7 +546,9 @@ function accountForm(ctx, members, returnTo) {
       <h3>Notes</h3>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <button>Save account or pot</button>
+    <div class="modal-footer">
+      <button>Save account or pot</button>
+    </div>
   </form>`;
 }
 

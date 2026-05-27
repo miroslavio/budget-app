@@ -25,7 +25,7 @@ import { optionalMoney, optionalString, parsePercentage, requireChoice, requireD
 import { actionIconButton, csrfField, escapeHtml, formatCurrency, moneyInputValue, ownerLabel, page } from '../views/html.js';
 import { categoryOptions, decimalInputAttrs, frequencyOptions, moneyInputAttrs, ownerOptions, taxYearOptions } from '../views/forms.js';
 import { pieChart } from '../views/charts.js';
-import { html, redirect } from '../http/response.js';
+import { html, json, redirect } from '../http/response.js';
 import { checkboxValue, ensureAuthenticated, formDate, parseStudentLoanPlans, redirectWithError, redirectWithSuccess } from './helpers.js';
 
 export function registerBudgetRoutes(router, db) {
@@ -37,6 +37,7 @@ export function registerBudgetRoutes(router, db) {
   router.get('/income', (ctx) => redirect(ctx.res, `/budget-plan/income${ctx.url?.search || ''}`));
   router.get('/expenses', (ctx) => redirect(ctx.res, `/budget-plan/bills${ctx.url?.search || ''}`));
   router.post('/income', (ctx) => createIncome(ctx, db));
+  router.post('/income/estimate', (ctx) => previewIncomeEstimateJson(ctx));
   router.post('/expenses', (ctx) => createExpense(ctx, db));
   router.post('/budget-item/delete', (ctx) => deleteBudgetItemAction(ctx, db));
   router.post('/expenses/category-budgets', (ctx) => createOrUpdateCategoryBudgetAction(ctx, db));
@@ -79,8 +80,8 @@ function renderBudgetPlanOverview(ctx, db) {
       body: `<div class="budget-plan-layout">
       ${budgetPlanPageIntro(
         'overview',
-        'Plan expected income, bills, flexible spending, and savings contributions before recording actual money movements.',
-        `${month === currentMonth() ? 'Current month' : 'Selected month'} · ${monthLabel(month)}`,
+        '',
+        '',
         budgetPlanMonthControls(month)
       )}
       ${hasPlanData ? `${budgetPlanSummaryCards({
@@ -95,6 +96,7 @@ function renderBudgetPlanOverview(ctx, db) {
       ${budgetPlanTable([
         {
           section: 'Income',
+          sectionKind: 'inflow',
           monthlyPlannedPence: plan.plannedIncomePence,
           yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(incomeItems)),
           ownerSummary: ownerSummary(incomeItems, members),
@@ -103,6 +105,7 @@ function renderBudgetPlanOverview(ctx, db) {
         },
         {
           section: 'Bills & regular costs',
+          sectionKind: 'outflow',
           monthlyPlannedPence: billsAndRegularCostsPence,
           yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(expenseItems)),
           ownerSummary: ownerSummary(expenseItems, members),
@@ -111,6 +114,7 @@ function renderBudgetPlanOverview(ctx, db) {
         },
         {
           section: 'Flexible spending',
+          sectionKind: 'outflow',
           monthlyPlannedPence: flexibleSpendingTargetPence,
           yearlyItemsIncluded: 'None',
           ownerSummary: effectiveBudgets.length ? 'Shared household' : 'None',
@@ -119,6 +123,7 @@ function renderBudgetPlanOverview(ctx, db) {
         },
         {
           section: 'Planned savings',
+          sectionKind: 'saving',
           monthlyPlannedPence: plannedSavingsContributionsPence,
           yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(savingsItems)),
           ownerSummary: ownerSummary(savingsItems, members),
@@ -311,7 +316,7 @@ function budgetPlanPageIntro(activeKey, context, secondaryLabel = '', controls =
   return `<section class="page-title">
     <div>
       <h1>Budget Plan</h1>
-      <p class="page-context">${escapeHtml(context)}</p>
+      ${context ? `<p class="page-context">${escapeHtml(context)}</p>` : ''}
       ${secondaryLabel ? `<p class="dashboard-period-label">${escapeHtml(secondaryLabel)}</p>` : ''}
     </div>
     ${controls}
@@ -333,7 +338,7 @@ function budgetPlanMonthControls(month) {
       <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, 1))}">Next &rsaquo;</a>
     </nav>
     <form method="get" action="/budget-plan" class="inline-form compact-month-form" data-submit-on-change>
-      <label>Pick month <input type="month" name="month" value="${escapeHtml(month)}"></label>
+      <label><span class="sr-only">Pick month</span><input type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month"></label>
     </form>
   </div>`;
 }
@@ -364,7 +369,6 @@ function budgetPlanSummaryCards({
       <span class="plan-balance-label">${balanceLabel}</span>
       <strong>${formatCurrency(Math.abs(plannedSurplusPence))}</strong>
       <p class="hint">Planned income minus bills, flexible spending targets, and savings contributions.</p>
-      ${completeness.missingCount ? '<p class="hint caution">This figure may change as you add missing common costs.</p>' : ''}
     </div>
     ${planCompletenessCard(completeness)}
   </section>`;
@@ -393,8 +397,13 @@ function budgetPlanTable(rows) {
       <thead><tr><th>Section</th><th>Monthly planned</th><th>Annual costs included</th><th>Owner or split summary</th><th class="actions-col">Action</th></tr></thead>
       <tbody>${rows
         .map((row) => `<tr>
-          <td>${escapeHtml(row.section)}</td>
-          <td>${formatCurrency(row.monthlyPlannedPence)}</td>
+          <td>
+            <div class="cell-stack">
+              <strong>${escapeHtml(row.section)}</strong>
+              <small class="budget-plan-row-tone ${escapeHtml(row.sectionKind || 'neutral')}">${escapeHtml(sectionKindLabel(row.sectionKind))}</small>
+            </div>
+          </td>
+          <td><span class="budget-plan-value ${escapeHtml(row.sectionKind || 'neutral')}">${formatCurrency(row.monthlyPlannedPence)}</span></td>
           <td>${escapeHtml(row.yearlyItemsIncluded)}</td>
           <td>${escapeHtml(row.ownerSummary)}</td>
           <td class="actions-col"><a class="button" href="${row.actionHref}">${escapeHtml(row.actionLabel)}</a></td>
@@ -402,6 +411,13 @@ function budgetPlanTable(rows) {
         .join('')}</tbody>
     </table>
   </section>`;
+}
+
+function sectionKindLabel(sectionKind) {
+  if (sectionKind === 'inflow') return 'Money in';
+  if (sectionKind === 'saving') return 'Set aside';
+  if (sectionKind === 'outflow') return 'Money out';
+  return 'Planned amount';
 }
 
 function budgetPlanEmptyState() {
@@ -648,7 +664,7 @@ function formDisclosure(itemType, ctx, categories, members, returnTo) {
 }
 
 function categoryBudgetForm(ctx, categories, budgetMonth, returnTo) {
-  return `<form method="post" action="/expenses/category-budgets" class="stack budget-form">
+  return `<form method="post" action="/expenses/category-budgets" class="stack budget-form modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
@@ -667,7 +683,9 @@ function categoryBudgetForm(ctx, categories, budgetMonth, returnTo) {
       <label>Target amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <button>Save spending target</button>
+    <div class="modal-footer">
+      <button>Save spending target</button>
+    </div>
   </form>`;
 }
 function expenseChartOwnerPill(ownerKey, label, selectedOwner, budgetMonth, basePath = '/budget-plan/bills') {
@@ -677,72 +695,162 @@ function expenseChartOwnerPill(ownerKey, label, selectedOwner, budgetMonth, base
 
 function incomeForm(ctx, members, returnTo) {
   const taxYears = listTaxYears();
-  return `<form method="post" action="/income" class="stack budget-form">
+  return `<form method="post" action="/income" class="stack budget-form modal-form modal-form--income" data-income-estimate-form novalidate>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-    <section class="form-section">
-      <h3>Basic details</h3>
-      <div class="grid two compact">
-        <label>Name <input name="name" required maxlength="120" data-modal-field="name"></label>
-        <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('person_a', members)}</select></label>
+    <div class="modal-form-grid">
+      <div class="modal-form-main">
+        <section class="form-section">
+          <h3>Basic details</h3>
+          <div class="grid two compact">
+            <label>Name <input name="name" required maxlength="120" data-modal-field="name"></label>
+            <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('person_a', members)}</select></label>
+          </div>
+          <label>How should this income be entered?
+            <select name="income_entry_mode" data-controls data-modal-field="incomeEntryMode" data-income-summary-trigger>
+              <option value="manual_net">Manual net income</option>
+              <option value="estimated_from_gross">Estimate take-home pay from gross salary</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="manual_net">
+          <h3>Manual income</h3>
+          <label>Net income <input name="manual_amount" ${moneyInputAttrs({ min: '0.01' })} data-required-when-visible="true" data-modal-field="manualAmount" data-income-summary-trigger></label>
+          <label>Frequency <select name="manual_frequency" data-modal-field="manualFrequency" data-income-summary-trigger>${frequencyOptions('monthly')}</select></label>
+        </section>
+
+        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+          <h3>Salary details</h3>
+          <label>Gross annual salary <input name="gross_annual_salary" ${moneyInputAttrs({ min: '0.01' })} data-required-when-visible="true" data-modal-field="grossAnnualSalary" data-income-summary-trigger></label>
+          <div class="grid two compact">
+            <label>Tax year <select name="tax_year" data-modal-field="taxYear" data-income-summary-trigger>${taxYearOptions(taxYears, latestTaxYear())}</select></label>
+            <label>How often are you paid? <select name="estimated_frequency" data-modal-field="estimatedFrequency" data-income-summary-trigger>${frequencyOptions('monthly')}</select></label>
+          </div>
+        </section>
+
+        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+          <h3>Student loans</h3>
+          <div class="grid two compact">
+            <label>Do you repay a student loan?
+              <select name="has_student_loan" data-controls data-modal-field="hasStudentLoan" data-income-summary-trigger>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </label>
+            <label data-controlled-by="has_student_loan" data-show-when="yes" hidden>Student loan repayment plan
+              <select name="student_loan_plan" data-modal-field="studentLoanPlan" data-required-when-visible="true" data-income-summary-trigger>
+                <option value="">Choose a plan</option>
+                <option value="plan_1">Plan 1</option>
+                <option value="plan_2">Plan 2</option>
+                <option value="plan_4">Plan 4</option>
+                <option value="plan_5">Plan 5</option>
+              </select>
+            </label>
+          </div>
+          <label>Do you repay a postgraduate loan?
+            <select name="has_postgraduate_loan" data-modal-field="hasPostgraduateLoan" data-income-summary-trigger>
+              <option value="0">No</option>
+              <option value="1">Yes</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+          <h3>Pension</h3>
+          <div class="grid two compact">
+            <label>Do you contribute to a pension?
+              <select name="has_pension" data-controls data-modal-field="hasPension" data-income-summary-trigger>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </label>
+            <label data-controlled-by="has_pension" data-show-when="yes" hidden>Pension contribution
+              <select name="pension_contribution_type" data-controls data-modal-field="pensionContributionType" data-income-summary-trigger>
+                <option value="none">Choose contribution type</option>
+                <option value="fixed_amount">Fixed amount</option>
+                <option value="percentage">Percentage of gross salary</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid two compact" data-controlled-by="has_pension" data-show-when="yes" hidden>
+            <label>Contribution amount <input name="pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="pensionContributionValue" data-income-summary-trigger></label>
+            <label>How is your pension taken?
+              <select name="pension_contribution_tax_treatment" data-modal-field="pensionContributionTaxTreatment" data-income-summary-trigger>
+                <option value="pre_tax">Before tax</option>
+                <option value="post_tax">After tax</option>
+                <option value="unknown">Not sure</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <details class="form-section form-details" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+          <summary>Other deductions</summary>
+          <p class="hint">Optional. Add regular deductions that appear on your payslip.</p>
+          <div class="grid two compact">
+            <label>Other deductions before tax <input name="other_pre_tax_deductions" ${moneyInputAttrs()} data-modal-field="otherPreTaxDeductions" data-income-summary-trigger></label>
+            <label>Other deductions after tax <input name="other_post_tax_deductions" ${moneyInputAttrs()} data-modal-field="otherPostTaxDeductions" data-income-summary-trigger></label>
+          </div>
+        </details>
+
+        <section class="form-section">
+          <h3>Timing and notes</h3>
+          <div class="grid two compact">
+            <label>Start date <input name="start_date" type="date" value="${todayIso()}" data-modal-field="startDate"></label>
+            <label>End date <input name="end_date" type="date" data-modal-field="endDate"></label>
+          </div>
+          <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
+        </section>
       </div>
-    <label>Income entry mode
-      <select name="income_entry_mode" data-controls data-modal-field="incomeEntryMode">
-        <option value="manual_net">Manual net income</option>
-        <option value="estimated_from_gross">Estimated take-home pay from gross salary</option>
-      </select>
-    </label>
-    </section>
-    <fieldset data-controlled-by="income_entry_mode" data-show-when="manual_net">
-      <legend>Manual net income</legend>
-      <label>Net amount <input name="manual_amount" ${moneyInputAttrs({ min: '0.01' })} data-required-when-visible="true" data-modal-field="manualAmount"></label>
-      <label>Frequency <select name="manual_frequency" data-modal-field="manualFrequency">${frequencyOptions('monthly')}</select></label>
-    </fieldset>
-      <fieldset data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
-      <legend>Estimated take-home pay</legend>
-      <label>Gross annual salary <input name="gross_annual_salary" ${moneyInputAttrs({ min: '0.01' })} data-required-when-visible="true" data-modal-field="grossAnnualSalary"></label>
-      <label>Pay frequency <select name="estimated_frequency" data-modal-field="estimatedFrequency">${frequencyOptions('monthly')}</select></label>
-      <label>Tax year <select name="tax_year" data-modal-field="taxYear">${taxYearOptions(taxYears, latestTaxYear())}</select></label>
-      <label>Student loan plan
-        <select name="student_loan_plan" data-modal-field="studentLoanPlan">
-          <option value="none">No undergraduate student loan</option>
-          <option value="plan_1">Plan 1</option>
-          <option value="plan_2">Plan 2</option>
-          <option value="plan_4">Plan 4</option>
-          <option value="plan_5">Plan 5</option>
-        </select>
-      </label>
-      <label class="checkbox-line"><input type="checkbox" name="has_postgraduate_loan" data-modal-field="hasPostgraduateLoan"> Include Postgraduate Loan repayment</label>
-      <label>Pension contribution type
-        <select name="pension_contribution_type" data-controls data-modal-field="pensionContributionType">
-          <option value="none">None</option>
-          <option value="fixed_amount">Fixed annual amount</option>
-          <option value="percentage">Percentage of gross salary</option>
-        </select>
-      </label>
-      <div class="grid two compact" data-controlled-by="pension_contribution_type" data-show-when="fixed_amount|percentage" hidden>
-        <label>Pension contribution value <input name="pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-required-when-visible="true" data-modal-field="pensionContributionValue"></label>
-        <label>Pension tax treatment
-          <select name="pension_contribution_tax_treatment" data-modal-field="pensionContributionTaxTreatment">
-            <option value="pre_tax">Before tax</option>
-            <option value="post_tax">After tax</option>
-          </select>
-        </label>
-      </div>
-      <label>Other regular pre-tax deductions <input name="other_pre_tax_deductions" ${moneyInputAttrs()} data-modal-field="otherPreTaxDeductions"></label>
-      <label>Other regular post-tax deductions <input name="other_post_tax_deductions" ${moneyInputAttrs()} data-modal-field="otherPostTaxDeductions"></label>
-      <p class="hint">The saved item uses the estimated net income. The original gross salary and assumptions are stored for review.</p>
-    </fieldset>
-    <section class="form-section">
-      <h3>Timing and notes</h3>
-    <label>Start date <input name="start_date" type="date" value="${todayIso()}" data-modal-field="startDate"></label>
-    <label>End date <input name="end_date" type="date" data-modal-field="endDate"></label>
-    <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
-    </section>
-    <div class="button-list">
+
+      <aside class="modal-summary-panel income-summary-panel" data-income-summary>
+        <div class="modal-summary-card" data-income-summary-view="manual_net">
+          <h3>Planned income summary</h3>
+          <p class="hint">Enter a net amount to see the monthly value used in your budget plan.</p>
+          <dl class="summary-list">
+            <div><dt>Entered net income</dt><dd data-summary-manual-amount>£0.00</dd></div>
+            <div><dt>Frequency</dt><dd data-summary-manual-frequency>Monthly</dd></div>
+            <div><dt>Monthly amount used in budget plan</dt><dd data-summary-manual-monthly>£0.00</dd></div>
+          </dl>
+          <p class="hint">No tax calculation applied.</p>
+        </div>
+        <div class="modal-summary-card" data-income-summary-view="estimated_from_gross" hidden>
+          <h3>Estimated take-home pay</h3>
+          <p class="hint" data-income-estimate-empty>Estimate not calculated yet. Enter salary details and calculate the estimate.</p>
+          <div data-income-estimate-results hidden>
+            <dl class="summary-list">
+              <div><dt>Gross annual salary</dt><dd data-estimate-gross>£0.00</dd></div>
+              <div><dt>Income Tax</dt><dd data-estimate-income-tax>£0.00</dd></div>
+              <div><dt>National Insurance</dt><dd data-estimate-ni>£0.00</dd></div>
+              <div><dt>Student loan repayment</dt><dd data-estimate-student-loan>£0.00</dd></div>
+              <div data-estimate-postgraduate-row hidden><dt>Postgraduate loan repayment</dt><dd data-estimate-postgraduate>£0.00</dd></div>
+              <div data-estimate-pension-row hidden><dt>Pension contribution</dt><dd data-estimate-pension>£0.00</dd></div>
+              <div data-estimate-other-row hidden><dt>Other deductions</dt><dd data-estimate-other>£0.00</dd></div>
+            </dl>
+            <h4>Estimated take-home pay</h4>
+            <dl class="summary-list">
+              <div><dt>Estimated annual net income</dt><dd data-estimate-net-annual>£0.00</dd></div>
+              <div><dt>Estimated monthly net income</dt><dd data-estimate-net-monthly>£0.00</dd></div>
+              <div><dt>Monthly amount used in budget plan</dt><dd data-estimate-budget-monthly>£0.00</dd></div>
+            </dl>
+            <h4>Assumptions</h4>
+            <dl class="summary-list">
+              <div><dt>Tax year</dt><dd data-estimate-tax-year>—</dd></div>
+              <div><dt>Student loan plan</dt><dd data-estimate-student-loan-plan>—</dd></div>
+              <div><dt>Postgraduate loan</dt><dd data-estimate-postgraduate-status>—</dd></div>
+              <div><dt>Pension treatment</dt><dd data-estimate-pension-treatment>—</dd></div>
+              <div><dt>Calculation type</dt><dd>Budgeting estimate</dd></div>
+            </dl>
+          </div>
+          <div class="flash error" data-income-estimate-error hidden></div>
+        </div>
+      </aside>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="secondary" data-calculate-income-estimate>Calculate estimate</button>
       <button name="action" value="save">Save income</button>
-      <button name="action" value="preview">Preview estimate</button>
     </div>
   </form>`;
 }
@@ -752,7 +860,7 @@ function expenseForm(ctx, categories, members, returnTo) {
   const suggestedCategoryId = suggestedExpenseCategoryId(ctx, expenseCategories);
   const firstMemberLabel = ownerLabel('person_a', members);
   const secondMemberLabel = ownerLabel('person_b', members);
-  return `<form method="post" action="/expenses" class="stack budget-form">
+  return `<form method="post" action="/expenses" class="stack budget-form modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
@@ -806,7 +914,9 @@ function expenseForm(ctx, categories, members, returnTo) {
     <label>End date <input name="end_date" type="date" data-modal-field="endDate"></label>
     <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <button>Save expense</button>
+    <div class="modal-footer">
+      <button>Save expense</button>
+    </div>
   </form>`;
 }
 
@@ -1124,13 +1234,15 @@ function incomeEditAttributes(item) {
     `data-fill-name="${escapeHtml(item.name)}"`,
     `data-fill-owner-type="${escapeHtml(item.owner_type)}"`,
     `data-fill-income-entry-mode="${escapeHtml(item.income_entry_mode || 'manual_net')}"`,
+    `data-fill-has-student-loan="${studentLoanPlans.length ? 'yes' : 'no'}"`,
     `data-fill-manual-amount="${item.income_entry_mode === 'manual_net' ? moneyInputValue(item.amount_pence) : ''}"`,
     `data-fill-manual-frequency="${escapeHtml(item.frequency || 'monthly')}"`,
     `data-fill-gross-annual-salary="${item.estimate_gross_annual_salary_pence ? moneyInputValue(item.estimate_gross_annual_salary_pence) : ''}"`,
     `data-fill-estimated-frequency="${escapeHtml(item.estimate_pay_frequency || item.frequency || 'monthly')}"`,
     `data-fill-tax-year="${escapeHtml(item.estimate_tax_year || latestTaxYear())}"`,
     `data-fill-student-loan-plan="${escapeHtml(studentLoanPlans[0] || 'none')}"`,
-    `data-fill-has-postgraduate-loan="${item.estimate_has_postgraduate_loan ? 'true' : 'false'}"`,
+    `data-fill-has-postgraduate-loan="${item.estimate_has_postgraduate_loan ? '1' : '0'}"`,
+    `data-fill-has-pension="${item.estimate_pension_contribution_type && item.estimate_pension_contribution_type !== 'none' ? 'yes' : 'no'}"`,
     `data-fill-pension-contribution-type="${escapeHtml(item.estimate_pension_contribution_type || 'none')}"`,
     `data-fill-pension-contribution-value="${pensionContributionValue}"`,
     `data-fill-pension-contribution-tax-treatment="${escapeHtml(item.estimate_pension_contribution_tax_treatment || 'pre_tax')}"`,
@@ -1174,14 +1286,18 @@ function createIncome(ctx, db) {
       return renderIncomeEstimatePreview(ctx, buildEstimate(ctx));
     }
 
+    const startDate = formDate(ctx.body.start_date);
+    const endDate = ctx.body.end_date || null;
+    assertDateOrder(startDate, endDate);
+
     const common = {
       householdId: ctx.user.household_id,
       name,
       itemType: 'income',
       categoryId: Number(ctx.body.category_id || 0) || null,
       ownerType,
-      startDate: formDate(ctx.body.start_date),
-      endDate: ctx.body.end_date || null,
+      startDate,
+      endDate,
       notes: optionalString(ctx.body.notes),
       isActive: existingItem ? Number(existingItem.is_active) === 1 : true,
       splitType: 'equal',
@@ -1305,13 +1421,23 @@ function hiddenFields(fields) {
 }
 
 function buildEstimate(ctx) {
-  const pensionType = requireChoice(ctx.body.pension_contribution_type || 'none', ['none', 'fixed_amount', 'percentage'], 'Pension contribution type');
+  const hasStudentLoan = String(ctx.body.has_student_loan || 'no') === 'yes';
+  const pensionTreatmentRaw = ctx.body.pension_contribution_tax_treatment || 'pre_tax';
+  const hasPension = String(ctx.body.has_pension || 'no') === 'yes';
+  const pensionTypeRaw = hasPension ? (ctx.body.pension_contribution_type || 'none') : 'none';
+  if (hasStudentLoan && !ctx.body.student_loan_plan) {
+    throw new Error('Student loan repayment plan is required.');
+  }
+  if (hasPension && pensionTypeRaw === 'none') {
+    throw new Error('Choose a pension contribution type.');
+  }
+  const pensionType = requireChoice(pensionTypeRaw, ['none', 'fixed_amount', 'percentage'], 'Pension contribution');
   const rawPensionValue = pensionType === 'none' ? '0' : ctx.body.pension_contribution_value || '0';
   const pensionContributionValue =
     pensionType === 'fixed_amount'
-      ? requireMoney(rawPensionValue, 'Pension contribution value')
+      ? requireMoney(rawPensionValue, 'Contribution amount')
       : pensionType === 'percentage'
-        ? requireDecimal(rawPensionValue, 'Pension contribution value', { min: 0.01, max: 100 })
+        ? requireDecimal(rawPensionValue, 'Contribution amount', { min: 0.01, max: 100 })
         : 0;
   const grossAnnualSalaryPence = requireMoney(ctx.body.gross_annual_salary, 'Gross annual salary');
 
@@ -1320,12 +1446,45 @@ function buildEstimate(ctx) {
     taxYear: requireString(ctx.body.tax_year, 'Tax year', 20),
     pensionContributionType: pensionType,
     pensionContributionValue,
-    pensionContributionTaxTreatment: requireChoice(ctx.body.pension_contribution_tax_treatment || 'pre_tax', ['pre_tax', 'post_tax'], 'Pension tax treatment'),
-    otherPreTaxDeductionsPence: optionalMoney(ctx.body.other_pre_tax_deductions, 'Other regular pre-tax deductions'),
-    otherPostTaxDeductionsPence: optionalMoney(ctx.body.other_post_tax_deductions, 'Other regular post-tax deductions'),
-    studentLoanPlans: parseStudentLoanPlans(ctx.body),
+    pensionContributionTaxTreatment: requireChoice(pensionTreatmentRaw === 'unknown' ? 'pre_tax' : pensionTreatmentRaw, ['pre_tax', 'post_tax'], 'How your pension is taken'),
+    otherPreTaxDeductionsPence: optionalMoney(ctx.body.other_pre_tax_deductions, 'Other deductions before tax'),
+    otherPostTaxDeductionsPence: optionalMoney(ctx.body.other_post_tax_deductions, 'Other deductions after tax'),
+    studentLoanPlans: hasStudentLoan ? parseStudentLoanPlans(ctx.body) : [],
     hasPostgraduateLoan: checkboxValue(ctx.body.has_postgraduate_loan)
   });
+}
+
+function previewIncomeEstimateJson(ctx) {
+  if (!ensureAuthenticated(ctx)) return;
+  try {
+    const estimate = buildEstimate(ctx);
+    json(ctx.res, {
+      ok: true,
+      estimate: {
+        grossAnnualSalaryPence: estimate.grossAnnualSalaryPence,
+        estimatedIncomeTaxPence: estimate.estimatedIncomeTaxPence,
+        estimatedNationalInsurancePence: estimate.estimatedNationalInsurancePence,
+        estimatedStudentLoanRepaymentPence: estimate.estimatedStudentLoanRepaymentPence,
+        estimatedPostgraduateLoanRepaymentPence: estimate.estimatedPostgraduateLoanRepaymentPence,
+        pensionContributionPence: estimate.pensionContributionPence,
+        estimatedOtherDeductionsPence: estimate.estimatedOtherDeductionsPence,
+        estimatedNetAnnualIncomePence: estimate.estimatedNetAnnualIncomePence,
+        estimatedNetMonthlyIncomePence: estimate.estimatedNetMonthlyIncomePence,
+        taxYear: formatTaxYearLabel(estimate.taxYear),
+        studentLoanPlan: estimate.studentLoanPlans.length ? estimate.studentLoanPlans.map((plan) => studentLoanPlanLabel(plan)).join(' + ') : 'No undergraduate student loan',
+        postgraduateLoanStatus: estimate.hasPostgraduateLoan ? 'Yes' : 'No',
+        pensionTreatment: String(ctx.body.has_pension || 'no') === 'yes'
+          ? (ctx.body.pension_contribution_tax_treatment === 'unknown' ? 'Not sure' : pensionTreatmentLabel({
+              estimate_pension_contribution_type: estimate.pensionContributionType,
+              estimate_pension_contribution_tax_treatment: ctx.body.pension_contribution_tax_treatment
+            }))
+          : 'Not set',
+        plannedMonthlyPence: estimate.estimatedNetMonthlyIncomePence
+      }
+    });
+  } catch (error) {
+    json(ctx.res, { ok: false, error: error.message || String(error) }, 400);
+  }
 }
 
 function createExpense(ctx, db) {
@@ -1340,6 +1499,9 @@ function createExpense(ctx, db) {
     const splitType = ownerType === 'shared' ? requireChoice(ctx.body.split_type || 'equal', ['equal', 'manual_percentage'], 'Split type') : 'equal';
     const personAPercentage = splitType === 'manual_percentage' ? parsePercentage(ctx.body.person_a_percentage) : 50;
     const personBPercentage = splitType === 'manual_percentage' ? Math.round((100 - personAPercentage) * 100) / 100 : 50;
+    const startDate = formDate(ctx.body.start_date);
+    const endDate = ctx.body.end_date || null;
+    assertDateOrder(startDate, endDate);
 
     const payload = {
       householdId: ctx.user.household_id,
@@ -1351,8 +1513,8 @@ function createExpense(ctx, db) {
       amountPence,
       frequency,
       monthlyEquivalentPence: calculateMonthlyEquivalent(amountPence, frequency),
-      startDate: formDate(ctx.body.start_date),
-      endDate: ctx.body.end_date || null,
+      startDate,
+      endDate,
       notes: optionalString(ctx.body.notes),
       isActive: existingItem ? Number(existingItem.is_active) === 1 : true,
       splitType,
@@ -1369,6 +1531,12 @@ function createExpense(ctx, db) {
     redirectWithSuccess(ctx.res, ctx.body.return_to || '/budget-plan/bills', existingItem ? 'Expense updated.' : 'Expense saved.');
   } catch (error) {
     redirectWithError(ctx.res, ctx.body.return_to || '/budget-plan/bills', error);
+  }
+}
+
+function assertDateOrder(startDate, endDate) {
+  if (startDate && endDate && endDate < startDate) {
+    throw new Error('End date must be after the start date.');
   }
 }
 

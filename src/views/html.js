@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-05-27-clarity-phase';
+const ASSET_VERSION = '2026-05-27-confirm-modal';
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -57,6 +57,7 @@ export function page(ctx, { title, body, wide = false }) {
     ${message(ctx)}
     ${body}
   </main>
+  ${confirmDialogMarkup()}
 </body>
 </html>`;
 }
@@ -227,4 +228,22 @@ function actionIcon(name) {
         <path d="M4 20l4.5-1 9-9-3.5-3.5-9 9L4 20zM13.5 6.5l3.5 3.5M4 20h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
   }
+}
+
+function confirmDialogMarkup() {
+  return `<dialog id="confirm-modal" class="modal confirm-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+    <div class="modal-panel confirm-modal-panel">
+      <div class="modal-heading">
+        <div>
+          <h2 id="confirm-modal-title">Confirm action</h2>
+        </div>
+        <button type="button" class="secondary icon-button" data-close-confirm-modal aria-label="Close">Close</button>
+      </div>
+      <p id="confirm-modal-message" class="confirm-modal-message">Are you sure?</p>
+      <div class="button-list confirm-modal-actions">
+        <button type="button" class="secondary" data-confirm-cancel>Cancel</button>
+        <button type="button" class="danger-button" data-confirm-accept>Confirm</button>
+      </div>
+    </div>
+  </dialog>`;
 }

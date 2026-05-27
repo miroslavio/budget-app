@@ -82,7 +82,15 @@ export function findBudgetItemById(db, householdId, id) {
               income_estimates.other_pre_tax_deductions_pence AS estimate_other_pre_tax_deductions_pence,
               income_estimates.other_post_tax_deductions_pence AS estimate_other_post_tax_deductions_pence,
               income_estimates.student_loan_plans_json AS estimate_student_loan_plans_json,
-              income_estimates.has_postgraduate_loan AS estimate_has_postgraduate_loan
+              income_estimates.has_postgraduate_loan AS estimate_has_postgraduate_loan,
+              income_estimates.estimated_income_tax_pence AS estimate_income_tax_pence,
+              income_estimates.estimated_national_insurance_pence AS estimate_national_insurance_pence,
+              income_estimates.estimated_student_loan_repayment_pence AS estimate_student_loan_repayment_pence,
+              income_estimates.estimated_postgraduate_loan_repayment_pence AS estimate_postgraduate_loan_repayment_pence,
+              income_estimates.pension_contribution_pence AS estimate_pension_contribution_pence,
+              income_estimates.estimated_other_deductions_pence AS estimate_other_deductions_pence,
+              income_estimates.estimated_net_monthly_income_pence AS estimate_net_monthly_income_pence,
+              income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence
        FROM budget_items
        LEFT JOIN categories ON categories.id = budget_items.category_id
        LEFT JOIN income_estimates ON income_estimates.id = budget_items.income_estimate_id
@@ -103,7 +111,15 @@ export function listBudgetItems(db, householdId, itemType = null) {
             income_estimates.other_pre_tax_deductions_pence AS estimate_other_pre_tax_deductions_pence,
             income_estimates.other_post_tax_deductions_pence AS estimate_other_post_tax_deductions_pence,
             income_estimates.student_loan_plans_json AS estimate_student_loan_plans_json,
-            income_estimates.has_postgraduate_loan AS estimate_has_postgraduate_loan
+            income_estimates.has_postgraduate_loan AS estimate_has_postgraduate_loan,
+            income_estimates.estimated_income_tax_pence AS estimate_income_tax_pence,
+            income_estimates.estimated_national_insurance_pence AS estimate_national_insurance_pence,
+            income_estimates.estimated_student_loan_repayment_pence AS estimate_student_loan_repayment_pence,
+            income_estimates.estimated_postgraduate_loan_repayment_pence AS estimate_postgraduate_loan_repayment_pence,
+            income_estimates.pension_contribution_pence AS estimate_pension_contribution_pence,
+            income_estimates.estimated_other_deductions_pence AS estimate_other_deductions_pence,
+            income_estimates.estimated_net_monthly_income_pence AS estimate_net_monthly_income_pence,
+            income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence
      FROM budget_items
      LEFT JOIN categories ON categories.id = budget_items.category_id
      LEFT JOIN income_estimates ON income_estimates.id = budget_items.income_estimate_id
@@ -126,7 +142,15 @@ export function listActiveBudgetItems(db, householdId) {
               income_estimates.other_pre_tax_deductions_pence AS estimate_other_pre_tax_deductions_pence,
               income_estimates.other_post_tax_deductions_pence AS estimate_other_post_tax_deductions_pence,
               income_estimates.student_loan_plans_json AS estimate_student_loan_plans_json,
-              income_estimates.has_postgraduate_loan AS estimate_has_postgraduate_loan
+              income_estimates.has_postgraduate_loan AS estimate_has_postgraduate_loan,
+              income_estimates.estimated_income_tax_pence AS estimate_income_tax_pence,
+              income_estimates.estimated_national_insurance_pence AS estimate_national_insurance_pence,
+              income_estimates.estimated_student_loan_repayment_pence AS estimate_student_loan_repayment_pence,
+              income_estimates.estimated_postgraduate_loan_repayment_pence AS estimate_postgraduate_loan_repayment_pence,
+              income_estimates.pension_contribution_pence AS estimate_pension_contribution_pence,
+              income_estimates.estimated_other_deductions_pence AS estimate_other_deductions_pence,
+              income_estimates.estimated_net_monthly_income_pence AS estimate_net_monthly_income_pence,
+              income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence
        FROM budget_items
        LEFT JOIN categories ON categories.id = budget_items.category_id
        LEFT JOIN income_estimates ON income_estimates.id = budget_items.income_estimate_id
