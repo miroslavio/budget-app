@@ -318,11 +318,10 @@ function budgetPlanPageIntro(activeKey, context, secondaryLabel = '', controls =
 
 function budgetPlanMonthControls(month) {
   const inputId = 'budget-plan-month-input';
-  const formId = 'budget-plan-month-form';
-  return `<form method="get" action="/budget-plan" id="${formId}" class="budget-plan-month-form" data-submit-on-change>
+  return `<form method="get" action="/budget-plan" class="budget-plan-month-form" data-submit-on-change>
     <input id="${inputId}" class="budget-plan-month-input" type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month">
   </form>
-  <div class="budget-plan-month-controls">
+  <div class="budget-plan-month-controls" role="group" aria-label="Budget Plan month">
     <a class="period-pill budget-plan-month-step" href="/budget-plan?month=${encodeURIComponent(addMonths(month, -1))}" aria-label="Previous month">
       <span aria-hidden="true">&lsaquo;</span>
     </a>
