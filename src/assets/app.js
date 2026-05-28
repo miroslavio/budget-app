@@ -125,7 +125,9 @@ document.addEventListener('DOMContentLoaded', () => {
   wireNumberInputs();
   wireSplitSliders();
   wireTransactionCategorySelects();
+  wireSpendingWarningSelects();
   wireIncomeEstimateForms();
+  wireMonthPickers();
   wireConfirmActions();
   wireModals();
   wireMobileNav();
@@ -172,6 +174,7 @@ function wireModals(root = document) {
       wireNumberInputs(dialog);
       wireSplitSliders(dialog);
       wireTransactionCategorySelects(dialog);
+      wireSpendingWarningSelects(dialog);
       wireIncomeEstimateForms(dialog);
       dialog.showModal();
     });
@@ -198,7 +201,7 @@ function wireConfirmActions(root = document) {
   const title = dialog.querySelector('#confirm-modal-title');
   const message = dialog.querySelector('#confirm-modal-message');
   const confirmButton = dialog.querySelector('[data-confirm-accept]');
-  const cancelButtons = dialog.querySelectorAll('[data-confirm-cancel], [data-close-confirm-modal]');
+  const cancelButtons = dialog.querySelectorAll('[data-confirm-cancel]');
 
   let pendingForm = null;
 
@@ -261,6 +264,25 @@ function wireConfirmActions(root = document) {
       }
 
       dialog.showModal();
+    });
+  });
+}
+
+function wireMonthPickers(root = document) {
+  root.querySelectorAll('[data-open-month-picker]').forEach((button) => {
+    if (!(button instanceof HTMLButtonElement) || button.dataset.monthPickerBound === 'true') return;
+    button.dataset.monthPickerBound = 'true';
+    button.addEventListener('click', () => {
+      const inputId = button.dataset.openMonthPicker;
+      if (!inputId) return;
+      const input = document.getElementById(inputId);
+      if (!(input instanceof HTMLInputElement)) return;
+      input.focus();
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+      } else {
+        input.click();
+      }
     });
   });
 }
@@ -650,6 +672,36 @@ function wireTransactionCategorySelects(root = document) {
       select.dataset.transactionCategoryBound = 'true';
       typeSelect.addEventListener('change', update);
       typeSelect.addEventListener('input', update);
+    }
+
+    update();
+  });
+}
+
+function wireSpendingWarningSelects(root = document) {
+  root.querySelectorAll('select[data-spending-warning-select]').forEach((select) => {
+    if (!(select instanceof HTMLSelectElement)) return;
+    const warning = select.closest('form, .form-section, fieldset')?.querySelector('[data-spending-duplicate-warning]');
+    if (!(warning instanceof HTMLElement)) return;
+
+    const duplicateIds = new Set(
+      String(select.dataset.warningCategoryIds || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    );
+    const message = select.dataset.warningMessage || '';
+
+    const update = () => {
+      const show = Boolean(select.value) && duplicateIds.has(select.value) && Boolean(message);
+      warning.hidden = !show;
+      warning.textContent = show ? message : '';
+    };
+
+    if (select.dataset.spendingWarningBound !== 'true') {
+      select.dataset.spendingWarningBound = 'true';
+      select.addEventListener('change', update);
+      select.addEventListener('input', update);
     }
 
     update();

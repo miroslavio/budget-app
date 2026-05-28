@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-05-27-confirm-modal';
+const ASSET_VERSION = '2026-05-28-spending-budgets';
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -237,7 +237,6 @@ function confirmDialogMarkup() {
         <div>
           <h2 id="confirm-modal-title">Confirm action</h2>
         </div>
-        <button type="button" class="secondary icon-button" data-close-confirm-modal aria-label="Close">Close</button>
       </div>
       <p id="confirm-modal-message" class="confirm-modal-message">Are you sure?</p>
       <div class="button-list confirm-modal-actions">

@@ -14,10 +14,9 @@ import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { calculateMonthlyEquivalent, plannedMonthlySummary } from '../services/budgetService.js';
-import { categoryBudgetComparison, categoryBudgetSummary, effectiveCategoryBudgets } from '../services/categoryBudgetService.js';
-import { plannedExpenseCategorySeries } from '../services/chartService.js';
 import { savingsAccountTypeLabel } from '../services/savingsAccountService.js';
 import { plannedSavingsBudgetItems } from '../services/savingsService.js';
+import { buildUnifiedSpendingBudgetRows, plannedSpendingCategorySeries, plannedSpendingSummary, spendingCategoryKey } from '../services/spendingBudgetService.js';
 import { estimateTakeHomePay } from '../services/takeHomePayService.js';
 import { listTaxYears, latestTaxYear } from '../services/taxRulesService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
@@ -31,11 +30,12 @@ import { checkboxValue, ensureAuthenticated, formDate, parseStudentLoanPlans, re
 export function registerBudgetRoutes(router, db) {
   router.get('/budget-plan', (ctx) => renderBudgetPlanOverview(ctx, db));
   router.get('/budget-plan/income', (ctx) => renderIncomePlanPage(ctx, db));
-  router.get('/budget-plan/bills', (ctx) => renderBillsPlanPage(ctx, db));
-  router.get('/budget-plan/flexible-spending', (ctx) => renderFlexibleSpendingPlanPage(ctx, db));
+  router.get('/budget-plan/spending', (ctx) => renderSpendingBudgetsPage(ctx, db));
+  router.get('/budget-plan/bills', (ctx) => redirect(ctx.res, `/budget-plan/spending${ctx.url?.search || ''}`));
+  router.get('/budget-plan/flexible-spending', (ctx) => redirect(ctx.res, `/budget-plan/spending${ctx.url?.search || ''}`));
   router.get('/budget-plan/planned-savings', (ctx) => renderPlannedSavingsPage(ctx, db));
   router.get('/income', (ctx) => redirect(ctx.res, `/budget-plan/income${ctx.url?.search || ''}`));
-  router.get('/expenses', (ctx) => redirect(ctx.res, `/budget-plan/bills${ctx.url?.search || ''}`));
+  router.get('/expenses', (ctx) => redirect(ctx.res, `/budget-plan/spending${ctx.url?.search || ''}`));
   router.post('/income', (ctx) => createIncome(ctx, db));
   router.post('/income/estimate', (ctx) => previewIncomeEstimateJson(ctx));
   router.post('/expenses', (ctx) => createExpense(ctx, db));
@@ -56,11 +56,15 @@ function renderBudgetPlanOverview(ctx, db) {
   const plan = plannedMonthlySummary(planningItems, month);
   const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
   const monthBudgets = listCategoryBudgets(db, ctx.user.household_id, { startMonth: month, endMonth: month });
-  const effectiveBudgets = effectiveCategoryBudgets(defaultBudgets, monthBudgets, month);
-  const flexibleSpendingTargetPence = effectiveBudgets.reduce((total, budget) => total + Number(budget.amount_pence || 0), 0);
-  const billsAndRegularCostsPence = plan.plannedExpensePence;
+  const spendingSummary = plannedSpendingSummary({
+    expenseItems: activeItems,
+    defaultBudgets,
+    monthBudgets,
+    month
+  });
+  const plannedSpendingPence = spendingSummary.totalPlannedSpendingPence;
   const plannedSavingsContributionsPence = plan.plannedSavingsPence;
-  const plannedSurplusPence = plan.plannedIncomePence - billsAndRegularCostsPence - flexibleSpendingTargetPence - plannedSavingsContributionsPence;
+  const plannedSurplusPence = plan.plannedIncomePence - plannedSpendingPence - plannedSavingsContributionsPence;
 
   const incomeItems = plan.activeItems.filter((item) => item.item_type === 'income');
   const expenseItems = plan.activeItems.filter((item) => item.item_type === 'expense');
@@ -68,8 +72,7 @@ function renderBudgetPlanOverview(ctx, db) {
   const completeness = planCompleteness(expenseItems, month);
   const hasPlanData =
     plan.plannedIncomePence > 0 ||
-    billsAndRegularCostsPence > 0 ||
-    flexibleSpendingTargetPence > 0 ||
+    plannedSpendingPence > 0 ||
     plannedSavingsContributionsPence > 0;
 
   html(
@@ -86,8 +89,9 @@ function renderBudgetPlanOverview(ctx, db) {
       )}
       ${hasPlanData ? `${budgetPlanSummaryCards({
         plannedIncomePence: plan.plannedIncomePence,
-        billsAndRegularCostsPence,
-        flexibleSpendingTargetPence,
+        committedSpendingPence: spendingSummary.committedTotalPence,
+        flexibleSpendingTargetPence: spendingSummary.flexibleTotalPence,
+        plannedSpendingPence,
         plannedSavingsContributionsPence,
         plannedSurplusPence,
         yearlyCostsPence: yearlyMonthlyEquivalentPence(expenseItems),
@@ -104,22 +108,13 @@ function renderBudgetPlanOverview(ctx, db) {
           actionLabel: 'Review income'
         },
         {
-          section: 'Bills & regular costs',
+          section: 'Spending budgets',
           sectionKind: 'outflow',
-          monthlyPlannedPence: billsAndRegularCostsPence,
+          monthlyPlannedPence: plannedSpendingPence,
           yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(expenseItems)),
-          ownerSummary: ownerSummary(expenseItems, members),
-          actionHref: `/budget-plan/bills?month=${encodeURIComponent(month)}`,
-          actionLabel: 'Review bills'
-        },
-        {
-          section: 'Flexible spending',
-          sectionKind: 'outflow',
-          monthlyPlannedPence: flexibleSpendingTargetPence,
-          yearlyItemsIncluded: 'None',
-          ownerSummary: effectiveBudgets.length ? 'Shared household' : 'None',
-          actionHref: `/budget-plan/flexible-spending?month=${encodeURIComponent(month)}`,
-          actionLabel: 'Review targets'
+          ownerSummary: spendingOwnerSummary(expenseItems, spendingSummary.effectiveBudgets, members),
+          actionHref: `/budget-plan/spending?month=${encodeURIComponent(month)}`,
+          actionLabel: 'Review spending'
         },
         {
           section: 'Planned savings',
@@ -160,109 +155,101 @@ function renderIncomePlanPage(ctx, db) {
   );
 }
 
-function renderBillsPlanPage(ctx, db) {
+function renderSpendingBudgetsPage(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
   const month = ctx.query.get('month') || currentMonth();
   const members = listHouseholdMembers(db, ctx.user.household_id);
-  const items = listBudgetItems(db, ctx.user.household_id, 'expense');
-  const activeSummary = plannedMonthlySummary(items.filter((item) => Number(item.is_active) === 1), month);
-  const activeExpenseItems = activeSummary.activeItems.filter((item) => item.item_type === 'expense');
-  const chartOwner = ctx.query.get('chart_owner') || 'household';
-  const expenseSeries = plannedExpenseCategorySeries(items, { owner: chartOwner, months: [month] });
-  const returnTo = `/budget-plan/bills?month=${encodeURIComponent(month)}&chart_owner=${encodeURIComponent(chartOwner)}`;
+  const expenseItems = listBudgetItems(db, ctx.user.household_id, 'expense');
+  const categories = listCategories(db, ctx.user.household_id);
+  const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
+  const monthBudgets = listCategoryBudgets(db, ctx.user.household_id, { startMonth: month, endMonth: month });
+  const transactions = listTransactions(db, ctx.user.household_id, { startDate: monthRange(month).start, endDate: monthRange(month).end, type: 'expense' });
+  const rows = buildUnifiedSpendingBudgetRows({
+    expenseItems,
+    defaultBudgets,
+    monthBudgets,
+    transactions,
+    month
+  });
+  const returnTo = spendingBudgetsReturnTo(month);
+  const spendingSeries = plannedSpendingCategorySeries({
+    expenseItems,
+    defaultBudgets,
+    monthBudgets,
+    months: [month]
+  });
 
   html(
     ctx.res,
     page(ctx, {
-      title: 'Budget Plan · Bills & regular costs',
+      title: 'Budget Plan · Spending budgets',
       wide: true,
-      body: `${budgetPlanPageIntro('bills', 'What committed household costs do we expect each month?', `Current plan · ${monthLabel(month)}`)}
-      <section class="action-row">
-        ${formDisclosure('expense', ctx, listCategories(db, ctx.user.household_id), members, returnTo)}
-      </section>
-      <section class="grid three budget-plan-bills-summary">
-        <div class="stat">
-          <span>Total monthly bills</span>
-          <strong>${formatCurrency(activeSummary.plannedExpensePence)}</strong>
-        </div>
-        <div class="stat">
-          <span>Yearly costs included</span>
-          <strong>${formatCurrency(yearlyMonthlyEquivalentPence(activeExpenseItems))}</strong>
-          <small class="plan-stat-note">Shown as monthly equivalents in the plan.</small>
-        </div>
-        ${planTextStat('Owner / split summary', ownerSummary(activeExpenseItems, members))}
-      </section>
+      body: `${budgetPlanPageIntro('spending', '', '', budgetPlanMonthControls(month))}
       <section class="card">
-        <h2>Planned bills and regular costs</h2>
-        ${itemsTable(ctx, items, members, 'expense', 'No planned costs yet.', returnTo)}
+        <h2>Spending budgets</h2>
+        <p>Bills and committed costs are recurring payments you expect to pay. Flexible spending targets are monthly allowances for variable spending. Avoid adding the same spending twice.</p>
+      </section>
+      <section class="action-row">
+        ${formDisclosure('expense', ctx, listCategories(db, ctx.user.household_id), members, returnTo, {
+          duplicateCategoryIds: rows.effectiveBudgets.map((budget) => budget.category_id).filter(Boolean),
+          duplicateMessage: 'You already have this category as a flexible spending target. Adding it here may count the same spending twice.'
+        })}
+        <button type="button" data-open-modal="category-budget-modal" data-reset-modal="true">Add flexible target</button>
+      </section>
+      <section class="grid four">
+        <div class="stat">
+          <span>Planned spending</span>
+          <strong>${formatCurrency(rows.totalPlannedSpendingPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Fixed / committed</span>
+          <strong>${formatCurrency(rows.committedTotalPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Variable / flexible</span>
+          <strong>${formatCurrency(rows.flexibleTotalPence)}</strong>
+        </div>
+        <div class="stat">
+          <span>Annual costs smoothed monthly</span>
+          <strong>${formatCurrency(yearlyMonthlyEquivalentPence(rows.committedItems))}</strong>
+        </div>
+      </section>
+      ${rows.overlaps.length ? `<section class="card warning-card">
+        <h2>Potential double-counting to review</h2>
+        <p>The categories below exist as both committed costs and flexible targets. Flexible targets in these categories are not deducted again from your plan.</p>
+        <ul class="bullet-list">${rows.overlaps.map((row) => `<li>${escapeHtml(row.category_name || 'Uncategorised')}</li>`).join('')}</ul>
+      </section>` : ''}
+      <section class="card">
+        <h2>Planned spending budgets</h2>
+        ${spendingBudgetsTable(ctx, rows.rows, members, month, returnTo)}
       </section>
       <section class="card chart-card" id="planned-spending-chart">
         <div class="card-heading">
           <div>
             <h2>Planned spending by category</h2>
-            <p class="hint">A secondary view of where regular household costs sit across categories.</p>
+            <p class="hint">Includes fixed and flexible spending budgets without counting overlapping categories twice.</p>
           </div>
-          <nav class="period-pills chart-owner-pills" aria-label="Bills chart view">
-            ${expenseChartOwnerPill('household', 'Household', chartOwner, month, '/budget-plan/bills')}
-            ${expenseChartOwnerPill('person_a', ownerLabel('person_a', members), chartOwner, month, '/budget-plan/bills')}
-            ${expenseChartOwnerPill('person_b', ownerLabel('person_b', members), chartOwner, month, '/budget-plan/bills')}
-          </nav>
         </div>
-        ${pieChart(expenseSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned costs to build this chart.' })}
-      </section>`
-    })
-  );
-}
-
-function renderFlexibleSpendingPlanPage(ctx, db) {
-  if (!ensureAuthenticated(ctx)) return;
-  const month = ctx.query.get('month') || currentMonth();
-  const categories = listCategories(db, ctx.user.household_id);
-  const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
-  const monthBudgets = listCategoryBudgets(db, ctx.user.household_id, { startMonth: month, endMonth: month });
-  const rows = categoryBudgetComparison(
-    effectiveCategoryBudgets(defaultBudgets, monthBudgets, month),
-    listTransactions(db, ctx.user.household_id, { startDate: monthRange(month).start, endDate: monthRange(month).end, type: 'expense' })
-  );
-  const summary = categoryBudgetSummary(rows);
-  const returnTo = flexibleSpendingReturnTo(month);
-
-  html(
-    ctx.res,
-    page(ctx, {
-      title: 'Budget Plan · Flexible Spending',
-      wide: true,
-      body: `${budgetPlanPageIntro('flexible-spending', 'What variable spending targets are we setting for this month?', `Selected month · ${monthLabel(month)}`)}
-      <section class="action-row">
-        <form method="get" action="/budget-plan/flexible-spending" class="inline-form" data-submit-on-change>
-          <label>Month <input type="month" name="month" value="${escapeHtml(month)}"></label>
-        </form>
-        <button type="button" data-open-modal="category-budget-modal" data-reset-modal="true">Set spending target</button>
-      </section>
-      <section class="grid three budget-plan-flex-summary">
-        <div class="stat">
-          <span>Flexible spending target</span>
-          <strong>${formatCurrency(summary.totalBudgetPence)}</strong>
-        </div>
-        <div class="stat">
-          <span>Actual spending</span>
-          <strong>${formatCurrency(summary.totalActualExpensePence)}</strong>
-        </div>
-        ${planTextStat('Status', overallTargetStatus(summary.totalBudgetPence, summary.totalActualExpensePence))}
-      </section>
-      <section class="card">
-        <h2>Flexible spending targets</h2>
-        ${flexibleSpendingTable(ctx, rows, month, returnTo)}
+        ${pieChart(spendingSeries, { title: 'Planned spending by category', emptyMessage: 'Add spending budgets to build this chart.' })}
       </section>
       <dialog id="category-budget-modal" class="modal" data-modal>
         <div class="modal-panel">
           <div class="modal-heading">
             <div>
-              <h2>Set spending target</h2>
+              <h2>Add flexible target</h2>
             </div>
             <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
           </div>
-          ${categoryBudgetForm(ctx, categories.filter((category) => ['expense', 'debt'].includes(category.kind)), month, returnTo)}
+          ${categoryBudgetForm(
+            ctx,
+            categories.filter((category) => ['expense', 'debt'].includes(category.kind)),
+            month,
+            returnTo,
+            {
+              duplicateCategoryIds: rows.committedItems.map((item) => item.category_id).filter(Boolean),
+              duplicateMessage: 'You already have this category in committed costs. Adding it here may count the same spending twice.'
+            }
+          )}
         </div>
       </dialog>`
     })
@@ -283,7 +270,7 @@ function renderPlannedSavingsPage(ctx, db) {
     page(ctx, {
       title: 'Budget Plan · Planned savings',
       wide: true,
-      body: `${budgetPlanPageIntro('planned-savings', 'What savings contributions are included in the monthly budget?', `Current month · ${monthLabel(month)}`)}
+      body: `${budgetPlanPageIntro('planned-savings')}
       <section class="action-row">
         <a class="button" href="/savings/accounts">Add planned saving</a>
         <a class="button" href="/savings/goals">View full Savings Goals</a>
@@ -324,22 +311,30 @@ function budgetPlanPageIntro(activeKey, context, secondaryLabel = '', controls =
   <nav class="period-pills section-nav" aria-label="Budget plan sections">
     ${budgetPlanSectionLink('/budget-plan', 'Overview', activeKey === 'overview')}
     ${budgetPlanSectionLink('/budget-plan/income', 'Income', activeKey === 'income')}
-    ${budgetPlanSectionLink('/budget-plan/bills', 'Bills & regular costs', activeKey === 'bills')}
-    ${budgetPlanSectionLink('/budget-plan/flexible-spending', 'Flexible spending', activeKey === 'flexible-spending')}
+    ${budgetPlanSectionLink('/budget-plan/spending', 'Spending Budgets', activeKey === 'spending')}
     ${budgetPlanSectionLink('/budget-plan/planned-savings', 'Planned savings', activeKey === 'planned-savings')}
   </nav>`;
 }
 
 function budgetPlanMonthControls(month) {
-  return `<div class="budget-plan-month-controls">
-    <nav class="budget-plan-month-nav" aria-label="Budget Plan month">
-      <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, -1))}">&lsaquo; Previous</a>
-      <span class="budget-plan-current-month">${escapeHtml(monthLabel(month))}</span>
-      <a class="period-pill" href="/budget-plan?month=${encodeURIComponent(addMonths(month, 1))}">Next &rsaquo;</a>
-    </nav>
-    <form method="get" action="/budget-plan" class="inline-form compact-month-form" data-submit-on-change>
-      <label><span class="sr-only">Pick month</span><input type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month"></label>
-    </form>
+  const inputId = 'budget-plan-month-input';
+  const formId = 'budget-plan-month-form';
+  return `<form method="get" action="/budget-plan" id="${formId}" class="budget-plan-month-form" data-submit-on-change>
+    <input id="${inputId}" class="budget-plan-month-input" type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month">
+  </form>
+  <div class="budget-plan-month-controls">
+    <a class="period-pill budget-plan-month-step" href="/budget-plan?month=${encodeURIComponent(addMonths(month, -1))}" aria-label="Previous month">
+      <span aria-hidden="true">&lsaquo;</span>
+    </a>
+    <button type="button" class="period-pill budget-plan-current-month-button" data-open-month-picker="${inputId}" aria-label="Pick month" title="Pick month">
+      ${escapeHtml(monthLabel(month))}
+    </button>
+    <a class="period-pill budget-plan-month-step" href="/budget-plan?month=${encodeURIComponent(addMonths(month, 1))}" aria-label="Next month">
+      <span aria-hidden="true">&rsaquo;</span>
+    </a>
+    <button type="button" class="period-pill budget-plan-month-step" data-open-month-picker="${inputId}" aria-label="Open month picker" title="Open month picker">
+      ${calendarIcon()}
+    </button>
   </div>`;
 }
 
@@ -349,26 +344,27 @@ function budgetPlanSectionLink(href, label, active = false) {
 
 function budgetPlanSummaryCards({
   plannedIncomePence,
-  billsAndRegularCostsPence,
+  committedSpendingPence,
   flexibleSpendingTargetPence,
+  plannedSpendingPence,
   plannedSavingsContributionsPence,
   plannedSurplusPence,
   yearlyCostsPence,
   completeness
 }) {
-  const balanceLabel = plannedSurplusPence >= 0 ? 'Available after planned commitments' : 'Shortfall after planned commitments';
+  const balanceLabel = plannedSurplusPence >= 0 ? 'Available after plan' : 'Shortfall after plan';
   const balanceTone = plannedSurplusPence >= 0 ? 'good' : 'bad';
   return `<section class="grid four">
     ${planSummaryStat('Planned income', plannedIncomePence)}
-    ${planSummaryStat('Bills & regular costs', billsAndRegularCostsPence, yearlyCostsPence > 0 ? `${formatCurrency(yearlyCostsPence)}/month from annual items` : 'Annual costs included: None')}
-    ${planSummaryStat('Flexible spending target', flexibleSpendingTargetPence)}
+    ${planSummaryStat('Planned spending', plannedSpendingPence, `Fixed ${formatCurrency(committedSpendingPence)} · Variable ${formatCurrency(flexibleSpendingTargetPence)}`)}
     ${planSummaryStat('Planned savings', plannedSavingsContributionsPence)}
+    ${planSummaryStat('Annual costs smoothed monthly', yearlyCostsPence, yearlyCostsPence > 0 ? 'Included in planned spending.' : 'None')}
   </section>
   <section class="grid two budget-plan-status-row">
     <div class="card plan-balance-card ${balanceTone}">
       <span class="plan-balance-label">${balanceLabel}</span>
       <strong>${formatCurrency(Math.abs(plannedSurplusPence))}</strong>
-      <p class="hint">Planned income minus bills, flexible spending targets, and savings contributions.</p>
+      <p class="hint">Planned income minus planned spending and planned savings.</p>
     </div>
     ${planCompletenessCard(completeness)}
   </section>`;
@@ -420,14 +416,21 @@ function sectionKindLabel(sectionKind) {
   return 'Planned amount';
 }
 
+function calendarIcon() {
+  return `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+    <rect x="4" y="5" width="16" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M8 3.8v3.4M16 3.8v3.4M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M8.2 13h2.6M13.2 13h2.6M8.2 16.5h2.6M13.2 16.5h2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
 function budgetPlanEmptyState() {
   return `<section class="card plan-empty-state">
     <h2>Start your budget plan</h2>
-    <p>Start by adding income, then add bills and regular costs. We&rsquo;ll calculate your planned monthly position automatically.</p>
+    <p>Start by adding income, then add spending budgets. We&rsquo;ll calculate your planned monthly position automatically.</p>
     <div class="button-list">
       <a class="button" href="/budget-plan/income">Add income</a>
-      <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
-      <a class="button" href="/budget-plan/flexible-spending">Add spending target</a>
+      <a class="button" href="/budget-plan/spending">Add spending budget</a>
       <a class="button" href="/savings/accounts">Add planned saving</a>
     </div>
   </section>`;
@@ -473,7 +476,7 @@ function planCompleteness(expenseItems = [], month = currentMonth()) {
   ].map((check) => ({
     ...check,
     complete: planIncludesTerms(expenseItems, check.terms),
-    href: `/budget-plan/bills?month=${encodeURIComponent(month)}&suggested_category=${encodeURIComponent(check.suggestedCategories.join('|'))}`
+    href: `/budget-plan/spending?month=${encodeURIComponent(month)}&suggested_category=${encodeURIComponent(check.suggestedCategories.join('|'))}`
   }));
   const foundCount = checks.filter((check) => check.complete).length;
   const missingCount = checks.length - foundCount;
@@ -518,6 +521,110 @@ function ownerSummary(items, members) {
   if (owners.includes('shared')) return 'Shared household';
   if (owners.length === 1) return ownerLabel(owners[0], members);
   return 'Multiple household members';
+}
+
+function spendingOwnerSummary(expenseItems, flexibleBudgets, members) {
+  const hasSharedFlexible = flexibleBudgets.some((budget) => Number(budget.amount_pence || 0) > 0);
+  if (hasSharedFlexible) return 'Shared household';
+  return ownerSummary(expenseItems, members);
+}
+
+function spendingOwnerLabel(row, members) {
+  if (row.ownerType !== 'shared') return ownerLabel(row.ownerType, members);
+  if (row.splitType === 'manual_percentage') {
+    return `Shared household (${Number(row.personAPercentage || 50)}% / ${Number(row.personBPercentage || 50)}%)`;
+  }
+  return 'Shared household';
+}
+
+function spendingFrequencyLabel(row) {
+  if (row.rowType === 'committed_cost') {
+    if (row.frequency === 'yearly') return `Yearly, ${formatCurrency(row.sourceAmountPence)}/year`;
+    return `Monthly, ${formatCurrency(row.sourceAmountPence)}/month`;
+  }
+  return row.budgetScope === 'month_override' ? `Override for ${monthLabel(row.budgetMonth)}` : 'Monthly target';
+}
+
+function spendingRemainingLabel(row) {
+  if (row.overlap) return 'Not counted twice';
+  return overallTargetStatus(row.plannedMonthlyPence, row.actualSpentPence);
+}
+
+function spendingStatusLabel(row) {
+  if (row.overlap) return 'Review overlap';
+  if (row.rowType === 'flexible_target') return targetSourceLabel(row);
+  return row.status;
+}
+
+function spendingBudgetActions(ctx, row, month, returnTo) {
+  if (row.rowType === 'committed_cost') {
+    const item = {
+      id: row.id,
+      category_id: row.categoryId,
+      name: row.name,
+      owner_type: row.ownerType,
+      amount_pence: row.sourceAmountPence,
+      frequency: row.frequency,
+      split_type: row.splitType,
+      person_a_percentage: row.personAPercentage,
+      person_b_percentage: row.personBPercentage,
+      notes: row.notes || '',
+      start_date: row.startDate || '',
+      end_date: row.endDate || '',
+      is_active: row.isActive ? 1 : 0
+    };
+    return `<div class="table-actions">
+      ${actionIconButton({
+        label: 'Edit committed cost',
+        icon: 'edit',
+        variant: 'edit',
+        attributes: `data-open-modal="expense-modal"
+          data-reset-modal="true"
+          ${itemEditAttributes(item)}`
+      })}
+      <form method="post" action="/budget-item/toggle">
+        ${csrfField(ctx)}
+        <input type="hidden" name="id" value="${row.id}">
+        <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+        <input type="hidden" name="is_active" value="${row.isActive ? '0' : '1'}">
+        ${actionIconButton({
+          label: row.isActive ? 'Pause committed cost' : 'Resume committed cost',
+          icon: row.isActive ? 'pause' : 'play',
+          variant: row.isActive ? 'warn' : 'good',
+          type: 'submit'
+        })}
+      </form>
+      <form method="post" action="/budget-item/delete" data-confirm="Delete this planned cost?">
+        ${csrfField(ctx)}
+        <input type="hidden" name="id" value="${row.id}">
+        <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+        ${actionIconButton({ label: 'Delete committed cost', icon: 'delete', variant: 'delete', type: 'submit' })}
+      </form>
+    </div>`;
+  }
+
+  if (!row.id) return '';
+  return `<div class="table-actions">
+    ${actionIconButton({
+      label: 'Edit flexible target',
+      icon: 'edit',
+      variant: 'edit',
+      attributes: `data-open-modal="category-budget-modal"
+        data-fill-id="${escapeHtml(row.id)}"
+        data-fill-scope="${escapeHtml(row.budgetScope || 'default_monthly')}"
+        data-fill-month="${escapeHtml(month)}"
+        data-fill-category-id="${escapeHtml(row.categoryId || '')}"
+        data-fill-amount="${escapeHtml((row.plannedMonthlyPence / 100).toFixed(2))}"
+        data-fill-notes="${escapeHtml(row.notes || '')}"`
+    })}
+    <form method="post" action="/expenses/category-budgets/delete" data-confirm="Delete this spending target?">
+      ${csrfField(ctx)}
+      <input type="hidden" name="id" value="${escapeHtml(row.id)}">
+      <input type="hidden" name="budget_scope" value="${escapeHtml(row.budgetScope || 'default_monthly')}">
+      <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+      ${actionIconButton({ label: 'Delete flexible target', icon: 'delete', variant: 'delete', type: 'submit' })}
+    </form>
+  </div>`;
 }
 
 function overallTargetStatus(targetPence, actualPence) {
@@ -581,63 +688,39 @@ function plannedSavingsContributionCell(account) {
   </div>`;
 }
 
-function flexibleSpendingTable(ctx, rows, month, returnTo) {
-  if (!rows.length) return '<p class="empty">No flexible spending targets for this month yet.</p>';
+function spendingBudgetsTable(ctx, rows, members, month, returnTo) {
+  if (!rows.length) {
+    return `<div class="empty-state compact">
+      <h3>No spending budgets yet</h3>
+      <p>Add committed costs or flexible targets to build your planned spending budget.</p>
+    </div>`;
+  }
 
-  return `<table class="data-table category-budget-table">
-    <thead><tr><th>Category</th><th>Target</th><th>Actual spending</th><th>Status</th><th>Source</th><th class="actions-col"></th></tr></thead>
+  return `<table class="data-table category-budget-table spending-budget-table">
+    <thead><tr><th>Category / name</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th>Actual spent</th><th>Remaining</th><th>Status</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${rows
-      .map((row) => {
-        const actions = row.budgetId
-          ? `<div class="category-actions">
-              ${actionIconButton({
-                label: 'Edit spending target',
-                icon: 'edit',
-                variant: 'edit',
-                attributes: `data-open-modal="category-budget-modal"
-                data-fill-id="${escapeHtml(row.budgetId)}"
-                data-fill-scope="${escapeHtml(row.budgetScope || 'default_monthly')}"
-                data-fill-month="${escapeHtml(month)}"
-                data-fill-category-id="${escapeHtml(row.categoryId || '')}"
-                data-fill-amount="${escapeHtml((row.budgetPence / 100).toFixed(2))}"
-                data-fill-notes="${escapeHtml(row.notes || '')}"`
-              })}
-              <form method="post" action="/expenses/category-budgets/delete" data-confirm="Delete this spending target?">
-                ${csrfField(ctx)}
-                <input type="hidden" name="id" value="${escapeHtml(row.budgetId)}">
-                <input type="hidden" name="budget_scope" value="${escapeHtml(row.budgetScope || 'default_monthly')}">
-                <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-                ${actionIconButton({ label: 'Delete spending target', icon: 'delete', variant: 'delete', type: 'submit' })}
-              </form>
-            </div>`
-          : row.categoryId
-            ? actionIconButton({
-              label: 'Set spending target',
-              icon: 'plus',
-              variant: 'add',
-              attributes: `data-open-modal="category-budget-modal"
-                data-reset-modal="true"
-                data-fill-scope="default_monthly"
-                data-fill-month="${escapeHtml(month)}"
-                data-fill-category-id="${escapeHtml(row.categoryId)}"`
-            })
-            : '';
-
-        return `<tr>
-          <td>${escapeHtml(row.category)}</td>
-          <td>${row.budgetPence ? formatCurrency(row.budgetPence) : '—'}</td>
-          <td>${formatCurrency(row.actualExpensePence)}</td>
-          <td>${escapeHtml(overallTargetStatus(row.budgetPence, row.actualExpensePence))}</td>
-          <td>${escapeHtml(targetSourceLabel(row))}</td>
-          <td class="actions-col">${actions}</td>
-        </tr>`;
-      })
+      .map((row) => `<tr>
+        <td>
+          <div class="cell-stack">
+            <strong>${escapeHtml(row.name)}</strong>
+            <small class="hint">${escapeHtml(row.rowType === 'committed_cost' ? row.categoryName : `${row.categoryName} budget`)}</small>
+          </div>
+        </td>
+        <td>${escapeHtml(row.rowType === 'committed_cost' ? 'Fixed / committed' : 'Variable / flexible')}</td>
+        <td>${escapeHtml(spendingOwnerLabel(row, members))}</td>
+        <td>${escapeHtml(spendingFrequencyLabel(row))}</td>
+        <td>${formatCurrency(row.plannedMonthlyPence)}</td>
+        <td>${formatCurrency(row.actualSpentPence)}</td>
+        <td>${escapeHtml(spendingRemainingLabel(row))}</td>
+        <td>${escapeHtml(spendingStatusLabel(row))}</td>
+        <td class="actions-col">${spendingBudgetActions(ctx, row, month, returnTo)}</td>
+      </tr>`)
       .join('')}</tbody>
   </table>`;
 }
 
-function flexibleSpendingReturnTo(month) {
-  return `/budget-plan/flexible-spending?month=${encodeURIComponent(month)}`;
+function spendingBudgetsReturnTo(month) {
+  return `/budget-plan/spending?month=${encodeURIComponent(month)}`;
 }
 
 function targetSourceLabel(row) {
@@ -646,24 +729,24 @@ function targetSourceLabel(row) {
   return 'Default target';
 }
 
-function formDisclosure(itemType, ctx, categories, members, returnTo) {
-  const label = itemType === 'income' ? 'Add planned income' : 'Add planned cost';
+function formDisclosure(itemType, ctx, categories, members, returnTo, options = {}) {
+  const label = itemType === 'income' ? 'Add planned income' : 'Add committed cost';
   const modalId = `${itemType}-modal`;
   return `<button type="button" data-open-modal="${modalId}" data-reset-modal="true">${label}</button>
     <dialog id="${modalId}" class="modal" data-modal>
       <div class="modal-panel">
         <div class="modal-heading">
           <div>
-            <h2>${itemType === 'income' ? 'Planned income details' : 'Planned cost details'}</h2>
+            <h2>${itemType === 'income' ? 'Planned income details' : 'Committed cost details'}</h2>
           </div>
           <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
         </div>
-      ${itemType === 'income' ? incomeForm(ctx, members, returnTo) : expenseForm(ctx, categories, members, returnTo)}
+      ${itemType === 'income' ? incomeForm(ctx, members, returnTo) : expenseForm(ctx, categories, members, returnTo, options)}
       </div>
     </dialog>`;
 }
 
-function categoryBudgetForm(ctx, categories, budgetMonth, returnTo) {
+function categoryBudgetForm(ctx, categories, budgetMonth, returnTo, options = {}) {
   return `<form method="post" action="/expenses/category-budgets" class="stack budget-form modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
@@ -679,7 +762,9 @@ function categoryBudgetForm(ctx, categories, budgetMonth, returnTo) {
       <div data-controlled-by="budget_scope" data-show-when="month_override" hidden>
         <label>Month <input name="budget_month" type="month" value="${escapeHtml(budgetMonth)}" data-required-when-visible="true" data-modal-field="month"></label>
       </div>
-      <label>Category <select name="category_id" required data-modal-field="categoryId">${categoryOptions(categories)}</select></label>
+      <label>Category <select name="category_id" required data-modal-field="categoryId" data-spending-warning-select data-warning-category-ids="${escapeHtml((options.duplicateCategoryIds || []).join(','))}" data-warning-message="${escapeHtml(options.duplicateMessage || '')}">${categoryOptions(categories)}</select></label>
+      <p class="hint">Use this for variable monthly allowances such as groceries, fuel, eating out, clothing, entertainment, and personal spending.</p>
+      <p class="inline-hint warning-text" data-spending-duplicate-warning hidden></p>
       <label>Target amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
@@ -687,10 +772,6 @@ function categoryBudgetForm(ctx, categories, budgetMonth, returnTo) {
       <button>Save spending target</button>
     </div>
   </form>`;
-}
-function expenseChartOwnerPill(ownerKey, label, selectedOwner, budgetMonth, basePath = '/budget-plan/bills') {
-  const active = selectedOwner === ownerKey;
-  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?month=${encodeURIComponent(budgetMonth)}&chart_owner=${encodeURIComponent(ownerKey)}#planned-spending-chart">${escapeHtml(label)}</a>`;
 }
 
 function incomeForm(ctx, members, returnTo) {
@@ -855,7 +936,7 @@ function incomeForm(ctx, members, returnTo) {
   </form>`;
 }
 
-function expenseForm(ctx, categories, members, returnTo) {
+function expenseForm(ctx, categories, members, returnTo, options = {}) {
   const expenseCategories = categories.filter((category) => ['expense', 'debt'].includes(category.kind));
   const suggestedCategoryId = suggestedExpenseCategoryId(ctx, expenseCategories);
   const firstMemberLabel = ownerLabel('person_a', members);
@@ -867,7 +948,9 @@ function expenseForm(ctx, categories, members, returnTo) {
     <section class="form-section">
       <h3>Cost details</h3>
     <label>Name <input name="name" required maxlength="120" data-modal-field="name"></label>
-    <label>Category <select name="category_id" data-modal-field="categoryId">${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
+    <label>Category <select name="category_id" data-modal-field="categoryId" data-spending-warning-select data-warning-category-ids="${escapeHtml((options.duplicateCategoryIds || []).join(','))}" data-warning-message="${escapeHtml(options.duplicateMessage || '')}">${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
+    <p class="hint">Use this for recurring or predictable payments such as rent, mortgage, council tax, utilities, insurance, subscriptions, childcare, loans, and phone contracts.</p>
+    <p class="inline-hint warning-text" data-spending-duplicate-warning hidden></p>
     <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount" data-split-amount-source></label>
     <label>Frequency <select name="frequency" data-modal-field="frequency">${frequencyOptions('monthly')}</select></label>
@@ -1152,7 +1235,7 @@ function capitalise(value) {
   return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
 }
 
-function itemsTable(ctx, items, members, itemType, emptyMessage = 'No items yet.', returnTo = itemType === 'income' ? '/budget-plan/income' : '/budget-plan/bills') {
+function itemsTable(ctx, items, members, itemType, emptyMessage = 'No items yet.', returnTo = itemType === 'income' ? '/budget-plan/income' : '/budget-plan/spending') {
   if (!items.length) return budgetItemEmptyState(itemType, emptyMessage);
   const showCategory = itemType !== 'income';
   return `<table class="data-table">
@@ -1528,9 +1611,9 @@ function createExpense(ctx, db) {
     } else {
       createBudgetItem(db, payload);
     }
-    redirectWithSuccess(ctx.res, ctx.body.return_to || '/budget-plan/bills', existingItem ? 'Expense updated.' : 'Expense saved.');
+    redirectWithSuccess(ctx.res, ctx.body.return_to || '/budget-plan/spending', existingItem ? 'Expense updated.' : 'Expense saved.');
   } catch (error) {
-    redirectWithError(ctx.res, ctx.body.return_to || '/budget-plan/bills', error);
+    redirectWithError(ctx.res, ctx.body.return_to || '/budget-plan/spending', error);
   }
 }
 

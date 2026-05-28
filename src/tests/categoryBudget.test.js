@@ -14,6 +14,7 @@ import {
   saveCategoryBudgetDefault
 } from '../repositories/categoryBudgetRepository.js';
 import { categoryBudgetComparison, effectiveCategoryBudgets, mergeCategoryExpenseTracking } from '../services/categoryBudgetService.js';
+import { plannedSpendingSummary } from '../services/spendingBudgetService.js';
 
 test('month override budgets can be saved, updated, listed, and deleted', () => {
   const db = openTestDatabase();
@@ -154,6 +155,34 @@ test('category budget comparison and merged tracking include defaults, overrides
   assert.equal(merged.find((row) => row.category === 'Groceries').budgetPence, 40000);
   assert.equal(merged.find((row) => row.category === 'Groceries').budgetVariancePence, 6500);
   assert.equal(merged.find((row) => row.category === 'Transport').budgetPence, 12000);
+});
+
+test('planned spending summary does not double-count overlapping flexible targets', () => {
+  const summary = plannedSpendingSummary({
+    expenseItems: [
+      {
+        item_type: 'expense',
+        is_active: 1,
+        category_id: 10,
+        category_name: 'Groceries',
+        monthly_equivalent_pence: 30000,
+        start_date: '2026-01-01',
+        end_date: null
+      }
+    ],
+    defaultBudgets: [
+      { id: 1, category_id: 10, category_name: 'Groceries', amount_pence: 30000, notes: '' },
+      { id: 2, category_id: 11, category_name: 'Transport', amount_pence: 12000, notes: '' }
+    ],
+    monthBudgets: [],
+    month: '2026-05'
+  });
+
+  assert.equal(summary.committedTotalPence, 30000);
+  assert.equal(summary.flexibleTotalPence, 12000);
+  assert.equal(summary.overlappingFlexibleTotalPence, 30000);
+  assert.equal(summary.totalPlannedSpendingPence, 42000);
+  assert.deepEqual(summary.overlaps.map((row) => row.category_name), ['Groceries']);
 });
 
 function openTestDatabase() {

@@ -6,11 +6,10 @@ import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { listCategoryBudgets, listCategoryBudgetDefaults } from '../repositories/categoryBudgetRepository.js';
 import { yearlyItems } from '../services/budgetService.js';
-import { effectiveCategoryBudgets } from '../services/categoryBudgetService.js';
-import { plannedExpenseCategorySeries } from '../services/chartService.js';
 import { buildMonthlyForecast } from '../services/forecastService.js';
 import { buildPeriodReport } from '../services/reportService.js';
 import { savingsGoalProgress, plannedSavingsBudgetItems } from '../services/savingsService.js';
+import { buildFlexibleSpendingByMonth, plannedSpendingCategorySeries } from '../services/spendingBudgetService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, movementStat, page, stat, ownerLabel, varianceLabel } from '../views/html.js';
@@ -38,11 +37,16 @@ export function registerDashboardRoutes(router, db) {
     const report = applyFlexibleSpendingToReport(
       buildPeriodReport({ items: planningItems, transactions, range: period.range }),
       categoryBudgetDefaults,
-      categoryBudgetOverrides
+      categoryBudgetOverrides,
+      items
     );
     const { planned, actual, variance } = report;
-    const chartOwner = ctx.query.get('chart_owner') || 'household';
-    const plannedExpenseSeries = plannedExpenseCategorySeries(items, { owner: chartOwner, months: report.months });
+    const plannedExpenseSeries = plannedSpendingCategorySeries({
+      expenseItems: items,
+      defaultBudgets: categoryBudgetDefaults,
+      monthBudgets: categoryBudgetOverrides,
+      months: report.months
+    });
     const hasPlannedData =
       planned.plannedIncomePence > 0 ||
       planned.plannedExpensePence > 0 ||
@@ -77,7 +81,6 @@ export function registerDashboardRoutes(router, db) {
       household,
       flexibleSpendingByMonth: report.flexibleSpendingByMonth,
       plannedExpenseSeries,
-      chartOwner,
       period,
       selectedMonth
     });
@@ -95,15 +98,14 @@ export function registerDashboardRoutes(router, db) {
           </div>
           <div class="dashboard-toolbar-controls">
             <nav class="period-pills" aria-label="Dashboard period">
-              ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth, chartOwner)}
-              ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth, chartOwner)}
-              ${periodPill('/dashboard', 'last_3_months', 'Last 3 months', period.key, selectedMonth, chartOwner)}
-              ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth, chartOwner)}
-              ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth, chartOwner)}
+              ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth)}
+              ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth)}
+              ${periodPill('/dashboard', 'last_3_months', 'Last 3 months', period.key, selectedMonth)}
+              ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth)}
+              ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth)}
             </nav>
             ${period.key === 'specific_month' ? `<form method="get" action="/dashboard" class="inline-form dashboard-month-form" data-submit-on-change>
               <input type="hidden" name="period" value="specific_month">
-              <input type="hidden" name="chart_owner" value="${escapeHtml(chartOwner)}">
               <label>Month <input type="month" name="month" value="${escapeHtml(selectedMonth)}"></label>
             </form>` : ''}
           </div>
@@ -146,7 +148,6 @@ function dashboardStateContent({
   household,
   flexibleSpendingByMonth,
   plannedExpenseSeries,
-  chartOwner,
   period,
   selectedMonth
 }) {
@@ -191,7 +192,7 @@ function dashboardStateContent({
     ${plannedSummaryCards(planned)}
     ${actualSummaryCards(actual)}
     ${forecastSnapshot(planningItems, household, flexibleSpendingByMonth)}
-    ${categoryBreakdownCard(plannedExpenseSeries, chartOwner, period, selectedMonth, members)}
+    ${categoryBreakdownCard(plannedExpenseSeries)}
     <section class="grid two">
       ${varianceSummaryCard(variance)}
       ${yearlyItems(items).length ? `<div class="card">
@@ -210,9 +211,9 @@ function dashboardStateContent({
 function plannedSummaryCards(planned) {
   return `<section class="grid four">
     ${stat('Planned income', planned.plannedIncomePence, 'good')}
-    ${stat('Planned bills and spending', planned.plannedExpensePence)}
+    ${stat('Planned spending', planned.plannedExpensePence)}
     ${stat('Planned savings', planned.plannedSavingsPence)}
-    ${movementStat('Available after planned commitments', planned.plannedSurplusPence, 'Planned income minus planned bills, flexible spending targets, and planned savings.')}
+    ${movementStat('Available after plan', planned.plannedSurplusPence, 'Planned income minus planned spending and planned savings.')}
   </section>`;
 }
 
@@ -239,20 +240,15 @@ function varianceSummaryCard(variance) {
   </div>`;
 }
 
-function categoryBreakdownCard(plannedExpenseSeries, chartOwner, period, selectedMonth, members) {
+function categoryBreakdownCard(plannedExpenseSeries) {
   if (!plannedExpenseSeries.length) return '';
   return `<section class="card chart-card" id="planned-expenses-chart">
     <div class="card-heading">
       <div>
-        <h2>Planned regular costs by category</h2>
+        <h2>Planned spending by category</h2>
       </div>
-      <nav class="period-pills chart-owner-pills" aria-label="Spending chart view">
-        ${chartOwnerPill('/dashboard', 'household', 'Household', chartOwner, period.key, selectedMonth)}
-        ${chartOwnerPill('/dashboard', 'person_a', ownerLabel('person_a', members), chartOwner, period.key, selectedMonth)}
-        ${members.some((member) => member.person_key === 'person_b') ? chartOwnerPill('/dashboard', 'person_b', ownerLabel('person_b', members), chartOwner, period.key, selectedMonth) : ''}
-      </nav>
     </div>
-    ${pieChart(plannedExpenseSeries, { title: 'Planned regular costs by category', emptyMessage: 'Add planned regular costs to build this chart.' })}
+    ${pieChart(plannedExpenseSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned spending budgets to build this chart.' })}
   </section>`;
 }
 
@@ -286,8 +282,8 @@ function forecastSnapshot(planningItems, household, flexibleSpendingByMonth) {
   </section>`;
 }
 
-function applyFlexibleSpendingToReport(report, categoryBudgetDefaults, categoryBudgetOverrides) {
-  const flexibleSpendingByMonth = buildFlexibleSpendingByMonth(report.months, categoryBudgetDefaults, categoryBudgetOverrides);
+function applyFlexibleSpendingToReport(report, categoryBudgetDefaults, categoryBudgetOverrides, items) {
+  const flexibleSpendingByMonth = buildFlexibleSpendingByMonth(report.months, categoryBudgetDefaults, categoryBudgetOverrides, items);
   const plannedFlexibleSpendingPence = [...flexibleSpendingByMonth.values()].reduce((sum, value) => sum + value, 0);
   const planned = {
     ...report.planned,
@@ -316,22 +312,6 @@ function applyFlexibleSpendingToReport(report, categoryBudgetDefaults, categoryB
     plannedFlexibleSpendingPence,
     flexibleSpendingByMonth
   };
-}
-
-function buildFlexibleSpendingByMonth(months, categoryBudgetDefaults, categoryBudgetOverrides) {
-  return new Map(
-    months.map((month) => [
-      month,
-      effectiveCategoryBudgets(
-        categoryBudgetDefaults,
-        categoryBudgetOverrides.filter((budget) => budget.budget_month === month),
-        month
-      ).reduce(
-        (sum, budget) => sum + Number(budget.amount_pence || 0),
-        0
-      )
-    ])
-  );
 }
 
 function applyFlexibleSpendingToForecast(forecast, flexibleSpendingByMonth = new Map()) {
@@ -367,7 +347,7 @@ function ownershipSnapshotCard(planned, members, options = {}) {
   return `<section class="card ${options.fullWidth ? 'grid-span-two' : ''}">
     <h2>Ownership snapshot</h2>
     <table class="data-table financial-table ownership-table">
-      <thead><tr><th>Owner</th><th>Planned income</th><th>Planned bills and spending</th><th>Planned savings</th></tr></thead>
+      <thead><tr><th>Owner</th><th>Planned income</th><th>Planned spending</th><th>Planned savings</th></tr></thead>
       <tbody>
         ${rows
           .map(
@@ -394,6 +374,7 @@ function setupChecklistItems({
   const hasIncome = items.some((item) => item.item_type === 'income');
   const hasBills = items.some((item) => item.item_type === 'expense');
   const hasFlexibleTargets = categoryBudgetDefaults.length > 0 || categoryBudgetOverrides.length > 0;
+  const hasSpendingBudgets = hasBills || hasFlexibleTargets;
   const hasSavingsContributions =
     goals.some((goal) => Number(goal.monthly_contribution_pence || 0) > 0) ||
     savingsAccounts.some((account) => Number(account.monthly_contribution_pence || 0) > 0);
@@ -416,18 +397,11 @@ function setupChecklistItems({
       complete: hasIncome
     },
     {
-      title: 'Add bills and regular costs',
-      description: 'Add committed costs such as rent, mortgage, council tax, utilities, subscriptions, and insurance.',
-      href: '/budget-plan/bills',
-      action: 'Add planned cost',
-      complete: hasBills
-    },
-    {
-      title: 'Set flexible spending targets',
-      description: 'Set monthly targets for variable spending such as groceries, transport, eating out, and personal spending.',
-      href: '/budget-plan/flexible-spending',
-      action: 'Set targets',
-      complete: hasFlexibleTargets
+      title: 'Add spending budgets',
+      description: 'Add committed costs and variable category budgets such as rent, council tax, utilities, groceries, transport, and subscriptions.',
+      href: '/budget-plan/spending',
+      action: 'Add spending budgets',
+      complete: hasSpendingBudgets
     },
     {
       title: 'Add planned savings contributions',
@@ -467,11 +441,10 @@ function setupChecklistItems({
 function dashboardEmptyState() {
   return `<section class="card plan-empty-state">
     <h2>No budget plan yet</h2>
-    <p>Your budget is not fully set up yet. Add planned income, bills, flexible spending, and savings to see a useful monthly position and forecast.</p>
+    <p>Your budget is not fully set up yet. Add planned income, spending budgets, and savings to see a useful monthly position and forecast.</p>
     <div class="button-list">
       <a class="button" href="/budget-plan/income">Add income</a>
-      <a class="button" href="/budget-plan/bills">Add bill or regular cost</a>
-      <a class="button" href="/budget-plan/flexible-spending">Add flexible spending target</a>
+      <a class="button" href="/budget-plan/spending">Add spending budget</a>
       <a class="button" href="/budget-plan/planned-savings">Add planned savings</a>
     </div>
   </section>`;
@@ -532,24 +505,13 @@ function resolveDashboardPeriod(periodKey, selectedMonth) {
   }
 }
 
-function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth, chartOwner) {
+function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth) {
   const params = new URLSearchParams({
     period: periodKey,
-    month: selectedMonth,
-    chart_owner: chartOwner
+    month: selectedMonth
   });
   const active = selectedPeriod === periodKey;
   return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
-}
-
-function chartOwnerPill(basePath, ownerKey, label, selectedOwner, periodKey, selectedMonth) {
-  const params = new URLSearchParams({
-    period: periodKey,
-    month: selectedMonth,
-    chart_owner: ownerKey
-  });
-  const active = selectedOwner === ownerKey;
-  return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}#planned-expenses-chart">${escapeHtml(label)}</a>`;
 }
 
 function yearlyTable(items) {

@@ -429,30 +429,21 @@ h2 {
   justify-content: flex-end;
 }
 
-.budget-plan-month-nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-wrap: nowrap;
+.budget-plan-month-form {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.budget-plan-current-month {
-  font-weight: 800;
-  color: var(--muted);
-}
-
-.compact-month-form {
-  margin: 0;
-}
-
-.compact-month-form label {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-}
-
-.compact-month-form input[type="month"] {
-  min-width: 10.5rem;
+.budget-plan-month-input {
+  position: absolute;
+  opacity: 0;
+  width: 0.1px;
+  height: 0.1px;
+  border: 0;
+  padding: 0;
 }
 
 .grid.two {
@@ -1044,6 +1035,24 @@ dialog.confirm-modal {
 
 .confirm-modal-actions {
   justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.warning-text {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.warning-card {
+  border-color: rgba(191, 92, 54, 0.24);
+}
+
+.bullet-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.bullet-list li + li {
   margin-top: 0.25rem;
 }
 
