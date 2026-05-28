@@ -277,6 +277,11 @@ function wireMonthPickers(root = document) {
       if (!inputId) return;
       const input = document.getElementById(inputId);
       if (!(input instanceof HTMLInputElement)) return;
+      const rect = button.getBoundingClientRect();
+      input.style.left = `${Math.round(rect.left)}px`;
+      input.style.top = `${Math.round(rect.bottom + 8)}px`;
+      input.style.width = `${Math.max(160, Math.round(rect.width))}px`;
+      input.style.height = '1px';
       input.focus();
       if (typeof input.showPicker === 'function') {
         input.showPicker();
@@ -684,15 +689,26 @@ function wireSpendingWarningSelects(root = document) {
     const warning = select.closest('form, .form-section, fieldset')?.querySelector('[data-spending-duplicate-warning]');
     if (!(warning instanceof HTMLElement)) return;
 
-    const duplicateIds = new Set(
-      String(select.dataset.warningCategoryIds || '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean)
-    );
-    const message = select.dataset.warningMessage || '';
+    const parseIds = (value) =>
+      new Set(
+        String(value || '')
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      );
+
+    const typeFieldName = select.dataset.spendingTypeSource || '';
+    const typeField =
+      (typeFieldName && select.closest('form')?.querySelector(`[name="${CSS.escape(typeFieldName)}"]`)) || null;
+    const regularDuplicateIds = parseIds(select.dataset.warningRegularCategoryIds);
+    const variableDuplicateIds = parseIds(select.dataset.warningVariableCategoryIds);
+    const regularMessage = select.dataset.warningRegularMessage || '';
+    const variableMessage = select.dataset.warningVariableMessage || '';
 
     const update = () => {
+      const mode = typeField instanceof HTMLSelectElement ? typeField.value : '';
+      const duplicateIds = mode === 'variable_estimate' ? variableDuplicateIds : regularDuplicateIds;
+      const message = mode === 'variable_estimate' ? variableMessage : regularMessage;
       const show = Boolean(select.value) && duplicateIds.has(select.value) && Boolean(message);
       warning.hidden = !show;
       warning.textContent = show ? message : '';
@@ -702,6 +718,10 @@ function wireSpendingWarningSelects(root = document) {
       select.dataset.spendingWarningBound = 'true';
       select.addEventListener('change', update);
       select.addEventListener('input', update);
+      if (typeField instanceof HTMLSelectElement) {
+        typeField.addEventListener('change', update);
+        typeField.addEventListener('input', update);
+      }
     }
 
     update();

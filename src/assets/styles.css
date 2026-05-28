@@ -438,12 +438,13 @@ h2 {
 }
 
 .budget-plan-month-input {
-  position: absolute;
+  position: fixed;
   opacity: 0;
   width: 0.1px;
   height: 0.1px;
   border: 0;
   padding: 0;
+  pointer-events: none;
 }
 
 .grid.two {

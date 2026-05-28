@@ -27,9 +27,7 @@ export function registerTransactionRoutes(router, db) {
             <h1>Actuals</h1>
             <p class="page-context">Record actual income, spending, and savings movements.</p>
           </div>
-          <form method="get" action="/transactions" class="inline-form" data-submit-on-change>
-            <label>Month <input type="month" name="month" value="${month}"></label>
-          </form>
+          ${actualsMonthControls(month)}
         </section>
         <section class="action-row">
           <button type="button" data-open-modal="transaction-modal" data-reset-modal="true">Record transaction</button>
@@ -103,6 +101,47 @@ export function registerTransactionRoutes(router, db) {
       redirectWithError(ctx.res, ctx.body.return_to || '/transactions', error);
     }
   });
+}
+
+function actualsMonthControls(month) {
+  const inputId = 'actuals-month-input';
+  return `<form method="get" action="/transactions" class="budget-plan-month-form" data-submit-on-change>
+    <input id="${inputId}" class="budget-plan-month-input" type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month">
+  </form>
+  <div class="budget-plan-month-controls" role="group" aria-label="Actuals month">
+    <a class="period-pill budget-plan-month-step" href="/transactions?month=${encodeURIComponent(previousMonth(month))}" aria-label="Previous month">
+      <span aria-hidden="true">&lsaquo;</span>
+    </a>
+    <button type="button" class="period-pill budget-plan-current-month-button" data-open-month-picker="${inputId}" aria-label="Pick month" title="Pick month">
+      ${escapeHtml(monthLabel(month))}
+    </button>
+    <a class="period-pill budget-plan-month-step" href="/transactions?month=${encodeURIComponent(nextMonth(month))}" aria-label="Next month">
+      <span aria-hidden="true">&rsaquo;</span>
+    </a>
+    <button type="button" class="period-pill budget-plan-month-step" data-open-month-picker="${inputId}" aria-label="Open month picker" title="Open month picker">
+      ${calendarIcon()}
+    </button>
+  </div>`;
+}
+
+function previousMonth(month) {
+  const [year, monthNumber] = String(month).split('-').map(Number);
+  const date = new Date(Date.UTC(year, (monthNumber || 1) - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function nextMonth(month) {
+  const [year, monthNumber] = String(month).split('-').map(Number);
+  const date = new Date(Date.UTC(year, monthNumber || 1, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function calendarIcon() {
+  return `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+    <rect x="4" y="5" width="16" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M8 3.8v3.4M16 3.8v3.4M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M8.2 13h2.6M13.2 13h2.6M8.2 16.5h2.6M13.2 16.5h2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
 }
 
 function transactionForm(ctx, categories, members, month) {

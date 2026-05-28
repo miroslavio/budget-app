@@ -248,7 +248,7 @@ function categoryBreakdownCard(plannedExpenseSeries) {
         <h2>Planned spending by category</h2>
       </div>
     </div>
-    ${pieChart(plannedExpenseSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned spending budgets to build this chart.' })}
+        ${pieChart(plannedExpenseSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned spending to build this chart.' })}
   </section>`;
 }
 
@@ -397,10 +397,10 @@ function setupChecklistItems({
       complete: hasIncome
     },
     {
-      title: 'Add spending budgets',
-      description: 'Add committed costs and variable category budgets such as rent, council tax, utilities, groceries, transport, and subscriptions.',
+      title: 'Add planned spending',
+      description: 'Add the planned spending you expect, such as rent, council tax, utilities, groceries, transport, and subscriptions.',
       href: '/budget-plan/spending',
-      action: 'Add spending budgets',
+      action: 'Add planned spending',
       complete: hasSpendingBudgets
     },
     {
@@ -441,10 +441,10 @@ function setupChecklistItems({
 function dashboardEmptyState() {
   return `<section class="card plan-empty-state">
     <h2>No budget plan yet</h2>
-    <p>Your budget is not fully set up yet. Add planned income, spending budgets, and savings to see a useful monthly position and forecast.</p>
+    <p>Your budget is not fully set up yet. Add planned income, planned spending, and savings to see a useful monthly position and forecast.</p>
     <div class="button-list">
       <a class="button" href="/budget-plan/income">Add income</a>
-      <a class="button" href="/budget-plan/spending">Add spending budget</a>
+      <a class="button" href="/budget-plan/spending">Add planned spending</a>
       <a class="button" href="/budget-plan/planned-savings">Add planned savings</a>
     </div>
   </section>`;

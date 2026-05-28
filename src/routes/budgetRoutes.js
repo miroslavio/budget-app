@@ -38,6 +38,7 @@ export function registerBudgetRoutes(router, db) {
   router.get('/expenses', (ctx) => redirect(ctx.res, `/budget-plan/spending${ctx.url?.search || ''}`));
   router.post('/income', (ctx) => createIncome(ctx, db));
   router.post('/income/estimate', (ctx) => previewIncomeEstimateJson(ctx));
+  router.post('/budget-plan/spending', (ctx) => savePlannedSpending(ctx, db));
   router.post('/expenses', (ctx) => createExpense(ctx, db));
   router.post('/budget-item/delete', (ctx) => deleteBudgetItemAction(ctx, db));
   router.post('/expenses/category-budgets', (ctx) => createOrUpdateCategoryBudgetAction(ctx, db));
@@ -47,7 +48,7 @@ export function registerBudgetRoutes(router, db) {
 
 function renderBudgetPlanOverview(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
-  const month = ctx.query.get('month') || currentMonth();
+  const month = currentMonth();
   const members = listHouseholdMembers(db, ctx.user.household_id);
   const activeItems = listActiveBudgetItems(db, ctx.user.household_id);
   const goals = listSavingsGoals(db, ctx.user.household_id);
@@ -55,11 +56,10 @@ function renderBudgetPlanOverview(ctx, db) {
   const planningItems = [...activeItems, ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
   const plan = plannedMonthlySummary(planningItems, month);
   const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
-  const monthBudgets = listCategoryBudgets(db, ctx.user.household_id, { startMonth: month, endMonth: month });
   const spendingSummary = plannedSpendingSummary({
     expenseItems: activeItems,
     defaultBudgets,
-    monthBudgets,
+    monthBudgets: [],
     month
   });
   const plannedSpendingPence = spendingSummary.totalPlannedSpendingPence;
@@ -83,9 +83,7 @@ function renderBudgetPlanOverview(ctx, db) {
       body: `<div class="budget-plan-layout">
       ${budgetPlanPageIntro(
         'overview',
-        '',
-        '',
-        budgetPlanMonthControls(month)
+        'Current expected plan'
       )}
       ${hasPlanData ? `${budgetPlanSummaryCards({
         plannedIncomePence: plan.plannedIncomePence,
@@ -108,12 +106,12 @@ function renderBudgetPlanOverview(ctx, db) {
           actionLabel: 'Review income'
         },
         {
-          section: 'Spending budgets',
+          section: 'Planned spending',
           sectionKind: 'outflow',
           monthlyPlannedPence: plannedSpendingPence,
           yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(expenseItems)),
           ownerSummary: spendingOwnerSummary(expenseItems, spendingSummary.effectiveBudgets, members),
-          actionHref: `/budget-plan/spending?month=${encodeURIComponent(month)}`,
+          actionHref: '/budget-plan/spending',
           actionLabel: 'Review spending'
         },
         {
@@ -157,101 +155,77 @@ function renderIncomePlanPage(ctx, db) {
 
 function renderSpendingBudgetsPage(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
-  const month = ctx.query.get('month') || currentMonth();
+  const month = currentMonth();
   const members = listHouseholdMembers(db, ctx.user.household_id);
   const expenseItems = listBudgetItems(db, ctx.user.household_id, 'expense');
   const categories = listCategories(db, ctx.user.household_id);
   const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
-  const monthBudgets = listCategoryBudgets(db, ctx.user.household_id, { startMonth: month, endMonth: month });
-  const transactions = listTransactions(db, ctx.user.household_id, { startDate: monthRange(month).start, endDate: monthRange(month).end, type: 'expense' });
   const rows = buildUnifiedSpendingBudgetRows({
     expenseItems,
     defaultBudgets,
-    monthBudgets,
-    transactions,
+    monthBudgets: [],
+    transactions: [],
     month
   });
-  const returnTo = spendingBudgetsReturnTo(month);
+  const returnTo = spendingBudgetsReturnTo();
   const spendingSeries = plannedSpendingCategorySeries({
     expenseItems,
     defaultBudgets,
-    monthBudgets,
+    monthBudgets: [],
     months: [month]
   });
 
   html(
     ctx.res,
     page(ctx, {
-      title: 'Budget Plan · Spending budgets',
+      title: 'Budget Plan · Planned spending',
       wide: true,
-      body: `${budgetPlanPageIntro('spending', '', '', budgetPlanMonthControls(month))}
+      body: `${budgetPlanPageIntro('spending')}
       <section class="card">
-        <h2>Spending budgets</h2>
-        <p>Bills and committed costs are recurring payments you expect to pay. Flexible spending targets are monthly allowances for variable spending. Avoid adding the same spending twice.</p>
+        <h2>Planned spending</h2>
+        <p>Add the spending you expect as part of your usual plan. Use regular costs for predictable payments and variable estimates for things like groceries, transport, and eating out.</p>
+        <p class="hint">Regular spending is predictable, such as mortgage, council tax, subscriptions, or insurance. Variable estimates are expected amounts for things like groceries, transport, eating out, or personal spending.</p>
       </section>
       <section class="action-row">
-        ${formDisclosure('expense', ctx, listCategories(db, ctx.user.household_id), members, returnTo, {
-          duplicateCategoryIds: rows.effectiveBudgets.map((budget) => budget.category_id).filter(Boolean),
-          duplicateMessage: 'You already have this category as a flexible spending target. Adding it here may count the same spending twice.'
-        })}
-        <button type="button" data-open-modal="category-budget-modal" data-reset-modal="true">Add flexible target</button>
+        ${plannedSpendingDisclosure(ctx, categories, members, returnTo, rows)}
       </section>
       <section class="grid four">
         <div class="stat">
-          <span>Planned spending</span>
+          <span>Expected monthly spending</span>
           <strong>${formatCurrency(rows.totalPlannedSpendingPence)}</strong>
         </div>
         <div class="stat">
-          <span>Fixed / committed</span>
+          <span>Regular costs</span>
           <strong>${formatCurrency(rows.committedTotalPence)}</strong>
         </div>
         <div class="stat">
-          <span>Variable / flexible</span>
+          <span>Variable estimates</span>
           <strong>${formatCurrency(rows.flexibleTotalPence)}</strong>
         </div>
         <div class="stat">
-          <span>Annual costs smoothed monthly</span>
+          <span>Yearly costs smoothed</span>
           <strong>${formatCurrency(yearlyMonthlyEquivalentPence(rows.committedItems))}</strong>
         </div>
       </section>
       ${rows.overlaps.length ? `<section class="card warning-card">
         <h2>Potential double-counting to review</h2>
-        <p>The categories below exist as both committed costs and flexible targets. Flexible targets in these categories are not deducted again from your plan.</p>
+        <p>The categories below exist as both regular spending and variable estimates. Variable estimates in these categories are not deducted again from your plan.</p>
         <ul class="bullet-list">${rows.overlaps.map((row) => `<li>${escapeHtml(row.category_name || 'Uncategorised')}</li>`).join('')}</ul>
       </section>` : ''}
       <section class="card">
-        <h2>Planned spending budgets</h2>
-        ${spendingBudgetsTable(ctx, rows.rows, members, month, returnTo)}
+        <h2>Planned spending</h2>
+        ${spendingBudgetsTable(ctx, rows.rows, members, returnTo)}
       </section>
       <section class="card chart-card" id="planned-spending-chart">
         <div class="card-heading">
           <div>
             <h2>Planned spending by category</h2>
-            <p class="hint">Includes fixed and flexible spending budgets without counting overlapping categories twice.</p>
+            <p class="hint">A planning view of your expected monthly spending by category.</p>
           </div>
         </div>
-        ${pieChart(spendingSeries, { title: 'Planned spending by category', emptyMessage: 'Add spending budgets to build this chart.' })}
+        ${pieChart(spendingSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned spending to build this chart.' })}
       </section>
-      <dialog id="category-budget-modal" class="modal" data-modal>
-        <div class="modal-panel">
-          <div class="modal-heading">
-            <div>
-              <h2>Add flexible target</h2>
-            </div>
-            <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
-          </div>
-          ${categoryBudgetForm(
-            ctx,
-            categories.filter((category) => ['expense', 'debt'].includes(category.kind)),
-            month,
-            returnTo,
-            {
-              duplicateCategoryIds: rows.committedItems.map((item) => item.category_id).filter(Boolean),
-              duplicateMessage: 'You already have this category in committed costs. Adding it here may count the same spending twice.'
-            }
-          )}
-        </div>
-      </dialog>`
+      ${plannedSpendingModal(ctx, categories, members, returnTo, rows)}`
     })
   );
 }
@@ -311,30 +285,9 @@ function budgetPlanPageIntro(activeKey, context, secondaryLabel = '', controls =
   <nav class="period-pills section-nav" aria-label="Budget plan sections">
     ${budgetPlanSectionLink('/budget-plan', 'Overview', activeKey === 'overview')}
     ${budgetPlanSectionLink('/budget-plan/income', 'Income', activeKey === 'income')}
-    ${budgetPlanSectionLink('/budget-plan/spending', 'Spending Budgets', activeKey === 'spending')}
-    ${budgetPlanSectionLink('/budget-plan/planned-savings', 'Planned savings', activeKey === 'planned-savings')}
+    ${budgetPlanSectionLink('/budget-plan/spending', 'Planned Spending', activeKey === 'spending')}
+    ${budgetPlanSectionLink('/budget-plan/planned-savings', 'Planned Savings', activeKey === 'planned-savings')}
   </nav>`;
-}
-
-function budgetPlanMonthControls(month) {
-  const inputId = 'budget-plan-month-input';
-  return `<form method="get" action="/budget-plan" class="budget-plan-month-form" data-submit-on-change>
-    <input id="${inputId}" class="budget-plan-month-input" type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month">
-  </form>
-  <div class="budget-plan-month-controls" role="group" aria-label="Budget Plan month">
-    <a class="period-pill budget-plan-month-step" href="/budget-plan?month=${encodeURIComponent(addMonths(month, -1))}" aria-label="Previous month">
-      <span aria-hidden="true">&lsaquo;</span>
-    </a>
-    <button type="button" class="period-pill budget-plan-current-month-button" data-open-month-picker="${inputId}" aria-label="Pick month" title="Pick month">
-      ${escapeHtml(monthLabel(month))}
-    </button>
-    <a class="period-pill budget-plan-month-step" href="/budget-plan?month=${encodeURIComponent(addMonths(month, 1))}" aria-label="Next month">
-      <span aria-hidden="true">&rsaquo;</span>
-    </a>
-    <button type="button" class="period-pill budget-plan-month-step" data-open-month-picker="${inputId}" aria-label="Open month picker" title="Open month picker">
-      ${calendarIcon()}
-    </button>
-  </div>`;
 }
 
 function budgetPlanSectionLink(href, label, active = false) {
@@ -355,9 +308,9 @@ function budgetPlanSummaryCards({
   const balanceTone = plannedSurplusPence >= 0 ? 'good' : 'bad';
   return `<section class="grid four">
     ${planSummaryStat('Planned income', plannedIncomePence)}
-    ${planSummaryStat('Planned spending', plannedSpendingPence, `Fixed ${formatCurrency(committedSpendingPence)} · Variable ${formatCurrency(flexibleSpendingTargetPence)}`)}
+    ${planSummaryStat('Expected monthly spending', plannedSpendingPence, `Regular ${formatCurrency(committedSpendingPence)} · Variable estimate ${formatCurrency(flexibleSpendingTargetPence)}`)}
     ${planSummaryStat('Planned savings', plannedSavingsContributionsPence)}
-    ${planSummaryStat('Annual costs smoothed monthly', yearlyCostsPence, yearlyCostsPence > 0 ? 'Included in planned spending.' : 'None')}
+    ${planSummaryStat('Yearly costs smoothed', yearlyCostsPence, yearlyCostsPence > 0 ? 'Included in planned spending.' : 'None')}
   </section>
   <section class="grid two budget-plan-status-row">
     <div class="card plan-balance-card ${balanceTone}">
@@ -387,7 +340,7 @@ function planTextStat(label, text, note = '') {
 
 function budgetPlanTable(rows) {
   return `<section class="card">
-    <h2>Monthly plan</h2>
+    <h2>Current plan</h2>
     <table class="data-table">
       <thead><tr><th>Section</th><th>Monthly planned</th><th>Annual costs included</th><th>Owner or split summary</th><th class="actions-col">Action</th></tr></thead>
       <tbody>${rows
@@ -415,21 +368,13 @@ function sectionKindLabel(sectionKind) {
   return 'Planned amount';
 }
 
-function calendarIcon() {
-  return `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
-    <rect x="4" y="5" width="16" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
-    <path d="M8 3.8v3.4M16 3.8v3.4M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-    <path d="M8.2 13h2.6M13.2 13h2.6M8.2 16.5h2.6M13.2 16.5h2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-  </svg>`;
-}
-
 function budgetPlanEmptyState() {
   return `<section class="card plan-empty-state">
     <h2>Start your budget plan</h2>
-    <p>Start by adding income, then add spending budgets. We&rsquo;ll calculate your planned monthly position automatically.</p>
+    <p>Start by adding income, then add planned spending. We&rsquo;ll calculate your planned monthly position automatically.</p>
     <div class="button-list">
       <a class="button" href="/budget-plan/income">Add income</a>
-      <a class="button" href="/budget-plan/spending">Add spending budget</a>
+      <a class="button" href="/budget-plan/spending">Add planned spending</a>
       <a class="button" href="/savings/accounts">Add planned saving</a>
     </div>
   </section>`;
@@ -445,7 +390,7 @@ function yearlyItemsLabel(monthlyEquivalentPence) {
   return monthlyEquivalentPence > 0 ? `${formatCurrency(monthlyEquivalentPence)}/month from annual items` : 'None';
 }
 
-function planCompleteness(expenseItems = [], month = currentMonth()) {
+function planCompleteness(expenseItems = []) {
   const checks = [
     {
       label: 'Rent or mortgage',
@@ -475,7 +420,7 @@ function planCompleteness(expenseItems = [], month = currentMonth()) {
   ].map((check) => ({
     ...check,
     complete: planIncludesTerms(expenseItems, check.terms),
-    href: `/budget-plan/spending?month=${encodeURIComponent(month)}&suggested_category=${encodeURIComponent(check.suggestedCategories.join('|'))}`
+    href: `/budget-plan/spending?suggested_category=${encodeURIComponent(check.suggestedCategories.join('|'))}`
   }));
   const foundCount = checks.filter((check) => check.complete).length;
   const missingCount = checks.length - foundCount;
@@ -541,45 +486,41 @@ function spendingFrequencyLabel(row) {
     if (row.frequency === 'yearly') return `Yearly, ${formatCurrency(row.sourceAmountPence)}/year`;
     return `Monthly, ${formatCurrency(row.sourceAmountPence)}/month`;
   }
-  return row.budgetScope === 'month_override' ? `Override for ${monthLabel(row.budgetMonth)}` : 'Monthly target';
+  return 'Monthly estimate';
 }
 
-function spendingRemainingLabel(row) {
-  if (row.overlap) return 'Not counted twice';
-  return overallTargetStatus(row.plannedMonthlyPence, row.actualSpentPence);
+function spendingBudgetsReturnTo() {
+  return '/budget-plan/spending';
 }
 
 function spendingStatusLabel(row) {
   if (row.overlap) return 'Review overlap';
-  if (row.rowType === 'flexible_target') return targetSourceLabel(row);
+  if (row.rowType === 'flexible_target') return 'Active';
   return row.status;
 }
 
-function spendingBudgetActions(ctx, row, month, returnTo) {
+function spendingBudgetActions(ctx, row, returnTo) {
   if (row.rowType === 'committed_cost') {
-    const item = {
-      id: row.id,
-      category_id: row.categoryId,
-      name: row.name,
-      owner_type: row.ownerType,
-      amount_pence: row.sourceAmountPence,
-      frequency: row.frequency,
-      split_type: row.splitType,
-      person_a_percentage: row.personAPercentage,
-      person_b_percentage: row.personBPercentage,
-      notes: row.notes || '',
-      start_date: row.startDate || '',
-      end_date: row.endDate || '',
-      is_active: row.isActive ? 1 : 0
-    };
     return `<div class="table-actions">
       ${actionIconButton({
-        label: 'Edit committed cost',
-        icon: 'edit',
-        variant: 'edit',
-        attributes: `data-open-modal="expense-modal"
+      label: 'Edit regular planned spending',
+      icon: 'edit',
+      variant: 'edit',
+      attributes: `data-open-modal="planned-spending-modal"
           data-reset-modal="true"
-          ${itemEditAttributes(item)}`
+          data-fill-id="${escapeHtml(row.id)}"
+          data-fill-spending-type="regular"
+          data-fill-name="${escapeHtml(row.name)}"
+          data-fill-category-id="${escapeHtml(row.categoryId || '')}"
+          data-fill-owner-type="${escapeHtml(row.ownerType)}"
+          data-fill-regular-amount="${moneyInputValue(row.sourceAmountPence)}"
+          data-fill-frequency="${escapeHtml(row.frequency || 'monthly')}"
+          data-fill-split-type="${escapeHtml(row.splitType || 'equal')}"
+          data-fill-person-a-percentage="${escapeHtml(row.personAPercentage ?? 50)}"
+          data-fill-person-b-percentage="${escapeHtml(row.personBPercentage ?? 50)}"
+          data-fill-start-date="${escapeHtml(row.startDate || todayIso())}"
+          data-fill-end-date="${escapeHtml(row.endDate || '')}"
+          data-fill-notes="${escapeHtml(row.notes || '')}"`
       })}
       <form method="post" action="/budget-item/toggle">
         ${csrfField(ctx)}
@@ -587,17 +528,17 @@ function spendingBudgetActions(ctx, row, month, returnTo) {
         <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
         <input type="hidden" name="is_active" value="${row.isActive ? '0' : '1'}">
         ${actionIconButton({
-          label: row.isActive ? 'Pause committed cost' : 'Resume committed cost',
+          label: row.isActive ? 'Pause regular planned spending' : 'Resume regular planned spending',
           icon: row.isActive ? 'pause' : 'play',
           variant: row.isActive ? 'warn' : 'good',
           type: 'submit'
         })}
       </form>
-      <form method="post" action="/budget-item/delete" data-confirm="Delete this planned cost?">
+      <form method="post" action="/budget-item/delete" data-confirm="Delete this planned spending item?">
         ${csrfField(ctx)}
         <input type="hidden" name="id" value="${row.id}">
         <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-        ${actionIconButton({ label: 'Delete committed cost', icon: 'delete', variant: 'delete', type: 'submit' })}
+        ${actionIconButton({ label: 'Delete regular planned spending', icon: 'delete', variant: 'delete', type: 'submit' })}
       </form>
     </div>`;
   }
@@ -605,23 +546,23 @@ function spendingBudgetActions(ctx, row, month, returnTo) {
   if (!row.id) return '';
   return `<div class="table-actions">
     ${actionIconButton({
-      label: 'Edit flexible target',
+      label: 'Edit variable estimate',
       icon: 'edit',
       variant: 'edit',
-      attributes: `data-open-modal="category-budget-modal"
+      attributes: `data-open-modal="planned-spending-modal"
+        data-reset-modal="true"
         data-fill-id="${escapeHtml(row.id)}"
-        data-fill-scope="${escapeHtml(row.budgetScope || 'default_monthly')}"
-        data-fill-month="${escapeHtml(month)}"
+        data-fill-spending-type="variable_estimate"
         data-fill-category-id="${escapeHtml(row.categoryId || '')}"
-        data-fill-amount="${escapeHtml((row.plannedMonthlyPence / 100).toFixed(2))}"
+        data-fill-variable-amount="${escapeHtml((row.plannedMonthlyPence / 100).toFixed(2))}"
         data-fill-notes="${escapeHtml(row.notes || '')}"`
     })}
-    <form method="post" action="/expenses/category-budgets/delete" data-confirm="Delete this spending target?">
+    <form method="post" action="/expenses/category-budgets/delete" data-confirm="Delete this planned spending item?">
       ${csrfField(ctx)}
       <input type="hidden" name="id" value="${escapeHtml(row.id)}">
       <input type="hidden" name="budget_scope" value="${escapeHtml(row.budgetScope || 'default_monthly')}">
       <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-      ${actionIconButton({ label: 'Delete flexible target', icon: 'delete', variant: 'delete', type: 'submit' })}
+      ${actionIconButton({ label: 'Delete variable estimate', icon: 'delete', variant: 'delete', type: 'submit' })}
     </form>
   </div>`;
 }
@@ -631,6 +572,10 @@ function overallTargetStatus(targetPence, actualPence) {
   if (actualPence > targetPence) return `${formatCurrency(actualPence - targetPence)} over target`;
   if (actualPence < targetPence) return `${formatCurrency(targetPence - actualPence)} remaining`;
   return 'On track';
+}
+
+function plannedSpendingDisclosure() {
+  return `<button type="button" data-open-modal="planned-spending-modal" data-reset-modal="true">Add planned spending</button>`;
 }
 
 function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts = []) {
@@ -687,56 +632,45 @@ function plannedSavingsContributionCell(account) {
   </div>`;
 }
 
-function spendingBudgetsTable(ctx, rows, members, month, returnTo) {
+function spendingBudgetsTable(ctx, rows, members, returnTo) {
   if (!rows.length) {
     return `<div class="empty-state compact">
-      <h3>No spending budgets yet</h3>
-      <p>Add committed costs or flexible targets to build your planned spending budget.</p>
+      <h3>No planned spending yet</h3>
+      <p>Add the spending you expect as part of your usual plan, such as mortgage, groceries, transport, subscriptions, or insurance.</p>
     </div>`;
   }
 
   return `<table class="data-table category-budget-table spending-budget-table">
-    <thead><tr><th>Category / name</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th>Actual spent</th><th>Remaining</th><th>Status</th><th class="actions-col">Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Category</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th>Status</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${rows
       .map((row) => `<tr>
         <td>
           <div class="cell-stack">
             <strong>${escapeHtml(row.name)}</strong>
-            <small class="hint">${escapeHtml(row.rowType === 'committed_cost' ? row.categoryName : `${row.categoryName} budget`)}</small>
+            ${row.overlap ? '<small class="hint">Review overlap with another planned item</small>' : ''}
           </div>
         </td>
-        <td>${escapeHtml(row.rowType === 'committed_cost' ? 'Fixed / committed' : 'Variable / flexible')}</td>
+        <td>${escapeHtml(row.categoryName)}</td>
+        <td>${escapeHtml(row.rowType === 'committed_cost' ? 'Regular' : 'Variable estimate')}</td>
         <td>${escapeHtml(spendingOwnerLabel(row, members))}</td>
         <td>${escapeHtml(spendingFrequencyLabel(row))}</td>
         <td>${formatCurrency(row.plannedMonthlyPence)}</td>
-        <td>${formatCurrency(row.actualSpentPence)}</td>
-        <td>${escapeHtml(spendingRemainingLabel(row))}</td>
         <td>${escapeHtml(spendingStatusLabel(row))}</td>
-        <td class="actions-col">${spendingBudgetActions(ctx, row, month, returnTo)}</td>
+        <td class="actions-col">${spendingBudgetActions(ctx, row, returnTo)}</td>
       </tr>`)
       .join('')}</tbody>
   </table>`;
 }
 
-function spendingBudgetsReturnTo(month) {
-  return `/budget-plan/spending?month=${encodeURIComponent(month)}`;
-}
-
-function targetSourceLabel(row) {
-  if (!row.budgetId) return 'No target';
-  if (row.budgetScope === 'month_override') return `Override for ${monthLabel(row.budgetMonth)}`;
-  return 'Default target';
-}
-
 function formDisclosure(itemType, ctx, categories, members, returnTo, options = {}) {
-  const label = itemType === 'income' ? 'Add planned income' : 'Add committed cost';
+  const label = itemType === 'income' ? 'Add planned income' : 'Add planned spending';
   const modalId = `${itemType}-modal`;
   return `<button type="button" data-open-modal="${modalId}" data-reset-modal="true">${label}</button>
     <dialog id="${modalId}" class="modal" data-modal>
       <div class="modal-panel">
         <div class="modal-heading">
           <div>
-            <h2>${itemType === 'income' ? 'Planned income details' : 'Committed cost details'}</h2>
+            <h2>${itemType === 'income' ? 'Planned income details' : 'Planned spending details'}</h2>
           </div>
           <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
         </div>
@@ -745,30 +679,115 @@ function formDisclosure(itemType, ctx, categories, members, returnTo, options = 
     </dialog>`;
 }
 
-function categoryBudgetForm(ctx, categories, budgetMonth, returnTo, options = {}) {
-  return `<form method="post" action="/expenses/category-budgets" class="stack budget-form modal-form">
+function plannedSpendingModal(ctx, categories, members, returnTo, rows) {
+  return `<dialog id="planned-spending-modal" class="modal" data-modal>
+    <div class="modal-panel">
+      <div class="modal-heading">
+        <div>
+          <h2>Planned spending details</h2>
+        </div>
+        <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
+      </div>
+      ${plannedSpendingForm(ctx, categories, members, returnTo, rows)}
+    </div>
+  </dialog>`;
+}
+
+function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
+  const expenseCategories = categories.filter((category) => ['expense', 'debt'].includes(category.kind));
+  const suggestedCategoryId = suggestedExpenseCategoryId(ctx, expenseCategories);
+  const committedCategoryIds = [...new Set(rows.committedItems.map((item) => String(item.category_id || '')).filter(Boolean))];
+  const flexibleCategoryIds = [...new Set(rows.effectiveBudgets.map((budget) => String(budget.category_id || '')).filter(Boolean))];
+  const firstMemberLabel = ownerLabel('person_a', members);
+  const secondMemberLabel = ownerLabel('person_b', members);
+
+  return `<form method="post" action="/budget-plan/spending" class="stack budget-form modal-form">
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
     <section class="form-section">
-      <h3>Budget details</h3>
-      <label>Target type
-        <select name="budget_scope" data-controls data-modal-field="scope">
-          <option value="default_monthly">Default monthly target</option>
-          <option value="month_override">Month-specific override</option>
+      <h3>Basic details</h3>
+      <label>Spending type
+        <select name="spending_type" data-controls data-modal-field="spendingType">
+          <option value="regular">Regular</option>
+          <option value="variable_estimate">Variable estimate</option>
         </select>
       </label>
-      <div data-controlled-by="budget_scope" data-show-when="month_override" hidden>
-        <label>Month <input name="budget_month" type="month" value="${escapeHtml(budgetMonth)}" data-required-when-visible="true" data-modal-field="month"></label>
-      </div>
-      <label>Category <select name="category_id" required data-modal-field="categoryId" data-spending-warning-select data-warning-category-ids="${escapeHtml((options.duplicateCategoryIds || []).join(','))}" data-warning-message="${escapeHtml(options.duplicateMessage || '')}">${categoryOptions(categories)}</select></label>
-      <p class="hint">Use this for variable monthly allowances such as groceries, fuel, eating out, clothing, entertainment, and personal spending.</p>
+      <p class="hint">Add the spending you expect as part of your usual plan. Use regular costs for predictable payments and variable estimates for things like groceries, transport, and eating out.</p>
+      <label data-controlled-by="spending_type" data-show-when="regular">Name <input name="name" maxlength="120" data-modal-field="name" data-required-when-visible="true"></label>
+      <label>Category <select
+        name="category_id"
+        required
+        data-modal-field="categoryId"
+        data-spending-warning-select
+        data-spending-type-source="spending_type"
+        data-warning-regular-category-ids="${escapeHtml(flexibleCategoryIds.join(','))}"
+        data-warning-regular-message="${escapeHtml('You already have this category as a variable estimate. Adding it here may count the same spending twice.')}"
+        data-warning-variable-category-ids="${escapeHtml(committedCategoryIds.join(','))}"
+        data-warning-variable-message="${escapeHtml('You already have this category in regular spending. Adding it here may count the same spending twice.')}"
+      >${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
       <p class="inline-hint warning-text" data-spending-duplicate-warning hidden></p>
-      <label>Target amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
+    </section>
+    <section class="form-section" data-controlled-by="spending_type" data-show-when="regular">
+      <h3>Regular spending details</h3>
+      <p class="hint">Regular spending is predictable, such as mortgage, council tax, subscriptions, or insurance.</p>
+      <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
+      <label>Amount <input name="regular_amount" ${moneyInputAttrs({ min: '0.01' })} data-modal-field="regularAmount" data-required-when-visible="true" data-split-amount-source></label>
+      <label>Frequency <select name="frequency" data-modal-field="frequency">${frequencyOptions('monthly')}</select></label>
+    </section>
+    <fieldset data-controlled-by="spending_type" data-show-when="regular">
+      <legend>Shared split</legend>
+      <div data-controlled-by="owner_type" data-show-when="shared">
+        <label>Split type
+          <select name="split_type" data-controls data-modal-field="splitType">
+            <option value="equal">Equal split</option>
+            <option value="manual_percentage">Manual percentage split</option>
+          </select>
+        </label>
+        <div class="split-slider-card" data-controlled-by="split_type" data-show-when="manual_percentage" hidden>
+          <input type="hidden" name="person_b_percentage" value="50" data-modal-field="personBPercentage" data-split-secondary-input>
+          <div class="split-slider-summary">
+            <div class="split-share">
+              <span class="split-share-label">${escapeHtml(firstMemberLabel)}</span>
+              <strong data-split-primary-output>50%</strong>
+              <small class="hint" data-split-primary-amount>£0.00</small>
+            </div>
+            <div class="split-share split-share-end">
+              <span class="split-share-label">${escapeHtml(secondMemberLabel)}</span>
+              <strong data-split-secondary-output>50%</strong>
+              <small class="hint" data-split-secondary-amount>£0.00</small>
+            </div>
+          </div>
+          <input
+            name="person_a_percentage"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="50"
+            data-modal-field="personAPercentage"
+            data-split-slider
+            class="split-slider-input"
+            aria-label="Shared spending split"
+          >
+        </div>
+      </div>
+    </fieldset>
+    <section class="form-section" data-controlled-by="spending_type" data-show-when="variable_estimate" hidden>
+      <h3>Variable estimate details</h3>
+      <p class="hint">Use this for expected amounts such as groceries, transport, eating out, clothing, entertainment, or personal spending.</p>
+      <label>Planned monthly amount <input name="variable_amount" ${moneyInputAttrs({ min: '0.01' })} data-modal-field="variableAmount" data-required-when-visible="true"></label>
+    </section>
+    <section class="form-section">
+      <h3>Timing and notes</h3>
+      <div class="grid two compact" data-controlled-by="spending_type" data-show-when="regular">
+        <label>Start date <input name="start_date" type="date" value="${todayIso()}" data-modal-field="startDate"></label>
+        <label>End date <input name="end_date" type="date" data-modal-field="endDate"></label>
+      </div>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
     <div class="modal-footer">
-      <button>Save spending target</button>
+      <button>Save planned spending</button>
     </div>
   </form>`;
 }
@@ -1296,8 +1315,8 @@ function budgetItemEmptyState(itemType, fallbackMessage) {
   if (itemType === 'expense') {
     return `<div class="empty-state compact">
       <h3>No bills or regular costs yet</h3>
-      <p>Add rent, mortgage, council tax, utilities, subscriptions, insurance, debt repayments, or other committed costs.</p>
-      <button type="button" data-open-modal="expense-modal" data-reset-modal="true">Add planned cost</button>
+      <p>Add rent, mortgage, council tax, utilities, subscriptions, insurance, debt repayments, or other regular planned spending.</p>
+      <button type="button" data-open-modal="expense-modal" data-reset-modal="true">Add planned spending</button>
     </div>`;
   }
 
@@ -1616,6 +1635,83 @@ function createExpense(ctx, db) {
   }
 }
 
+function savePlannedSpending(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  const spendingType = requireChoice(ctx.body.spending_type, ['regular', 'variable_estimate'], 'Spending type');
+  return spendingType === 'regular'
+    ? saveRegularPlannedSpending(ctx, db)
+    : saveVariablePlannedSpending(ctx, db);
+}
+
+function saveRegularPlannedSpending(ctx, db) {
+  try {
+    const itemId = Number(ctx.body.id || 0) || null;
+    const existingItem = itemId ? findBudgetItemById(db, ctx.user.household_id, itemId) : null;
+    if (itemId && !existingItem) throw new Error('Planned spending item was not found.');
+    const amountPence = requireMoney(ctx.body.regular_amount, 'Regular amount');
+    const frequency = requireChoice(ctx.body.frequency, ['monthly', 'yearly'], 'Frequency');
+    const ownerType = requireChoice(ctx.body.owner_type, ['person_a', 'person_b', 'shared'], 'Owner');
+    const splitType = ownerType === 'shared' ? requireChoice(ctx.body.split_type || 'equal', ['equal', 'manual_percentage'], 'Split type') : 'equal';
+    const personAPercentage = splitType === 'manual_percentage' ? parsePercentage(ctx.body.person_a_percentage) : 50;
+    const personBPercentage = splitType === 'manual_percentage' ? Math.round((100 - personAPercentage) * 100) / 100 : 50;
+    const startDate = formDate(ctx.body.start_date);
+    const endDate = ctx.body.end_date || null;
+    assertDateOrder(startDate, endDate);
+
+    const payload = {
+      householdId: ctx.user.household_id,
+      id: existingItem?.id,
+      name: requireString(ctx.body.name, 'Name', 120),
+      itemType: 'expense',
+      categoryId: Number(ctx.body.category_id || 0) || null,
+      ownerType,
+      amountPence,
+      frequency,
+      monthlyEquivalentPence: calculateMonthlyEquivalent(amountPence, frequency),
+      startDate,
+      endDate,
+      notes: optionalString(ctx.body.notes),
+      isActive: existingItem ? Number(existingItem.is_active) === 1 : true,
+      splitType,
+      personAPercentage,
+      personBPercentage,
+      incomeEntryMode: null,
+      createdBy: ctx.user.id
+    };
+
+    if (existingItem) {
+      updateBudgetItem(db, payload);
+    } else {
+      createBudgetItem(db, payload);
+    }
+    redirectWithSuccess(ctx.res, ctx.body.return_to || '/budget-plan/spending', existingItem ? 'Planned spending updated.' : 'Planned spending saved.');
+  } catch (error) {
+    redirectWithError(ctx.res, ctx.body.return_to || '/budget-plan/spending', error);
+  }
+}
+
+function saveVariablePlannedSpending(ctx, db) {
+  const returnTo = ctx.body.return_to || spendingBudgetsReturnTo();
+  try {
+    const amountPence = requireMoney(ctx.body.variable_amount, 'Planned monthly amount');
+    const categoryId = Number(ctx.body.category_id || 0) || null;
+    if (!categoryId) throw new Error('Category is required.');
+
+    saveCategoryBudgetDefault(db, {
+      id: Number(ctx.body.id || 0) || null,
+      householdId: ctx.user.household_id,
+      categoryId,
+      amountPence,
+      notes: optionalString(ctx.body.notes),
+      createdBy: ctx.user.id
+    });
+
+    redirectWithSuccess(ctx.res, returnTo, 'Planned spending saved.');
+  } catch (error) {
+    redirectWithError(ctx.res, returnTo, error);
+  }
+}
+
 function assertDateOrder(startDate, endDate) {
   if (startDate && endDate && endDate < startDate) {
     throw new Error('End date must be after the start date.');
@@ -1624,9 +1720,9 @@ function assertDateOrder(startDate, endDate) {
 
 function createOrUpdateCategoryBudgetAction(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
-  const returnTo = ctx.body.return_to || flexibleSpendingReturnTo(currentMonth());
+  const returnTo = ctx.body.return_to || spendingBudgetsReturnTo();
   try {
-    const amountPence = requireMoney(ctx.body.amount, 'Target amount');
+    const amountPence = requireMoney(ctx.body.amount, 'Planned monthly amount');
     const categoryId = Number(ctx.body.category_id || 0) || null;
     const budgetScope = requireChoice(ctx.body.budget_scope || 'default_monthly', ['default_monthly', 'month_override'], 'Target type');
     if (!categoryId) throw new Error('Category is required.');
@@ -1652,7 +1748,7 @@ function createOrUpdateCategoryBudgetAction(ctx, db) {
       });
     }
 
-    redirectWithSuccess(ctx.res, returnTo, 'Spending target saved.');
+    redirectWithSuccess(ctx.res, returnTo, 'Planned spending saved.');
   } catch (error) {
     redirectWithError(ctx.res, returnTo, error);
   }
@@ -1660,7 +1756,7 @@ function createOrUpdateCategoryBudgetAction(ctx, db) {
 
 function deleteCategoryBudgetAction(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
-  const returnTo = ctx.body.return_to || flexibleSpendingReturnTo(currentMonth());
+  const returnTo = ctx.body.return_to || spendingBudgetsReturnTo();
   try {
     const budgetScope = requireChoice(ctx.body.budget_scope || 'default_monthly', ['default_monthly', 'month_override'], 'Target type');
     if (budgetScope === 'default_monthly') {
@@ -1668,7 +1764,7 @@ function deleteCategoryBudgetAction(ctx, db) {
     } else {
       deleteCategoryBudget(db, ctx.user.household_id, Number(ctx.body.id));
     }
-    redirectWithSuccess(ctx.res, returnTo, 'Spending target deleted.');
+    redirectWithSuccess(ctx.res, returnTo, 'Planned spending deleted.');
   } catch (error) {
     redirectWithError(ctx.res, returnTo, error);
   }
