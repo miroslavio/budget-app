@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS category_budget_defaults (
   household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
   amount_pence INTEGER NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
   notes TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

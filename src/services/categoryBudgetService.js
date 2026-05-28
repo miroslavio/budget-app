@@ -2,12 +2,14 @@ export function effectiveCategoryBudgets(defaultBudgets, monthBudgets, month) {
   const rows = new Map();
 
   for (const budget of defaultBudgets) {
+    if (Number(budget.is_active ?? 1) !== 1) continue;
     rows.set(String(budget.category_id), {
       id: budget.id,
       category_id: budget.category_id,
       category_name: budget.category_name || 'Uncategorised',
       budget_month: month,
       amount_pence: Number(budget.amount_pence || 0),
+      is_active: Number(budget.is_active ?? 1),
       notes: budget.notes || '',
       budget_scope: 'default_monthly'
     });

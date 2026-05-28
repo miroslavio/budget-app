@@ -5,7 +5,8 @@ import {
   listCategoryBudgetDefaults,
   listCategoryBudgets,
   saveCategoryBudget,
-  saveCategoryBudgetDefault
+  saveCategoryBudgetDefault,
+  setCategoryBudgetDefaultActive
 } from '../repositories/categoryBudgetRepository.js';
 import { createIncomeEstimate, attachEstimateToBudgetItem, deleteIncomeEstimate, updateIncomeEstimate } from '../repositories/incomeEstimateRepository.js';
 import { listCategories } from '../repositories/categoryRepository.js';
@@ -43,6 +44,7 @@ export function registerBudgetRoutes(router, db) {
   router.post('/budget-item/delete', (ctx) => deleteBudgetItemAction(ctx, db));
   router.post('/expenses/category-budgets', (ctx) => createOrUpdateCategoryBudgetAction(ctx, db));
   router.post('/expenses/category-budgets/delete', (ctx) => deleteCategoryBudgetAction(ctx, db));
+  router.post('/expenses/category-budgets/toggle', (ctx) => toggleCategoryBudgetDefaultAction(ctx, db));
   router.post('/budget-item/toggle', (ctx) => toggleBudgetItem(ctx, db));
 }
 
@@ -81,10 +83,7 @@ function renderBudgetPlanOverview(ctx, db) {
       title: 'Budget Plan',
       wide: true,
       body: `<div class="budget-plan-layout">
-      ${budgetPlanPageIntro(
-        'overview',
-        'Current expected plan'
-      )}
+      ${budgetPlanPageIntro('overview')}
       ${hasPlanData ? `${budgetPlanSummaryCards({
         plannedIncomePence: plan.plannedIncomePence,
         committedSpendingPence: spendingSummary.committedTotalPence,
@@ -139,7 +138,8 @@ function renderIncomePlanPage(ctx, db) {
     page(ctx, {
       title: 'Budget Plan · Income',
       wide: true,
-      body: `${budgetPlanPageIntro('income', 'What money do we expect to receive into the household budget?')}
+      body: `<div class="budget-plan-layout">
+      ${budgetPlanPageIntro('income')}
       <section class="action-row">
         ${formDisclosure('income', ctx, [], members, returnTo)}
       </section>
@@ -148,7 +148,8 @@ function renderIncomePlanPage(ctx, db) {
           <h2>Planned income</h2>
           ${incomeItemsTable(ctx, items, members, returnTo)}
         </div>
-      </section>`
+      </section>
+      </div>`
     })
   );
 }
@@ -168,24 +169,25 @@ function renderSpendingBudgetsPage(ctx, db) {
     month
   });
   const returnTo = spendingBudgetsReturnTo();
-  const spendingSeries = plannedSpendingCategorySeries({
-    expenseItems,
-    defaultBudgets,
-    monthBudgets: [],
-    months: [month]
-  });
+  const chartOwners = spendingChartOwners(members);
+  const spendingSeriesByOwner = chartOwners.map((owner) => ({
+    ...owner,
+    series: plannedSpendingCategorySeries({
+      expenseItems,
+      defaultBudgets,
+      monthBudgets: [],
+      months: [month],
+      owner: owner.value
+    })
+  }));
 
   html(
     ctx.res,
     page(ctx, {
       title: 'Budget Plan · Planned spending',
       wide: true,
-      body: `${budgetPlanPageIntro('spending')}
-      <section class="card">
-        <h2>Planned spending</h2>
-        <p>Add the spending you expect as part of your usual plan. Use regular costs for predictable payments and variable estimates for things like groceries, transport, and eating out.</p>
-        <p class="hint">Regular spending is predictable, such as mortgage, council tax, subscriptions, or insurance. Variable estimates are expected amounts for things like groceries, transport, eating out, or personal spending.</p>
-      </section>
+      body: `<div class="budget-plan-layout">
+      ${budgetPlanPageIntro('spending')}
       <section class="action-row">
         ${plannedSpendingDisclosure(ctx, categories, members, returnTo, rows)}
       </section>
@@ -218,14 +220,19 @@ function renderSpendingBudgetsPage(ctx, db) {
       </section>
       <section class="card chart-card" id="planned-spending-chart">
         <div class="card-heading">
-          <div>
-            <h2>Planned spending by category</h2>
-            <p class="hint">A planning view of your expected monthly spending by category.</p>
-          </div>
+          <h2>Planned spending by category</h2>
+          ${chartOwnerPills('planned-spending-owner', spendingSeriesByOwner)}
         </div>
-        ${pieChart(spendingSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned spending to build this chart.' })}
+      ${spendingSeriesByOwner
+          .map(
+            (owner) => `<div data-view-panel="planned-spending-owner" data-view-value="${escapeHtml(owner.value)}" ${owner.active ? '' : 'hidden'}>
+              ${pieChart(owner.series, { title: `Planned spending by category for ${owner.label.toLowerCase()}`, emptyMessage: 'Add planned spending to build this chart.' })}
+            </div>`
+          )
+          .join('')}
       </section>
-      ${plannedSpendingModal(ctx, categories, members, returnTo, rows)}`
+      ${plannedSpendingModal(ctx, categories, members, returnTo, rows)}
+      </div>`
     })
   );
 }
@@ -244,15 +251,11 @@ function renderPlannedSavingsPage(ctx, db) {
     page(ctx, {
       title: 'Budget Plan · Planned savings',
       wide: true,
-      body: `${budgetPlanPageIntro('planned-savings')}
+      body: `<div class="budget-plan-layout">
+      ${budgetPlanPageIntro('planned-savings')}
       <section class="action-row">
         <a class="button" href="/savings/accounts">Add planned saving</a>
         <a class="button" href="/savings/goals">View full Savings Goals</a>
-      </section>
-      <section class="card">
-        <h2>How planned savings works</h2>
-        <p>Your own monthly savings contributions are treated as money set aside from planned income, so they reduce what is left after bills and flexible spending.</p>
-        <p class="hint">Employer pension contributions and Lifetime ISA bonuses do not reduce the household budget. They are shown only in savings projections.</p>
       </section>
       <section class="grid two">
         <div class="stat">
@@ -268,7 +271,8 @@ function renderPlannedSavingsPage(ctx, db) {
       <section class="card">
         <h2>Planned savings</h2>
         ${plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts)}
-      </section>`
+      </section>
+      </div>`
     })
   );
 }
@@ -493,12 +497,6 @@ function spendingBudgetsReturnTo() {
   return '/budget-plan/spending';
 }
 
-function spendingStatusLabel(row) {
-  if (row.overlap) return 'Review overlap';
-  if (row.rowType === 'flexible_target') return 'Active';
-  return row.status;
-}
-
 function spendingBudgetActions(ctx, row, returnTo) {
   if (row.rowType === 'committed_cost') {
     return `<div class="table-actions">
@@ -528,11 +526,11 @@ function spendingBudgetActions(ctx, row, returnTo) {
         <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
         <input type="hidden" name="is_active" value="${row.isActive ? '0' : '1'}">
         ${actionIconButton({
-          label: row.isActive ? 'Pause regular planned spending' : 'Resume regular planned spending',
-          icon: row.isActive ? 'pause' : 'play',
-          variant: row.isActive ? 'warn' : 'good',
-          type: 'submit'
-        })}
+      label: row.isActive ? 'Pause regular planned spending' : 'Resume regular planned spending',
+      icon: row.isActive ? 'pause' : 'play',
+      variant: row.isActive ? 'warn' : 'good',
+      type: 'submit'
+    })}
       </form>
       <form method="post" action="/budget-item/delete" data-confirm="Delete this planned spending item?">
         ${csrfField(ctx)}
@@ -557,6 +555,18 @@ function spendingBudgetActions(ctx, row, returnTo) {
         data-fill-variable-amount="${escapeHtml((row.plannedMonthlyPence / 100).toFixed(2))}"
         data-fill-notes="${escapeHtml(row.notes || '')}"`
     })}
+    <form method="post" action="/expenses/category-budgets/toggle">
+      ${csrfField(ctx)}
+      <input type="hidden" name="id" value="${escapeHtml(row.id)}">
+      <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+      <input type="hidden" name="is_active" value="${row.isActive === false ? '1' : '0'}">
+      ${actionIconButton({
+      label: row.isActive === false ? 'Resume variable estimate' : 'Pause variable estimate',
+      icon: row.isActive === false ? 'play' : 'pause',
+      variant: row.isActive === false ? 'good' : 'warn',
+      type: 'submit'
+    })}
+    </form>
     <form method="post" action="/expenses/category-budgets/delete" data-confirm="Delete this planned spending item?">
       ${csrfField(ctx)}
       <input type="hidden" name="id" value="${escapeHtml(row.id)}">
@@ -567,15 +577,27 @@ function spendingBudgetActions(ctx, row, returnTo) {
   </div>`;
 }
 
-function overallTargetStatus(targetPence, actualPence) {
-  if (targetPence <= 0 && actualPence <= 0) return 'No target set';
-  if (actualPence > targetPence) return `${formatCurrency(actualPence - targetPence)} over target`;
-  if (actualPence < targetPence) return `${formatCurrency(targetPence - actualPence)} remaining`;
-  return 'On track';
-}
-
 function plannedSpendingDisclosure() {
   return `<button type="button" data-open-modal="planned-spending-modal" data-reset-modal="true">Add planned spending</button>`;
+}
+
+function spendingChartOwners(members) {
+  const owners = [{ value: 'household', label: 'Shared household', active: true }];
+  const firstMember = members.find((member) => member.person_key === 'person_a');
+  const secondMember = members.find((member) => member.person_key === 'person_b');
+  if (firstMember) owners.push({ value: 'person_a', label: firstMember.display_name || ownerLabel('person_a', members), active: false });
+  if (secondMember) owners.push({ value: 'person_b', label: secondMember.display_name || ownerLabel('person_b', members), active: false });
+  return owners;
+}
+
+function chartOwnerPills(groupName, owners) {
+  return `<div class="period-pills view-toggle-pills" data-view-toggle-group="${escapeHtml(groupName)}">
+    ${owners
+      .map(
+        (owner) => `<button type="button" class="period-pill${owner.active ? ' active' : ''}" data-view-toggle="${escapeHtml(groupName)}" data-view-value="${escapeHtml(owner.value)}" aria-pressed="${owner.active ? 'true' : 'false'}">${escapeHtml(owner.label)}</button>`
+      )
+      .join('')}
+  </div>`;
 }
 
 function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts = []) {
@@ -641,13 +663,13 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
   }
 
   return `<table class="data-table category-budget-table spending-budget-table">
-    <thead><tr><th>Name</th><th>Category</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th>Status</th><th class="actions-col">Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Category</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${rows
       .map((row) => `<tr>
         <td>
           <div class="cell-stack">
             <strong>${escapeHtml(row.name)}</strong>
-            ${row.overlap ? '<small class="hint">Review overlap with another planned item</small>' : ''}
+            ${row.overlap ? '<small class="hint">Review overlap with another planned item</small>' : row.isActive === false ? '<small class="hint">Paused</small>' : ''}
           </div>
         </td>
         <td>${escapeHtml(row.categoryName)}</td>
@@ -655,7 +677,6 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
         <td>${escapeHtml(spendingOwnerLabel(row, members))}</td>
         <td>${escapeHtml(spendingFrequencyLabel(row))}</td>
         <td>${formatCurrency(row.plannedMonthlyPence)}</td>
-        <td>${escapeHtml(spendingStatusLabel(row))}</td>
         <td class="actions-col">${spendingBudgetActions(ctx, row, returnTo)}</td>
       </tr>`)
       .join('')}</tbody>
@@ -1774,6 +1795,12 @@ function toggleBudgetItem(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
   setBudgetItemActive(db, ctx.user.household_id, Number(ctx.body.id), ctx.body.is_active === '1');
   redirect(ctx.res, ctx.body.return_to || '/dashboard');
+}
+
+function toggleCategoryBudgetDefaultAction(ctx, db) {
+  if (!ensureAuthenticated(ctx)) return;
+  setCategoryBudgetDefaultActive(db, ctx.user.household_id, Number(ctx.body.id), ctx.body.is_active === '1');
+  redirect(ctx.res, ctx.body.return_to || spendingBudgetsReturnTo());
 }
 
 function deleteBudgetItemAction(ctx, db) {

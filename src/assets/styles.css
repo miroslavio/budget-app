@@ -337,6 +337,10 @@ button.secondary {
   margin: -0.25rem 0 1rem;
 }
 
+.section-nav + .action-row {
+  margin: 0.2rem 0 1rem;
+}
+
 .period-pill {
   display: inline-flex;
   align-items: center;
@@ -418,6 +422,15 @@ h2 {
 }
 
 .budget-plan-layout > * {
+  margin: 0;
+}
+
+.savings-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.savings-layout > * {
   margin: 0;
 }
 
@@ -548,6 +561,35 @@ h2 {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.chart-details {
+  overflow: hidden;
+}
+
+.chart-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.chart-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.chart-details summary::after {
+  content: 'Show';
+  float: right;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.chart-details[open] summary::after {
+  content: 'Hide';
+}
+
+.chart-details-body {
+  margin-top: 1rem;
 }
 
 .stat.good strong {
@@ -714,6 +756,47 @@ h2 {
 
 .projection-summary-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.chart-data-table {
+  margin-top: 1rem;
+}
+
+.chart-data-table td:last-child,
+.chart-data-table th:last-child {
+  text-align: right;
+}
+
+.waterfall-chart .month-label {
+  font-size: 0.82rem;
+}
+
+.waterfall-label {
+  max-width: 10ch;
+}
+
+.waterfall-value {
+  fill: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.waterfall-step {
+  fill: rgba(34, 128, 99, 0.72);
+}
+
+.waterfall-total {
+  fill: rgba(20, 44, 77, 0.88);
+}
+
+.waterfall-connector {
+  stroke: rgba(56, 45, 31, 0.22);
+  stroke-dasharray: 4 4;
+  stroke-width: 1.5;
+}
+
+.savings-area {
+  fill: rgba(59, 110, 229, 0.1);
 }
 
 .setup-checklist {
@@ -1294,6 +1377,34 @@ th {
   vertical-align: middle;
 }
 
+.data-table th[aria-sort] {
+  white-space: nowrap;
+}
+
+.table-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.table-sort-button:hover,
+.table-sort-button:focus-visible {
+  color: var(--ink);
+}
+
+.table-sort-indicator {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
 .import-review-table select {
   min-width: 10rem;
 }
@@ -1593,6 +1704,7 @@ progress {
 }
 
 .pie-chart-block {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(220px, 320px) minmax(260px, 1fr);
   gap: clamp(1rem, 4vw, 2rem);
@@ -1703,6 +1815,7 @@ progress {
 }
 
 .cashflow-chart-block {
+  position: relative;
   display: grid;
   gap: 1rem;
 }
@@ -1758,6 +1871,15 @@ progress {
   stroke: transparent;
 }
 
+.closing-hit:focus-visible,
+.pie-chart path:focus-visible,
+.pie-chart circle:focus-visible,
+.waterfall-chart rect:focus-visible {
+  outline: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
 .savings-line {
   fill: none;
   stroke: var(--accent);
@@ -1766,10 +1888,45 @@ progress {
   stroke-linejoin: round;
 }
 
+.savings-bar-start {
+  fill: rgba(23, 33, 27, 0.16);
+}
+
+.savings-bar-personal {
+  fill: var(--good);
+}
+
+.savings-bar-topups {
+  fill: var(--yellow);
+}
+
+.savings-bar-growth {
+  fill: var(--teal);
+}
+
 .savings-point {
   fill: var(--accent);
   stroke: var(--panel);
   stroke-width: 2;
+}
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 20;
+  max-width: 18rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 14px;
+  border: 1px solid rgba(23, 33, 27, 0.12);
+  background: rgba(255, 250, 240, 0.98);
+  box-shadow: 0 16px 30px rgba(56, 45, 31, 0.18);
+  color: var(--ink);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.chart-tooltip div + div {
+  margin-top: 0.12rem;
 }
 
 .forecast-legend {
@@ -1797,6 +1954,14 @@ progress {
 
 .legend-line.savings-line-key {
   background: var(--accent);
+}
+
+.legend-swatch.savings-bar-start-key {
+  background: rgba(23, 33, 27, 0.16);
+}
+
+.legend-swatch.savings-bar-personal-key {
+  background: var(--good);
 }
 
 .savings-growth {

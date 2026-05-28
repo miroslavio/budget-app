@@ -21,7 +21,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
     <section class="grid two">
       <div class="card">
         <h2>Selected period budget report</h2>
-        <table><tbody>
+        <table class="data-table"><tbody>
           <tr><th>Planned income</th><td>${formatCurrency(planned.plannedIncomePence)}</td></tr>
           <tr><th>Planned expenses</th><td>${formatCurrency(planned.plannedExpensePence)}</td></tr>
           <tr><th>Planned savings</th><td>${formatCurrency(planned.plannedSavingsPence)}</td></tr>
@@ -31,7 +31,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
       <div class="card">
         <h2>Planned versus actual</h2>
         <p class="hint">Planned figures come from Budget Plan. Actual figures come from transactions recorded in Actuals. Variance shows the difference for the selected period.</p>
-        <table><tbody>
+        <table class="data-table"><tbody>
           <tr><th>Income variance</th><td>${varianceLabel(variance.incomeVariancePence, 'income')}</td></tr>
           <tr><th>Expense variance</th><td>${varianceLabel(variance.expenseVariancePence, 'expense')}</td></tr>
           <tr><th>Savings variance</th><td>${varianceLabel(variance.savingsVariancePence, 'savings')}</td></tr>
@@ -78,7 +78,7 @@ export function renderReportsPage(ctx, { month, calendarYear, taxYear, range, pl
 
 function categoryTable(rows) {
   if (!rows.length) return '<p class="empty">No category data yet.</p>';
-  return `<table>
+  return `<table class="data-table">
     <thead><tr><th>Category</th><th>Budget target</th><th>Recurring plan</th><th>Actual expenses</th><th>Budget variance</th></tr></thead>
     <tbody>${rows
       .map(
@@ -95,7 +95,7 @@ function categoryTable(rows) {
 }
 
 function ownerTable(planned, actual, members) {
-  return `<table>
+  return `<table class="data-table">
     <thead><tr><th>Owner</th><th>Planned expenses</th><th>Actual expenses</th><th>Planned savings</th><th>Actual savings</th></tr></thead>
     <tbody>${Object.keys(planned.byOwner)
       .map(
@@ -113,7 +113,7 @@ function ownerTable(planned, actual, members) {
 
 function savingsTable(goals) {
   if (!goals.length) return '<p class="empty">No savings goals yet.</p>';
-  return `<table>
+  return `<table class="data-table">
     <thead><tr><th>Goal</th><th>Progress</th><th>Remaining</th><th>On track</th></tr></thead>
     <tbody>${goals
       .map((goal) => {
@@ -126,7 +126,7 @@ function savingsTable(goals) {
 
 function estimateTable(estimates) {
   if (!estimates.length) return '<p class="empty">No estimated take-home pay items yet.</p>';
-  return `<table>
+  return `<table class="data-table">
     <thead><tr><th>Income item</th><th>Tax year</th><th>Gross salary</th><th>Income Tax</th><th>National Insurance</th><th>Student loan</th><th>Postgraduate Loan</th><th>Net monthly</th></tr></thead>
     <tbody>${estimates
       .map(

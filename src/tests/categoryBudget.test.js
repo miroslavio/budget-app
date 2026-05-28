@@ -11,7 +11,8 @@ import {
   listCategoryBudgetDefaults,
   listCategoryBudgets,
   saveCategoryBudget,
-  saveCategoryBudgetDefault
+  saveCategoryBudgetDefault,
+  setCategoryBudgetDefaultActive
 } from '../repositories/categoryBudgetRepository.js';
 import { categoryBudgetComparison, effectiveCategoryBudgets, mergeCategoryExpenseTracking } from '../services/categoryBudgetService.js';
 import { plannedSpendingSummary } from '../services/spendingBudgetService.js';
@@ -60,7 +61,8 @@ test('default category budgets can be saved, updated, listed, and deleted', () =
     householdId,
     categoryId,
     amountPence: 12000,
-    notes: 'Usual travel budget'
+    notes: 'Usual travel budget',
+    isActive: true
   });
 
   assert.equal(created.amount_pence, 12000);
@@ -69,12 +71,17 @@ test('default category budgets can be saved, updated, listed, and deleted', () =
     householdId,
     categoryId,
     amountPence: 15000,
-    notes: 'Updated travel budget'
+    notes: 'Updated travel budget',
+    isActive: true
   });
 
   assert.equal(updated.id, created.id);
   assert.equal(updated.amount_pence, 15000);
+  assert.equal(updated.is_active, 1);
   assert.equal(listCategoryBudgetDefaults(db, householdId).length, 1);
+
+  const paused = setCategoryBudgetDefaultActive(db, householdId, created.id, false);
+  assert.equal(paused.is_active, 0);
 
   deleteCategoryBudgetDefault(db, householdId, created.id);
   assert.equal(listCategoryBudgetDefaults(db, householdId).length, 0);
@@ -100,16 +107,17 @@ test('effective budgets use defaults until a month override replaces them', () =
       notes: 'June override',
       budget_scope: 'month_override'
     },
-    {
-      id: 2,
-      category_id: 11,
-      category_name: 'Transport',
-      budget_month: '2026-06',
-      amount_pence: 10000,
-      notes: 'Default transport',
-      budget_scope: 'default_monthly'
-    }
-  ]);
+      {
+        id: 2,
+        category_id: 11,
+        category_name: 'Transport',
+        budget_month: '2026-06',
+        amount_pence: 10000,
+        is_active: 1,
+        notes: 'Default transport',
+        budget_scope: 'default_monthly'
+      }
+    ]);
 });
 
 test('category budget comparison and merged tracking include defaults, overrides, and actual expenses', () => {
@@ -171,8 +179,8 @@ test('planned spending summary does not double-count overlapping flexible target
       }
     ],
     defaultBudgets: [
-      { id: 1, category_id: 10, category_name: 'Groceries', amount_pence: 30000, notes: '' },
-      { id: 2, category_id: 11, category_name: 'Transport', amount_pence: 12000, notes: '' }
+      { id: 1, category_id: 10, category_name: 'Groceries', amount_pence: 30000, is_active: 1, notes: '' },
+      { id: 2, category_id: 11, category_name: 'Transport', amount_pence: 12000, is_active: 1, notes: '' }
     ],
     monthBudgets: [],
     month: '2026-05'
@@ -183,6 +191,22 @@ test('planned spending summary does not double-count overlapping flexible target
   assert.equal(summary.overlappingFlexibleTotalPence, 30000);
   assert.equal(summary.totalPlannedSpendingPence, 42000);
   assert.deepEqual(summary.overlaps.map((row) => row.category_name), ['Groceries']);
+});
+
+test('inactive default category budgets do not affect planned spending totals', () => {
+  const summary = plannedSpendingSummary({
+    expenseItems: [],
+    defaultBudgets: [
+      { id: 1, category_id: 10, category_name: 'Groceries', amount_pence: 30000, is_active: 0, notes: '' },
+      { id: 2, category_id: 11, category_name: 'Transport', amount_pence: 12000, is_active: 1, notes: '' }
+    ],
+    monthBudgets: [],
+    month: '2026-05'
+  });
+
+  assert.equal(summary.flexibleTotalPence, 12000);
+  assert.equal(summary.totalPlannedSpendingPence, 12000);
+  assert.deepEqual(summary.effectiveBudgets.map((row) => row.category_name), ['Transport']);
 });
 
 function openTestDatabase() {

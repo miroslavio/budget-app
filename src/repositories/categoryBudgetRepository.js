@@ -117,6 +117,7 @@ export function listCategoryBudgets(db, householdId, filters = {}) {
 }
 
 export function saveCategoryBudgetDefault(db, budget) {
+  const isActive = budget.isActive === undefined ? 1 : budget.isActive ? 1 : 0;
   const existing = budget.id ? findCategoryBudgetDefaultById(db, budget.householdId, budget.id) : null;
   const duplicate = db
     .prepare(
@@ -134,11 +135,12 @@ export function saveCategoryBudgetDefault(db, budget) {
     if (duplicate) throw new Error('A default budget for that category already exists.');
     db.prepare(
       `UPDATE category_budget_defaults
-       SET category_id = ?, amount_pence = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+       SET category_id = ?, amount_pence = ?, is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
        WHERE household_id = ? AND id = ?`
     ).run(
       budget.categoryId,
       budget.amountPence,
+      isActive,
       budget.notes || null,
       budget.householdId,
       budget.id
@@ -149,10 +151,11 @@ export function saveCategoryBudgetDefault(db, budget) {
   if (duplicate) {
     db.prepare(
       `UPDATE category_budget_defaults
-       SET amount_pence = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+       SET amount_pence = ?, is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
        WHERE household_id = ? AND id = ?`
     ).run(
       budget.amountPence,
+      isActive,
       budget.notes || null,
       budget.householdId,
       duplicate.id
@@ -163,13 +166,14 @@ export function saveCategoryBudgetDefault(db, budget) {
   const result = db
     .prepare(
       `INSERT INTO category_budget_defaults (
-        household_id, category_id, amount_pence, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?)`
+        household_id, category_id, amount_pence, is_active, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?)`
     )
     .run(
       budget.householdId,
       budget.categoryId,
       budget.amountPence,
+      isActive,
       budget.notes || null,
       budget.createdBy || null
     );
@@ -207,4 +211,13 @@ export function deleteCategoryBudgetDefault(db, householdId, id) {
   const existing = findCategoryBudgetDefaultById(db, householdId, id);
   if (!existing) throw new Error('Default category budget was not found.');
   db.prepare('DELETE FROM category_budget_defaults WHERE household_id = ? AND id = ?').run(householdId, id);
+}
+
+export function setCategoryBudgetDefaultActive(db, householdId, id, isActive) {
+  const existing = findCategoryBudgetDefaultById(db, householdId, id);
+  if (!existing) throw new Error('Default category budget was not found.');
+  db.prepare(
+    'UPDATE category_budget_defaults SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE household_id = ? AND id = ?'
+  ).run(isActive ? 1 : 0, householdId, id);
+  return findCategoryBudgetDefaultById(db, householdId, id);
 }

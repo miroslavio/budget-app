@@ -50,7 +50,8 @@ function renderSavingsOverview(ctx, db) {
     page(ctx, {
       title: 'Savings',
       wide: true,
-      body: `${savingsPageIntro('overview', 'Track where your savings are held, what you are saving for, and how your balances may grow over time.')}
+      body: `<div class="savings-layout">
+      ${savingsPageIntro('overview')}
       ${savingsAccountDialog(ctx, members, '/savings')}
       ${savingsGoalDialog(ctx, members, accounts, '/savings')}
       ${hasSavingsData ? `<section class="action-row">
@@ -72,12 +73,13 @@ function renderSavingsOverview(ctx, db) {
       <section class="card chart-card">
         <div class="card-heading">
           <div>
-            <h2>Projected tracked balances over 12 months</h2>
-            <p class="hint">This uses the current balance, monthly contributions, and projected annual rate set on each active pot.</p>
+            <h2>12-month savings projection</h2>
+            <p class="hint">Projected balances by month based on current balances, planned additions, top-ups, and growth.</p>
           </div>
         </div>
         ${savingsProjectionChart(projection, { emptyMessage: 'Add an account or pot to start projecting balances.' })}
-      </section>` : savingsEmptyState()}`
+      </section>` : savingsEmptyState()}
+      </div>`
     })
   );
 }
@@ -96,7 +98,8 @@ function renderSavingsAccountsPage(ctx, db) {
     page(ctx, {
       title: 'Savings · Accounts & Pots',
       wide: true,
-      body: `${savingsPageIntro('accounts', 'Track where your cash and longer-term savings actually sit, and how each pot is expected to grow.')}
+      body: `<div class="savings-layout">
+      ${savingsPageIntro('accounts')}
       <section class="action-row">
         <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
         <form method="get" action="/savings/accounts" class="inline-form">
@@ -121,14 +124,14 @@ function renderSavingsAccountsPage(ctx, db) {
         <div class="stat">
           <span>Projected total after ${projectionMonths} months</span>
           <strong>${formatCurrency(projectedYearEndPence)}</strong>
-          <small class="plan-stat-note">Includes current balances, planned monthly contributions, top-ups, and projected growth.</small>
         </div>
       </section>
       ${projectionBreakdownCard(summary, projection, projectionMonths)}
       <section class="card chart-card">
         <div class="card-heading">
           <div>
-            <h2>Projected tracked balances</h2>
+            <h2>Projected savings balance</h2>
+            <p class="hint">Based on current balances, planned monthly additions, top-ups, and projected growth.</p>
           </div>
         </div>
         ${savingsProjectionChart(projection, { emptyMessage: 'Add an account or pot to start projecting balances.' })}
@@ -136,7 +139,8 @@ function renderSavingsAccountsPage(ctx, db) {
       <section class="card">
         <h2>Accounts and pots</h2>
         ${savingsAccountsTable(ctx, accounts, projection, members, projectionMonths)}
-      </section>`
+      </section>
+      </div>`
     })
   );
 }
@@ -157,7 +161,8 @@ function renderSavingsGoalsPage(ctx, db) {
     page(ctx, {
       title: 'Savings · Goals',
       wide: true,
-      body: `${savingsPageIntro('goals', 'Track long-term targets and progress separately from the real accounts and pots that hold the money.')}
+      body: `<div class="savings-layout">
+      ${savingsPageIntro('goals')}
       <section class="action-row">
         <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
         ${savingsGoalDialog(ctx, members, accounts, '/savings/goals')}
@@ -185,7 +190,8 @@ function renderSavingsGoalsPage(ctx, db) {
           <h2>Goals</h2>
           ${goalsTable(ctx, goals, members, '/savings/goals')}
         </div>
-      </section>`
+      </section>
+      </div>`
     })
   );
 }
@@ -302,21 +308,17 @@ function removeSavingsAccountAction(ctx, db) {
   }
 }
 
-function savingsPageIntro(activeKey, context) {
+function savingsPageIntro(activeKey) {
   return `<section class="page-title">
     <div>
       <h1>Savings</h1>
-      <p class="page-context">${escapeHtml(context)}</p>
     </div>
   </section>
   <nav class="period-pills section-nav" aria-label="Savings sections">
     ${savingsSectionLink('/savings', 'Overview', activeKey === 'overview')}
     ${savingsSectionLink('/savings/accounts', 'Accounts & Pots', activeKey === 'accounts')}
     ${savingsSectionLink('/savings/goals', 'Goals', activeKey === 'goals')}
-  </nav>
-  <section class="card savings-explainer-card">
-    <p><strong>Accounts and pots</strong> are where your savings are held. <strong>Goals</strong> are what you are saving for.</p>
-  </section>`;
+  </nav>`;
 }
 
 function savingsSectionLink(href, label, active = false) {
@@ -354,12 +356,10 @@ function overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, cur
     <div class="stat">
       <span>Projected total after 12 months</span>
       <strong>${formatCurrency(projectedYearEndPence)}</strong>
-      <small class="plan-stat-note">Includes current balances, planned monthly contributions, top-ups, and projected growth.</small>
     </div>
     <div class="stat">
       <span>Goal progress</span>
       <strong>${totalGoalTargetPence > 0 ? `${formatCurrency(currentGoalSavedPence)} of ${formatCurrency(totalGoalTargetPence)}` : 'No goals yet'}</strong>
-      ${totalGoalTargetPence > 0 ? '' : '<small class="plan-stat-note">Add a goal to track progress towards an emergency fund, holiday, house deposit, or other target.</small>'}
     </div>
   </section>`;
 }
@@ -380,7 +380,6 @@ function projectionBreakdownCard(summary, projection, months) {
     <div class="card-heading">
       <div>
         <h2>Projection summary</h2>
-        <p class="hint">Shows how the projected total builds over the next ${months} months.</p>
       </div>
     </div>
     <section class="grid projection-summary-grid">

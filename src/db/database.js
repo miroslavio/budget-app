@@ -48,6 +48,10 @@ export function runMigrations(db) {
       db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
       continue;
     }
+    if (migration === '010_add_category_budget_default_is_active.sql' && tableHasColumn(db, 'category_budget_defaults', 'is_active')) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {

@@ -155,9 +155,37 @@ export function buildUnifiedSpendingBudgetRows({
     };
   });
 
+  const inactiveFlexibleRows = defaultBudgets
+    .filter((budget) => Number(budget.is_active ?? 1) !== 1)
+    .map((budget) => ({
+      rowType: 'flexible_target',
+      id: budget.id,
+      categoryKey: spendingCategoryKey(budget.category_id, budget.category_name),
+      categoryId: budget.category_id,
+      name: budget.category_name || 'Uncategorised',
+      categoryName: budget.category_name || 'Uncategorised',
+      ownerType: 'shared',
+      splitType: 'equal',
+      personAPercentage: 50,
+      personBPercentage: 50,
+      frequency: 'default_monthly',
+      plannedMonthlyPence: Number(budget.amount_pence || 0),
+      sourceAmountPence: Number(budget.amount_pence || 0),
+      actualSpentPence: 0,
+      remainingPence: Number(budget.amount_pence || 0),
+      status: 'Paused',
+      countedInPlan: false,
+      overlap: false,
+      budgetScope: 'default_monthly',
+      budgetMonth: month,
+      notes: budget.notes || '',
+      isActive: false
+    }));
+
   return {
     ...summary,
-    rows: [...committedRows, ...flexibleRows].sort((a, b) => {
+    rows: [...committedRows, ...flexibleRows, ...inactiveFlexibleRows].sort((a, b) => {
+      if (Number(b.isActive ?? 1) !== Number(a.isActive ?? 1)) return Number(b.isActive ?? 1) - Number(a.isActive ?? 1);
       if (a.rowType !== b.rowType) return a.rowType.localeCompare(b.rowType);
       return (a.categoryName || a.name).localeCompare(b.categoryName || b.name);
     })

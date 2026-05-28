@@ -122,6 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
   wireAutoSubmit();
   wireViewToggles();
   wireRowToggles();
+  wireSortableTables();
+  wireChartTooltips();
   wireNumberInputs();
   wireSplitSliders();
   wireTransactionCategorySelects();
@@ -132,6 +134,187 @@ document.addEventListener('DOMContentLoaded', () => {
   wireModals();
   wireMobileNav();
 });
+
+function wireSortableTables(root = document) {
+  root.querySelectorAll('table.data-table:not(.chart-data-table)').forEach((table) => {
+    if (!(table instanceof HTMLTableElement) || table.dataset.sortableBound === 'true') return;
+    const theadRow = table.tHead?.rows?.[0];
+    const tbody = table.tBodies?.[0];
+    if (!theadRow || !tbody || tbody.rows.length < 2) return;
+
+    table.dataset.sortableBound = 'true';
+    const headers = [...theadRow.cells];
+    headers.forEach((th, index) => {
+      if (!(th instanceof HTMLTableCellElement)) return;
+      if (th.classList.contains('actions-col') || th.dataset.sortable === 'false' || th.colSpan > 1) {
+        th.setAttribute('aria-sort', 'none');
+        return;
+      }
+
+      const label = th.textContent?.trim() || '';
+      if (!label) return;
+      th.setAttribute('aria-sort', 'none');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'table-sort-button';
+      button.innerHTML = `<span>${label}</span><span class="table-sort-indicator" aria-hidden="true">↕</span>`;
+      button.setAttribute('aria-label', `Sort by ${label}`);
+      th.textContent = '';
+      th.appendChild(button);
+
+      button.addEventListener('click', () => {
+        const currentColumn = Number(table.dataset.sortColumn ?? -1);
+        const nextDirection = currentColumn === index && table.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+        sortTableByColumn(table, tbody, headers, index, nextDirection);
+      });
+    });
+  });
+}
+
+function sortTableByColumn(table, tbody, headers, columnIndex, direction) {
+  const groups = collectSortableRowGroups(tbody);
+  const type = inferSortType(groups, columnIndex);
+
+  groups.sort((a, b) => compareSortValues(readSortValue(a[0], columnIndex, type), readSortValue(b[0], columnIndex, type), direction));
+  groups.forEach((group) => group.forEach((row) => tbody.appendChild(row)));
+
+  table.dataset.sortColumn = String(columnIndex);
+  table.dataset.sortDirection = direction;
+  headers.forEach((th, index) => {
+    if (!(th instanceof HTMLTableCellElement)) return;
+    const isActive = index === columnIndex;
+    th.setAttribute('aria-sort', isActive ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
+    const indicator = th.querySelector('.table-sort-indicator');
+    if (indicator instanceof HTMLElement) {
+      indicator.textContent = isActive ? (direction === 'asc' ? '↑' : '↓') : '↕';
+    }
+  });
+}
+
+function collectSortableRowGroups(tbody) {
+  const rows = [...tbody.rows];
+  const groups = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row.classList.contains('income-breakdown-row')) continue;
+    const group = [row];
+    const next = rows[index + 1];
+    if (next?.classList.contains('income-breakdown-row')) {
+      group.push(next);
+      index += 1;
+    }
+    groups.push(group);
+  }
+  return groups;
+}
+
+function inferSortType(groups, columnIndex) {
+  const values = groups
+    .map((group) => rawCellValue(group[0], columnIndex))
+    .filter((value) => value !== '');
+  if (!values.length) return 'text';
+  if (values.every((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))) return 'date';
+  if (values.every((value) => /%$/.test(value.trim()) || isNumericLike(value))) return 'number';
+  if (values.some((value) => value.includes('£'))) return 'currency';
+  return 'text';
+}
+
+function readSortValue(row, columnIndex, type) {
+  const value = rawCellValue(row, columnIndex);
+  if (value === '') return type === 'text' ? '' : Number.NEGATIVE_INFINITY;
+  if (type === 'date') return Date.parse(value) || Number.NEGATIVE_INFINITY;
+  if (type === 'currency' || type === 'number') return parseNumericLike(value);
+  return value.trim().toLocaleLowerCase('en-GB');
+}
+
+function rawCellValue(row, columnIndex) {
+  const cell = row.cells[columnIndex];
+  if (!(cell instanceof HTMLTableCellElement)) return '';
+  return cell.dataset.sortValue || cell.textContent?.trim() || '';
+}
+
+function parseNumericLike(value) {
+  const normalised = String(value).replace(/[^0-9.-]+/g, '');
+  const parsed = Number.parseFloat(normalised);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function isNumericLike(value) {
+  return Number.isFinite(parseNumericLike(value));
+}
+
+function compareSortValues(a, b, direction) {
+  if (a === b) return 0;
+  if (a < b) return direction === 'asc' ? -1 : 1;
+  return direction === 'asc' ? 1 : -1;
+}
+
+function wireChartTooltips(root = document) {
+  const tooltip = getOrCreateChartTooltip();
+  const targets = root.querySelectorAll('[data-chart-tooltip]');
+  targets.forEach((target) => {
+    if (!(target instanceof HTMLElement || target instanceof SVGElement) || target.dataset.chartTooltipBound === 'true') return;
+    target.dataset.chartTooltipBound = 'true';
+    target.setAttribute('tabindex', target.getAttribute('tabindex') || '0');
+
+    const show = () => showChartTooltip(tooltip, target);
+    const move = () => showChartTooltip(tooltip, target);
+    const hide = () => hideChartTooltip(tooltip);
+
+    target.addEventListener('mouseenter', show);
+    target.addEventListener('mousemove', move);
+    target.addEventListener('focus', show);
+    target.addEventListener('click', show);
+    target.addEventListener('mouseleave', hide);
+    target.addEventListener('blur', hide);
+    target.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') hide();
+    });
+  });
+}
+
+function getOrCreateChartTooltip() {
+  let tooltip = document.getElementById('chart-tooltip');
+  if (tooltip) return tooltip;
+  tooltip = document.createElement('div');
+  tooltip.id = 'chart-tooltip';
+  tooltip.className = 'chart-tooltip';
+  tooltip.hidden = true;
+  tooltip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tooltip);
+  return tooltip;
+}
+
+function showChartTooltip(tooltip, target) {
+  const text = target.getAttribute('data-chart-tooltip');
+  if (!tooltip || !text) return;
+  tooltip.innerHTML = String(text)
+    .split('\n')
+    .map((line) => `<div>${escapeHtmlText(line)}</div>`)
+    .join('');
+  tooltip.hidden = false;
+
+  const rect = target.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - tooltipRect.width - 12, Math.max(12, rect.left + rect.width / 2 - tooltipRect.width / 2));
+  const top = Math.max(12, rect.top - tooltipRect.height - 12);
+  tooltip.style.left = `${Math.round(left)}px`;
+  tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function hideChartTooltip(tooltip) {
+  if (!tooltip) return;
+  tooltip.hidden = true;
+}
+
+function escapeHtmlText(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 function refreshConditionalSections(root = document) {
   toggleConditionalSections(root);
