@@ -4,15 +4,15 @@ import { listActiveBudgetItems } from '../repositories/budgetItemRepository.js';
 import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { buildMonthlyForecast } from '../services/forecastService.js';
-import { buildSavingsProjection } from '../services/savingsAccountService.js';
 import { plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { currentMonth, monthLabel } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, formatSignedCurrency, moneyInputValue, page, csrfField } from '../views/html.js';
 import { decimalInputAttrs, moneyInputAttrs } from '../views/forms.js';
-import { cashflowForecastChart, savingsProjectionChart } from '../views/charts.js';
+import { cashflowForecastChart } from '../views/charts.js';
 import { html } from '../http/response.js';
 import { optionalMoney } from '../utils/validation.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
+import { buildSavingsProjection } from '../services/savingsAccountService.js';
 
 export function registerForecastRoutes(router, db) {
   router.get('/forecast', (ctx) => {
@@ -43,7 +43,6 @@ export function registerForecastRoutes(router, db) {
         body: `<section class="page-title">
           <div>
             <h1>Forecast</h1>
-            <p class="page-context">See what your current plan suggests for the months ahead.</p>
           </div>
           <form method="get" action="/forecast" class="inline-form">
             <label>Start <input type="month" name="start_month" value="${startMonth}" required></label>
@@ -52,32 +51,11 @@ export function registerForecastRoutes(router, db) {
             <button>Update</button>
           </form>
         </section>
-        <section class="card">
-          <div class="card-heading">
-            <div>
-              <h2>Forecast opening balance</h2>
-              <p class="hint">This is the amount available at the start of ${escapeHtml(monthLabel(startMonth))}. The forecast uses it as the starting point and carries the projected closing balance forward month by month.</p>
-              <p class="hint">Forecast uses your current Budget Plan and this opening balance. Actual transactions are not used unless they are included in the plan.</p>
-            </div>
-            ${
-              hasUnsavedOpeningBalance
-                ? `<form method="post" action="/forecast/opening-balance" class="inline-form">
-                    ${csrfField(ctx)}
-                    <input type="hidden" name="start_month" value="${escapeHtml(startMonth)}">
-                    <input type="hidden" name="months" value="${months}">
-                    <input type="hidden" name="opening_balance" value="${escapeHtml(moneyInputValue(openingBalancePence))}">
-                    <button>Save opening balance</button>
-                  </form>`
-                : '<p class="hint">Saved as the current household forecast assumption.</p>'
-            }
-          </div>
-        </section>
         ${hasForecastData ? `${forecastSummaryCards(summary)}
         ${forecastDetailCard(forecast)}` : `<section class="card plan-empty-state">
           <h2>No forecast yet</h2>
           <p>Create income and expense items in Budget Plan to generate your forecast.</p>
-        </section>`}
-        ${savingsProjectionCard(savingsProjection)}`
+        </section>`}`
       })
     );
   });
@@ -100,23 +78,11 @@ export function registerForecastRoutes(router, db) {
   });
 }
 
-function projectionAdditionsLabel(account) {
-  const extras = [];
-  if (Number(account.employerMonthlyContributionPence || 0) > 0) {
-    extras.push(`Employer ${formatCurrency(account.employerMonthlyContributionPence)}/month`);
-  }
-  if (Number(account.totalBonusPence || 0) > 0) {
-    extras.push(`LISA bonus ${formatCurrency(account.totalBonusPence)} over forecast`);
-  }
-  return extras.length ? extras.join(' · ') : '—';
-}
-
 function forecastDetailCard(forecast) {
   return `<section class="card chart-card">
     <div class="card-heading">
       <div>
         <h2>Forecast detail</h2>
-        <p class="hint">Projected closing balance = opening balance plus planned income, minus planned expenses and planned savings.</p>
       </div>
       <div class="period-pills view-toggle-pills" data-view-toggle-group="forecast-detail">
         <button type="button" class="period-pill active" data-view-toggle="forecast-detail" data-view-value="chart" aria-pressed="true">Chart</button>
@@ -141,37 +107,6 @@ function forecastDetailCard(forecast) {
             </tr>`
           )
           .join('')}</tbody>
-      </table>
-    </div>
-  </section>`;
-}
-
-function savingsProjectionCard(savingsProjection) {
-  return `<section class="card chart-card">
-    <div class="card-heading">
-      <div>
-        <h2>Projected savings and investment pots</h2>
-        <p class="hint">Separate from cashflow: this projects tracked pot balances using current balances, personal contributions, employer pension top-ups, optional LISA bonuses, and projected annual rates.</p>
-      </div>
-      <div class="period-pills view-toggle-pills" data-view-toggle-group="savings-projection">
-        <button type="button" class="period-pill active" data-view-toggle="savings-projection" data-view-value="chart" aria-pressed="true">Chart</button>
-        <button type="button" class="period-pill" data-view-toggle="savings-projection" data-view-value="table" aria-pressed="false">Table</button>
-      </div>
-    </div>
-    <div data-view-panel="savings-projection" data-view-value="chart" class="view-panel">
-      ${savingsProjectionChart(savingsProjection, { emptyMessage: 'Add an account or pot in Savings to start projecting balances here.' })}
-    </div>
-    <div data-view-panel="savings-projection" data-view-value="table" class="view-panel" hidden>
-      <table class="data-table">
-        <thead><tr><th>Pot</th><th>Current balance</th><th>Personal monthly</th><th>Extra additions</th><th>Projected growth / interest</th><th>Projected closing balance</th></tr></thead>
-        <tbody>${savingsProjection.accounts.length ? savingsProjection.accounts.map((account) => `<tr>
-          <td>${account.name}</td>
-          <td>${formatCurrency(account.currentBalancePence)}</td>
-          <td>${formatCurrency(account.monthlyContributionPence)}</td>
-          <td>${projectionAdditionsLabel(account)}</td>
-          <td>${formatCurrency(account.totalGrowthPence)}</td>
-          <td>${formatCurrency(account.projectedBalancePence)}</td>
-        </tr>`).join('') : '<tr><td colspan="6" class="empty">No savings accounts or pots are currently included in projections.</td></tr>'}</tbody>
       </table>
     </div>
   </section>`;

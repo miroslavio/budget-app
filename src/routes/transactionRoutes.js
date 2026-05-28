@@ -25,7 +25,6 @@ export function registerTransactionRoutes(router, db) {
         body: `<section class="page-title">
           <div>
             <h1>Actuals</h1>
-            <p class="page-context">Record actual income, spending, and savings movements.</p>
           </div>
           ${actualsMonthControls(month)}
         </section>

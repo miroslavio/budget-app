@@ -55,8 +55,10 @@ function renderSavingsOverview(ctx, db) {
       ${savingsAccountDialog(ctx, members, '/savings')}
       ${savingsGoalDialog(ctx, members, accounts, '/savings')}
       ${hasSavingsData ? `<section class="action-row">
-        <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
-        <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
+        <div class="button-list">
+          <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
+          <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
+        </div>
       </section>
       ${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence)}
       ${projectionBreakdownCard(summary, projection, 12)}
@@ -101,11 +103,13 @@ function renderSavingsAccountsPage(ctx, db) {
       body: `<div class="savings-layout">
       ${savingsPageIntro('accounts')}
       <section class="action-row">
-        <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
-        <form method="get" action="/savings/accounts" class="inline-form">
-          <label>Projection months <input name="months" value="${projectionMonths}" ${decimalInputAttrs({ required: true, min: '1', max: '36', decimals: 0, step: '1' })}></label>
-          <button>Update</button>
-        </form>
+        <div class="button-list">
+          <button type="button" data-open-modal="savings-account-modal" data-reset-modal="true">Add account or pot</button>
+          <form method="get" action="/savings/accounts" class="inline-form">
+            <label>Projection months <input name="months" value="${projectionMonths}" ${decimalInputAttrs({ required: true, min: '1', max: '36', decimals: 0, step: '1' })}></label>
+            <button>Update</button>
+          </form>
+        </div>
         ${savingsAccountDialog(ctx, members, `/savings/accounts?months=${projectionMonths}`)}
       </section>
       <section class="grid four">
@@ -164,7 +168,9 @@ function renderSavingsGoalsPage(ctx, db) {
       body: `<div class="savings-layout">
       ${savingsPageIntro('goals')}
       <section class="action-row">
-        <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
+        <div class="button-list">
+          <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
+        </div>
         ${savingsGoalDialog(ctx, members, accounts, '/savings/goals')}
       </section>
       <section class="grid four">
