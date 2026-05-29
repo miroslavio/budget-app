@@ -312,16 +312,14 @@ function budgetPlanSummaryCards({
   const balanceTone = plannedSurplusPence >= 0 ? 'good' : 'bad';
   return `<section class="grid four">
     ${planSummaryStat('Planned income', plannedIncomePence)}
-    ${planSummaryStat('Expected monthly spending', plannedSpendingPence, `Regular ${formatCurrency(committedSpendingPence)} · Variable estimate ${formatCurrency(flexibleSpendingTargetPence)}`)}
+    ${planSummaryStat('Planned spending', plannedSpendingPence, `Regular ${formatCurrency(committedSpendingPence)} · Variable estimate ${formatCurrency(flexibleSpendingTargetPence)}`)}
     ${planSummaryStat('Planned savings', plannedSavingsContributionsPence)}
-    ${planSummaryStat('Yearly costs smoothed', yearlyCostsPence, yearlyCostsPence > 0 ? 'Included in planned spending.' : 'None')}
-  </section>
-  <section class="grid two budget-plan-status-row">
     <div class="card plan-balance-card ${balanceTone}">
       <span class="plan-balance-label">${balanceLabel}</span>
-      <strong>${formatCurrency(Math.abs(plannedSurplusPence))}</strong>
-      <p class="hint">Planned income minus planned spending and planned savings.</p>
+      <strong>${formatCurrency(plannedSurplusPence)}</strong>
     </div>
+  </section>
+  <section class="grid two budget-plan-status-row">
     ${planCompletenessCard(completeness)}
   </section>`;
 }

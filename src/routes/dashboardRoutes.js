@@ -3,12 +3,13 @@ import { listActiveBudgetItems } from '../repositories/budgetItemRepository.js';
 import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
+import { listSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { listCategoryBudgets, listCategoryBudgetDefaults } from '../repositories/categoryBudgetRepository.js';
 import { yearlyItems } from '../services/budgetService.js';
 import { buildMonthlyForecast } from '../services/forecastService.js';
 import { buildPeriodReport } from '../services/reportService.js';
-import { savingsGoalProgress, plannedSavingsBudgetItems } from '../services/savingsService.js';
+import { savingsGoalMetrics, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { buildFlexibleSpendingByMonth, plannedSpendingCategorySeries } from '../services/spendingBudgetService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
@@ -26,8 +27,13 @@ export function registerDashboardRoutes(router, db) {
     const household = findHouseholdById(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, ctx.user.household_id);
     const items = listActiveBudgetItems(db, household.id);
-    const goals = listSavingsGoals(db, household.id);
     const savingsAccounts = listSavingsAccounts(db, household.id, { activeOnly: true });
+    const goalLinks = listSavingsGoalAccountLinks(db, household.id);
+    const goals = decorateGoalsWithLinkedAccounts(
+      listSavingsGoals(db, household.id),
+      goalLinks,
+      savingsAccounts
+    );
     const categoryBudgetDefaults = listCategoryBudgetDefaults(db, household.id);
     const categoryBudgetOverrides = listCategoryBudgets(db, household.id);
     const planningItems = [...items, ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
@@ -517,23 +523,58 @@ function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth) {
 function yearlyTable(items) {
   if (!items.length) return '<p class="empty">No yearly active items.</p>';
   return `<table class="data-table">
-    <thead><tr><th>Name</th><th>Type</th><th>Yearly amount</th><th>Monthly equivalent</th></tr></thead>
+    <thead><tr><th>Name</th><th>Yearly amount</th><th>Monthly equivalent</th></tr></thead>
     <tbody>${items
       .map(
         (item) =>
-          `<tr><td>${escapeHtml(item.name)}</td><td>${item.item_type}</td><td>${formatCurrency(item.amount_pence)}</td><td>${formatCurrency(item.monthly_equivalent_pence)}</td></tr>`
+          `<tr><td>${escapeHtml(item.name)}</td><td>${formatCurrency(item.amount_pence)}</td><td>${formatCurrency(item.monthly_equivalent_pence)}</td></tr>`
       )
       .join('')}</tbody>
   </table>`;
 }
 
+function decorateGoalsWithLinkedAccounts(goals, linkedAccountRows, accounts = []) {
+  const accountsById = new Map(accounts.map((account) => [String(account.id), account]));
+  const linkedAccountsByGoalId = new Map();
+
+  for (const row of linkedAccountRows) {
+    const key = String(row.goal_id);
+    const current = linkedAccountsByGoalId.get(key) || [];
+    const account = accountsById.get(String(row.savings_account_id));
+
+    if (account) {
+      current.push(account);
+    }
+
+    linkedAccountsByGoalId.set(key, current);
+  }
+
+  return goals.map((goal) => {
+    const linkedAccounts = linkedAccountsByGoalId.get(String(goal.id)) || [];
+
+    return {
+      ...goal,
+      linkedAccounts,
+      metrics: savingsGoalMetrics(goal, {
+        linkedAccounts,
+        startMonth: currentMonth()
+      })
+    };
+  });
+}
+
 function goalProgress(goal) {
-  const progress = savingsGoalProgress(goal);
-  const status =
-    progress.onTrack === null ? 'No target date' : progress.onTrack ? 'On track' : 'Behind target';
+  const progress = goal.metrics || savingsGoalMetrics(goal, {
+    linkedAccounts: goal.linkedAccounts || [],
+    startMonth: currentMonth()
+  });
+
   return `<article class="goal">
-    <div class="goal-head"><strong>${escapeHtml(goal.name)}</strong><span>${formatCurrency(goal.current_saved_amount_pence)} of ${formatCurrency(goal.target_amount_pence)}</span></div>
+    <div class="goal-head">
+      <strong>${escapeHtml(goal.name)}</strong>
+      <span>${formatCurrency(progress.currentSavedPence)} of ${formatCurrency(goal.target_amount_pence)}</span>
+    </div>
     <progress value="${progress.progressPercentage}" max="100"></progress>
-    <small class="goal-meta">${progress.progressPercentage}% · ${status}</small>
+    <small class="goal-meta">${progress.progressPercentage}% · ${escapeHtml(progress.statusLabel)}</small>
   </article>`;
 }

@@ -12,6 +12,7 @@ import { cashflowForecastChart } from '../views/charts.js';
 import { html } from '../http/response.js';
 import { optionalMoney } from '../utils/validation.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
+import { buildSavingsProjection } from '../services/savingsAccountService.js';
 
 export function registerForecastRoutes(router, db) {
   router.get('/forecast', (ctx) => {
@@ -30,6 +31,7 @@ export function registerForecastRoutes(router, db) {
       months,
       openingBalancePence
     });
+    const savingsProjection = buildSavingsProjection(savingsAccounts, { startMonth, months });
     const hasForecastData = forecast.some((row) => row.expectedIncomePence > 0 || row.expectedExpensesPence > 0 || row.expectedSavingsPence > 0);
     const summary = forecastSummary(forecast);
 
