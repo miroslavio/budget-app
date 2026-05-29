@@ -109,7 +109,7 @@ export function cashflowForecastChart(forecast) {
   </div>`;
 }
 
-export function savingsProjectionChart(projection, { emptyMessage = 'No projected savings data yet.' } = {}) {
+export function savingsProjectionChart(projection, { emptyMessage = 'No projected savings data yet.'} = {}) {
   if (!projection.months.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
 
   const width = 920;
@@ -118,6 +118,8 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const cumulativeRows = buildSavingsProjectionSeries(projection.months);
+  const accountNames = projection.accounts.map((account) => account.name);
+  const stackedSeries = buildStackedSavingsSeries(cumulativeRows, accountNames);
   const values = cumulativeRows.flatMap((row) => [row.totalPence]);
   const maxValue = Math.max(0, ...values);
   const minValue = 0;
@@ -145,6 +147,9 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
         })
         .join('')}
       <line class="axis-line" x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}"></line>
+      ${accountNames
+        .map((_, index) => savingsAreaPath(stackedSeries, index, { padding, plotHeight, minValue, range, step }))
+        .join('')}
       <polyline class="closing-area savings-area" points="${areaPoints}"></polyline>
       <polyline class="savings-line" points="${linePoints.join(' ')}"></polyline>
       ${cumulativeRows
@@ -169,13 +174,15 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
     </svg>
     <div class="chart-legend forecast-legend">
       <div class="legend-row simple"><span class="legend-line savings-line-key"></span><span>Projected balance</span></div>
+      ${projection.accounts
+        .map(
+          (account, index) => `<div class="legend-row simple">
+            <span class="legend-swatch swatch-${index % 8}"></span>
+            <span>${escapeHtml(account.name)}</span>
+          </div>`
+        )
+        .join('')}
     </div>
-    <table class="data-table chart-data-table">
-      <thead><tr><th>Month</th><th>Projected balance</th></tr></thead>
-      <tbody>${cumulativeRows
-        .map((row) => `<tr><td>${escapeHtml(monthLabel(row.month))}</td><td>${formatCurrency(row.totalPence)}</td></tr>`)
-        .join('')}</tbody>
-    </table>
   </div>`;
 }
 
@@ -200,6 +207,53 @@ function buildSavingsProjectionSeries(months) {
         accounts: row.accounts || []
       };
   });
+}
+
+function buildSavingsContributionSeries(months) {
+  return months.map((row) => {
+    const byAccount = Object.fromEntries(
+      (row.accounts || []).map((account) => [
+        account.name,
+        Number(account.personalContributionPence || 0) + Number(account.employerContributionPence || 0) + Number(account.bonusPence || 0)
+      ])
+    );
+    const totalPence = Object.values(byAccount).reduce((sum, value) => sum + Number(value || 0), 0);
+    return {
+      month: row.month,
+      byAccount,
+      totalPence
+    };
+  });
+}
+
+function buildStackedSavingsSeries(rows, accountNames) {
+  return rows.map((row) => {
+    let runningTotal = 0;
+    const points = accountNames.map((name) => {
+      const account = row.accounts.find((entry) => entry.name === name);
+      const value = Number(account?.closingBalancePence || 0);
+      const lower = runningTotal;
+      const upper = runningTotal + value;
+      runningTotal = upper;
+      return { lower, upper };
+    });
+    return { month: row.month, points };
+  });
+}
+
+function savingsAreaPath(seriesRows, index, { padding, plotHeight, minValue, range, step }) {
+  if (!seriesRows.length) return '';
+  const topPoints = [];
+  const bottomPoints = [];
+
+  seriesRows.forEach((row, rowIndex) => {
+    const point = row.points[index];
+    const x = padding.left + step * rowIndex + step / 2;
+    topPoints.push(`${round(x)},${round(yFor(point.upper, minValue, range, padding, plotHeight))}`);
+    bottomPoints.push(`${round(x)},${round(yFor(point.lower, minValue, range, padding, plotHeight))}`);
+  });
+
+  return `<path class="savings-stack-area stack-${index % 8}" d="M ${topPoints[0]} L ${topPoints.slice(1).join(' L ')} L ${bottomPoints.reverse().join(' L ')} Z"></path>`;
 }
 
 function buildCurrencyTicks(maxValue, count = 5) {
@@ -271,11 +325,18 @@ function savingsProjectionTooltip(row) {
     .map((account) => `${account.name}: ${formatCurrency(account.closingBalancePence)}`);
   return [
     monthLabel(row.month),
-    `Total projected balance: ${formatCurrency(row.totalPence)}`,
+    `Projected total: ${formatCurrency(row.totalPence)}`,
     ...accountLines,
     `Personal contributions to date: ${formatCurrency(row.personalContributionPence)}`,
     `Employer and LISA top-ups to date: ${formatCurrency(row.topUpsPence)}`,
-    `Projected growth / interest to date: ${formatCurrency(row.growthPence)}`,
-    `Projected balance: ${formatCurrency(row.totalPence)}`
+    `Projected growth / interest to date: ${formatCurrency(row.growthPence)}`
+  ].join('\n');
+}
+
+function savingsContributionTooltip(row, accountNames) {
+  return [
+    monthLabel(row.month),
+    ...accountNames.map((name) => `${name}: ${formatCurrency(row.byAccount[name] || 0)}`),
+    `Total monthly contributions: ${formatCurrency(row.totalPence)}`
   ].join('\n');
 }

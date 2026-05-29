@@ -662,6 +662,11 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
     </div>`;
   }
 
+  const totalPlannedMonthlyPence = rows.reduce(
+    (total, row) => total + (row.isActive === false ? 0 : Number(row.plannedMonthlyPence || 0)),
+    0
+  );
+
   return `<table class="data-table category-budget-table spending-budget-table">
     <thead><tr><th>Name</th><th>Category</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${rows
@@ -680,6 +685,17 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
         <td class="actions-col">${spendingBudgetActions(ctx, row, returnTo)}</td>
       </tr>`)
       .join('')}</tbody>
+    <tfoot>
+      <tr>
+        <th scope="row">Total planned spending</th>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td>${formatCurrency(totalPlannedMonthlyPence)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
   </table>`;
 }
 

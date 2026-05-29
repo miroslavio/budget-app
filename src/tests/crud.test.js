@@ -137,8 +137,11 @@ test('savings goals can be updated and deleted', () => {
     currentSavedAmountPence: 100000,
     monthlyContributionPence: 25000,
     targetDate: '2027-12-31',
+    trackingMode: 'manual',
+    goalType: 'general',
     ownerType: 'shared',
-    status: 'active'
+    status: 'active',
+    notes: 'Build the emergency buffer'
   });
 
   const updated = updateSavingsGoal(db, {
@@ -149,12 +152,18 @@ test('savings goals can be updated and deleted', () => {
     currentSavedAmountPence: 150000,
     monthlyContributionPence: 30000,
     targetDate: '2028-03-31',
+    trackingMode: 'linked_pots',
+    goalType: 'retirement',
     ownerType: 'shared',
-    status: 'paused'
+    status: 'paused',
+    notes: 'Linked to pensions and ISAs'
   });
 
   assert.equal(updated.name, 'Emergency fund top-up');
   assert.equal(updated.status, 'paused');
+  assert.equal(updated.tracking_mode, 'linked_pots');
+  assert.equal(updated.goal_type, 'retirement');
+  assert.equal(updated.notes, 'Linked to pensions and ISAs');
 
   deleteSavingsGoal(db, householdId, goal.id);
   assert.equal(findSavingsGoalById(db, householdId, goal.id), undefined);
@@ -170,8 +179,11 @@ test('savings goals can be linked to tracked pots', () => {
     currentSavedAmountPence: 500_000,
     monthlyContributionPence: 50_000,
     targetDate: '2030-12-31',
+    trackingMode: 'linked_pots',
+    goalType: 'general',
     ownerType: 'shared',
-    status: 'active'
+    status: 'active',
+    notes: null
   });
   const cashIsa = createSavingsAccount(db, {
     householdId,

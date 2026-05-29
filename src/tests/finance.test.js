@@ -4,7 +4,7 @@ import { calculateMonthlyEquivalent, calculateSharedSplit, plannedMonthlySummary
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
 import { buildMonthlyForecast } from '../services/forecastService.js';
 import { buildSavingsProjection } from '../services/savingsAccountService.js';
-import { plannedSavingsBudgetItems, savingsGoalProgress } from '../services/savingsService.js';
+import { plannedSavingsBudgetItems, savingsGoalMetrics, savingsGoalProgress } from '../services/savingsService.js';
 
 test('monthly equivalent keeps monthly amounts and spreads yearly amounts', () => {
   assert.equal(calculateMonthlyEquivalent(120000, 'yearly'), 10000);
@@ -114,6 +114,7 @@ test('planned savings prefer tracked account contributions over goal contributio
         id: 1,
         name: 'Emergency fund',
         status: 'active',
+        tracking_mode: 'manual',
         owner_type: 'shared',
         monthly_contribution_pence: 20000
       }
@@ -129,9 +130,106 @@ test('planned savings prefer tracked account contributions over goal contributio
     ]
   });
 
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0].name, 'Cash ISA');
   assert.equal(items[0].monthly_equivalent_pence, 15000);
+  assert.equal(items[1].name, 'Emergency fund');
+  assert.equal(items[1].monthly_equivalent_pence, 20000);
+});
+
+test('linked-pot savings goals derive balances, additions, and projected shortfall from linked pots', () => {
+  const linkedAccounts = [
+    {
+      id: 1,
+      name: 'Workplace pension',
+      account_type: 'pension',
+      owner_type: 'person_a',
+      current_balance_pence: 2_000_000,
+      monthly_contribution_pence: 50_000,
+      employer_monthly_contribution_pence: 25_000,
+      projected_annual_rate: 4,
+      projected_rate_type: 'growth',
+      include_lisa_bonus: 0,
+      is_active: 1
+    },
+    {
+      id: 2,
+      name: 'Lifetime ISA',
+      account_type: 'lifetime_isa',
+      owner_type: 'person_a',
+      current_balance_pence: 400_000,
+      monthly_contribution_pence: 25_000,
+      employer_monthly_contribution_pence: 0,
+      projected_annual_rate: 4,
+      projected_rate_type: 'growth',
+      include_lisa_bonus: 1,
+      is_active: 1
+    }
+  ];
+
+  const metrics = savingsGoalMetrics(
+    {
+      tracking_mode: 'linked_pots',
+      target_amount_pence: 5_000_000,
+      target_date: '2027-05-31'
+    },
+    { linkedAccounts, startMonth: '2026-05' }
+  );
+
+  assert.equal(metrics.currentSavedPence, 2_400_000);
+  assert.equal(metrics.monthlyPersonalContributionPence, 75_000);
+  assert.equal(metrics.monthlyEmployerTopUpsPence > 25_000, true);
+  assert.equal(metrics.projectedValueAtTargetDatePence > metrics.currentSavedPence, true);
+  assert.equal(metrics.projectedShortfallSurplusPence < 0, true);
+  assert.equal(metrics.statusLabel, 'Behind target');
+});
+
+test('manual savings goals keep manual contributions and ignore linked-pot top-ups', () => {
+  const metrics = savingsGoalMetrics(
+    {
+      tracking_mode: 'manual',
+      current_saved_amount_pence: 300_000,
+      monthly_contribution_pence: 25_000,
+      target_amount_pence: 500_000,
+      target_date: '2026-09-30'
+    },
+    {
+      linkedAccounts: [
+        {
+          id: 9,
+          name: 'Ignored pension',
+          account_type: 'pension',
+          current_balance_pence: 9_999_999,
+          monthly_contribution_pence: 99_999,
+          employer_monthly_contribution_pence: 99_999,
+          is_active: 1
+        }
+      ],
+      startMonth: '2026-05'
+    }
+  );
+
+  assert.equal(metrics.currentSavedPence, 300_000);
+  assert.equal(metrics.monthlyPersonalContributionPence, 25_000);
+  assert.equal(metrics.monthlyEmployerTopUpsPence, 0);
+  assert.equal(metrics.projectedValueAtTargetDatePence, 425_000);
+  assert.equal(metrics.statusLabel, 'Behind target');
+});
+
+test('linked-pot savings goals report missing linked pots clearly', () => {
+  const metrics = savingsGoalMetrics(
+    {
+      tracking_mode: 'linked_pots',
+      target_amount_pence: 500_000,
+      target_date: '2027-05-31'
+    },
+    { linkedAccounts: [], startMonth: '2026-05' }
+  );
+
+  assert.equal(metrics.currentSavedPence, 0);
+  assert.equal(metrics.monthlyAdditionsPence, 0);
+  assert.equal(metrics.projectedValueAtTargetDatePence, null);
+  assert.equal(metrics.statusLabel, 'No linked pots');
 });
 
 test('savings projection compounds balances with monthly contributions', () => {

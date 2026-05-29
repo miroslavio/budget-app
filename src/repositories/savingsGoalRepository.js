@@ -3,8 +3,8 @@ export function createSavingsGoal(db, goal) {
     .prepare(
       `INSERT INTO savings_goals (
         household_id, name, target_amount_pence, current_saved_amount_pence,
-        monthly_contribution_pence, target_date, owner_type, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        monthly_contribution_pence, target_date, tracking_mode, goal_type, owner_type, status, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       goal.householdId,
@@ -13,8 +13,11 @@ export function createSavingsGoal(db, goal) {
       goal.currentSavedAmountPence,
       goal.monthlyContributionPence,
       goal.targetDate || null,
+      goal.trackingMode || 'manual',
+      goal.goalType || 'general',
       goal.ownerType,
-      goal.status
+      goal.status,
+      goal.notes || null
     );
   return findSavingsGoalById(db, goal.householdId, result.lastInsertRowid);
 }
@@ -23,7 +26,7 @@ export function updateSavingsGoal(db, goal) {
   db.prepare(
     `UPDATE savings_goals
      SET name = ?, target_amount_pence = ?, current_saved_amount_pence = ?,
-         monthly_contribution_pence = ?, target_date = ?, owner_type = ?, status = ?
+         monthly_contribution_pence = ?, target_date = ?, tracking_mode = ?, goal_type = ?, owner_type = ?, status = ?, notes = ?
      WHERE household_id = ? AND id = ?`
   ).run(
     goal.name,
@@ -31,8 +34,11 @@ export function updateSavingsGoal(db, goal) {
     goal.currentSavedAmountPence,
     goal.monthlyContributionPence,
     goal.targetDate || null,
+    goal.trackingMode || 'manual',
+    goal.goalType || 'general',
     goal.ownerType,
     goal.status,
+    goal.notes || null,
     goal.householdId,
     goal.id
   );

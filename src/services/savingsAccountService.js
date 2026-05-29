@@ -26,6 +26,14 @@ export function savingsAccountTypeLabel(accountType) {
   return ACCOUNT_TYPE_META[accountType]?.label || accountType;
 }
 
+export function defaultProjectedRateTypeForAccount(accountType) {
+  return ACCOUNT_TYPE_META[accountType]?.defaultRateType || 'interest';
+}
+
+export function projectedRateLabelForAccount(accountType, projectedRateType = defaultProjectedRateTypeForAccount(accountType)) {
+  return projectedRateType === 'growth' ? 'Projected annual growth assumption' : 'Projected annual interest rate';
+}
+
 export function savingsRateTypeLabel(rateType) {
   return rateType === 'growth' ? 'Projected growth' : 'Interest rate';
 }

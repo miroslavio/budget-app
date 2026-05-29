@@ -52,6 +52,15 @@ export function runMigrations(db) {
       db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
       continue;
     }
+    if (
+      migration === '011_add_savings_goal_tracking_fields.sql' &&
+      tableHasColumn(db, 'savings_goals', 'tracking_mode') &&
+      tableHasColumn(db, 'savings_goals', 'goal_type') &&
+      tableHasColumn(db, 'savings_goals', 'notes')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {

@@ -151,8 +151,11 @@ CREATE TABLE IF NOT EXISTS savings_goals (
   current_saved_amount_pence INTEGER NOT NULL DEFAULT 0,
   monthly_contribution_pence INTEGER NOT NULL DEFAULT 0,
   target_date TEXT,
+  tracking_mode TEXT NOT NULL CHECK (tracking_mode IN ('manual', 'linked_pots')) DEFAULT 'manual',
+  goal_type TEXT NOT NULL CHECK (goal_type IN ('general', 'retirement')) DEFAULT 'general',
   owner_type TEXT NOT NULL CHECK (owner_type IN ('person_a', 'person_b', 'shared')),
   status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'paused')) DEFAULT 'active',
+  notes TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

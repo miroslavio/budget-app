@@ -129,6 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireTransactionCategorySelects();
   wireSpendingWarningSelects();
   wireIncomeEstimateForms();
+  wireSavingsProjectionForms();
   wireMonthPickers();
   wireConfirmActions();
   wireModals();
@@ -359,6 +360,7 @@ function wireModals(root = document) {
       wireTransactionCategorySelects(dialog);
       wireSpendingWarningSelects(dialog);
       wireIncomeEstimateForms(dialog);
+      wireSavingsProjectionForms(dialog);
       dialog.showModal();
     });
   });
@@ -599,6 +601,204 @@ function wireIncomeEstimateForms(root = document) {
       }
     }
   });
+}
+
+function wireSavingsProjectionForms(root = document) {
+  root.querySelectorAll('form[data-savings-projection-form]').forEach((form) => {
+    if (!(form instanceof HTMLFormElement) || form.dataset.savingsProjectionBound === 'true') return;
+    form.dataset.savingsProjectionBound = 'true';
+
+    const accountTypeField = form.querySelector('[name="account_type"]');
+    const presetField = form.querySelector('[name="projection_preset"]');
+    const customRateField = form.querySelector('[name="projected_annual_rate_custom"]');
+    const hiddenRateField = form.querySelector('[name="projected_annual_rate"]');
+    const hiddenRateTypeField = form.querySelector('[name="projected_rate_type"]');
+    const rateTypeOverrideField = form.querySelector('[name="projected_rate_type_override"]');
+    const currentBalanceField = form.querySelector('[name="current_balance"]');
+    const monthlyContributionField = form.querySelector('[name="monthly_contribution"]');
+    const employerContributionField = form.querySelector('[name="employer_monthly_contribution"]');
+    const includeLisaBonusField = form.querySelector('[name="include_lisa_bonus"]');
+    const rateLabel = form.querySelector('[data-savings-rate-label]');
+    const rateHelper = form.querySelector('[data-savings-rate-helper]');
+    const customRateWrapper = form.querySelector('[data-savings-custom-rate]');
+    const rateTypeOverrideWrapper = form.querySelector('[data-savings-rate-type-override]');
+    const previewRateLabel = form.querySelector('[data-savings-preview-rate-label]');
+    const previewRateValue = form.querySelector('[data-savings-preview-rate-value]');
+    const previewMonthly = form.querySelector('[data-savings-preview-monthly]');
+    const previewAnnual = form.querySelector('[data-savings-preview-annual]');
+    const previewEmployerRow = form.querySelector('[data-savings-preview-employer-row]');
+    const previewEmployer = form.querySelector('[data-savings-preview-employer]');
+    const previewLisaRow = form.querySelector('[data-savings-preview-lisa-row]');
+    const previewLisa = form.querySelector('[data-savings-preview-lisa]');
+    const previewTotal = form.querySelector('[data-savings-preview-total]');
+    const scenariosRoot = form.querySelector('[data-savings-scenarios]');
+    const scenariosList = form.querySelector('[data-savings-scenarios-list]');
+
+    const ratePresets = [
+      { value: '0', label: 'No growth: 0%', rate: 0 },
+      { value: '2', label: 'Low: 2%', rate: 2 },
+      { value: '4', label: 'Medium: 4%', rate: 4 },
+      { value: '6', label: 'High: 6%', rate: 6 }
+    ];
+
+    const updatePresetFromRate = () => {
+      if (!(presetField instanceof HTMLSelectElement) || !(hiddenRateField instanceof HTMLInputElement)) return;
+      const currentRate = String(Number(hiddenRateField.value || 0));
+      const matchingPreset = ratePresets.find((preset) => String(preset.rate) === currentRate);
+      presetField.value = matchingPreset ? matchingPreset.value : 'custom';
+      if (customRateField instanceof HTMLInputElement && !matchingPreset) {
+        customRateField.value = hiddenRateField.value || '';
+      }
+      if (rateTypeOverrideField instanceof HTMLSelectElement && hiddenRateTypeField instanceof HTMLInputElement) {
+        rateTypeOverrideField.value = hiddenRateTypeField.value || 'interest';
+      }
+    };
+
+    const update = () => {
+      const accountType = accountTypeField instanceof HTMLSelectElement ? accountTypeField.value : 'current_account';
+      const rateType = resolveSavingsRateType(accountType, rateTypeOverrideField instanceof HTMLSelectElement ? rateTypeOverrideField.value : 'interest');
+      const rateLabelText = rateType === 'growth' ? 'Projected annual growth assumption' : 'Projected annual interest rate';
+
+      if (rateLabel instanceof HTMLElement) rateLabel.textContent = rateLabelText;
+      if (previewRateLabel instanceof HTMLElement) previewRateLabel.textContent = rateLabelText;
+      if (rateHelper instanceof HTMLElement) {
+        rateHelper.textContent = rateType === 'growth'
+          ? 'Use a cautious planning assumption. Actual investment returns can be higher or lower.'
+          : 'Use a cautious planning assumption. Actual interest may be higher or lower than this estimate.';
+      }
+
+      if (rateTypeOverrideWrapper instanceof HTMLElement) {
+        rateTypeOverrideWrapper.hidden = accountType !== 'other';
+      }
+      if (hiddenRateTypeField instanceof HTMLInputElement) {
+        hiddenRateTypeField.value = rateType;
+      }
+
+      if (presetField instanceof HTMLSelectElement && customRateWrapper instanceof HTMLElement) {
+        customRateWrapper.hidden = presetField.value !== 'custom';
+      }
+
+      const annualRate = resolveSavingsPresetRate(presetField, customRateField, hiddenRateField);
+      if (hiddenRateField instanceof HTMLInputElement) hiddenRateField.value = String(annualRate);
+      if (previewRateValue instanceof HTMLElement) previewRateValue.textContent = `${formatPercent(annualRate)}`;
+
+      const currentBalancePence = parseMoneyValue(currentBalanceField);
+      const monthlyContributionPence = parseMoneyValue(monthlyContributionField);
+      const employerContributionPence = accountType === 'pension' ? parseMoneyValue(employerContributionField) : 0;
+      const includeLisaBonus = accountType === 'lifetime_isa' && includeLisaBonusField instanceof HTMLInputElement && includeLisaBonusField.checked;
+      const projection = projectSavingsPreview({
+        accountType,
+        currentBalancePence,
+        monthlyContributionPence,
+        employerContributionPence,
+        annualRate,
+        includeLisaBonus
+      });
+
+      if (previewMonthly instanceof HTMLElement) previewMonthly.textContent = formatCurrencyFromPence(monthlyContributionPence);
+      if (previewAnnual instanceof HTMLElement) previewAnnual.textContent = formatCurrencyFromPence(monthlyContributionPence * 12);
+      if (previewEmployerRow instanceof HTMLElement) previewEmployerRow.hidden = employerContributionPence <= 0;
+      if (previewEmployer instanceof HTMLElement) previewEmployer.textContent = formatCurrencyFromPence(employerContributionPence * 12);
+      if (previewLisaRow instanceof HTMLElement) previewLisaRow.hidden = !includeLisaBonus || projection.lisaBonusPence <= 0;
+      if (previewLisa instanceof HTMLElement) previewLisa.textContent = formatCurrencyFromPence(projection.lisaBonusPence);
+      if (previewTotal instanceof HTMLElement) previewTotal.textContent = formatCurrencyFromPence(projection.projectedBalancePence);
+
+      if (scenariosRoot instanceof HTMLElement && scenariosList instanceof HTMLElement) {
+        const showScenarios = rateType === 'growth';
+        scenariosRoot.hidden = !showScenarios;
+        if (showScenarios) {
+          scenariosList.innerHTML = ratePresets
+            .map((preset) => {
+              const scenario = projectSavingsPreview({
+                accountType,
+                currentBalancePence,
+                monthlyContributionPence,
+                employerContributionPence,
+                annualRate: preset.rate,
+                includeLisaBonus
+              });
+              return `<div><dt>${escapeHtmlText(preset.label)}</dt><dd>${escapeHtmlText(formatCurrencyFromPence(scenario.projectedBalancePence))}</dd></div>`;
+            })
+            .join('');
+        }
+      }
+    };
+
+    updatePresetFromRate();
+    [
+      accountTypeField,
+      presetField,
+      customRateField,
+      rateTypeOverrideField,
+      currentBalanceField,
+      monthlyContributionField,
+      employerContributionField,
+      includeLisaBonusField
+    ].forEach((field) => {
+      if (!(field instanceof HTMLElement)) return;
+      field.addEventListener('change', update);
+      field.addEventListener('input', update);
+    });
+
+    form.addEventListener('submit', () => {
+      const annualRate = resolveSavingsPresetRate(presetField, customRateField, hiddenRateField);
+      if (hiddenRateField instanceof HTMLInputElement) hiddenRateField.value = String(annualRate);
+      if (hiddenRateTypeField instanceof HTMLInputElement) {
+        const accountType = accountTypeField instanceof HTMLSelectElement ? accountTypeField.value : 'current_account';
+        hiddenRateTypeField.value = resolveSavingsRateType(accountType, rateTypeOverrideField instanceof HTMLSelectElement ? rateTypeOverrideField.value : 'interest');
+      }
+    });
+
+    update();
+  });
+}
+
+function resolveSavingsPresetRate(presetField, customRateField, hiddenRateField) {
+  if (presetField instanceof HTMLSelectElement && presetField.value && presetField.value !== 'custom') {
+    return Number(presetField.value) || 0;
+  }
+  if (customRateField instanceof HTMLInputElement && customRateField.value !== '') {
+    return Number(customRateField.value) || 0;
+  }
+  if (hiddenRateField instanceof HTMLInputElement && hiddenRateField.value !== '') {
+    return Number(hiddenRateField.value) || 0;
+  }
+  return 0;
+}
+
+function resolveSavingsRateType(accountType, overrideValue) {
+  if (accountType === 'other') {
+    return overrideValue === 'growth' ? 'growth' : 'interest';
+  }
+  return ['stocks_and_shares_isa', 'lifetime_isa', 'pension'].includes(accountType) ? 'growth' : 'interest';
+}
+
+function projectSavingsPreview({ accountType, currentBalancePence, monthlyContributionPence, employerContributionPence, annualRate, includeLisaBonus, months = 12 }) {
+  let balancePence = Number(currentBalancePence || 0);
+  let lisaAllowanceUsedPence = 0;
+  let lisaBonusPence = 0;
+  const monthlyRate = annualRate ? Math.pow(1 + annualRate / 100, 1 / 12) - 1 : 0;
+
+  for (let index = 0; index < months; index += 1) {
+    const eligibleLisaContributionPence = accountType === 'lifetime_isa' && includeLisaBonus
+      ? Math.min(Number(monthlyContributionPence || 0), Math.max(0, 400000 - lisaAllowanceUsedPence))
+      : 0;
+    const bonusPence = Math.round(eligibleLisaContributionPence * 0.25);
+    lisaAllowanceUsedPence += eligibleLisaContributionPence;
+    lisaBonusPence += bonusPence;
+    const contributionPence = Number(monthlyContributionPence || 0) + Number(employerContributionPence || 0) + bonusPence;
+    const growthPence = Math.round((balancePence + contributionPence) * monthlyRate);
+    balancePence += contributionPence + growthPence;
+  }
+
+  return {
+    projectedBalancePence: balancePence,
+    lisaBonusPence
+  };
+}
+
+function formatPercent(value) {
+  return `${Number(value || 0).toFixed(2).replace(/\.00$/, '')}%`;
 }
 
 function renderIncomeEstimate(summaryRoot, estimate) {
