@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateMonthlyEquivalent, calculateSharedSplit, plannedMonthlySummary, actualMonthlySummary, varianceSummary } from '../services/budgetService.js';
 import { plannedExpenseCategorySeries } from '../services/chartService.js';
-import { buildMonthlyForecast } from '../services/forecastService.js';
-import { buildSavingsProjection } from '../services/savingsAccountService.js';
+import { buildMonthlyForecast, deriveForecastStartingBalance, spendableHouseholdBalancePence } from '../services/forecastService.js';
+import { buildSavingsProjection, defaultAccessSettingsForAccount } from '../services/savingsAccountService.js';
 import { plannedSavingsBudgetItems, savingsGoalMetrics, savingsGoalProgress } from '../services/savingsService.js';
 
 test('monthly equivalent keeps monthly amounts and spreads yearly amounts', () => {
@@ -59,6 +59,18 @@ test('forecast rolls opening and closing balances month by month', () => {
   assert.equal(rows[0].closingBalancePence, 250000);
   assert.equal(rows[1].openingBalancePence, 250000);
   assert.equal(rows[1].closingBalancePence, 450000);
+});
+
+test('forecast starting balance is derived from spendable active accounts plus adjustment', () => {
+  const accounts = [
+    { current_balance_pence: 150_000, available_for_household_cashflow: 1, is_active: 1 },
+    { current_balance_pence: 75_000, available_for_household_cashflow: 1, is_active: 1 },
+    { current_balance_pence: 500_000, available_for_household_cashflow: 0, is_active: 1 },
+    { current_balance_pence: 25_000, available_for_household_cashflow: 1, is_active: 0 }
+  ];
+
+  assert.equal(spendableHouseholdBalancePence(accounts), 225_000);
+  assert.equal(deriveForecastStartingBalance({ accounts, adjustmentPence: -5_000 }), 220_000);
 });
 
 test('planned expense chart can aggregate across multiple months and honour shared splits', () => {
@@ -182,6 +194,52 @@ test('linked-pot savings goals derive balances, additions, and projected shortfa
   assert.equal(metrics.projectedValueAtTargetDatePence > metrics.currentSavedPence, true);
   assert.equal(metrics.projectedShortfallSurplusPence < 0, true);
   assert.equal(metrics.statusLabel, 'Behind target');
+});
+
+test('linked-pot goal projections use the pot growth assumption', () => {
+  const baseGoal = {
+    tracking_mode: 'linked_pots',
+    target_amount_pence: 2_000_000,
+    target_date: '2027-05-31'
+  };
+  const lowGrowth = savingsGoalMetrics(baseGoal, {
+    linkedAccounts: [
+      {
+        id: 1,
+        name: 'Stocks and Shares ISA',
+        account_type: 'stocks_and_shares_isa',
+        owner_type: 'person_a',
+        current_balance_pence: 1_000_000,
+        monthly_contribution_pence: 20_000,
+        employer_monthly_contribution_pence: 0,
+        projected_annual_rate: 0,
+        projected_rate_type: 'growth',
+        include_lisa_bonus: 0,
+        is_active: 1
+      }
+    ],
+    startMonth: '2026-05'
+  });
+  const higherGrowth = savingsGoalMetrics(baseGoal, {
+    linkedAccounts: [
+      {
+        id: 1,
+        name: 'Stocks and Shares ISA',
+        account_type: 'stocks_and_shares_isa',
+        owner_type: 'person_a',
+        current_balance_pence: 1_000_000,
+        monthly_contribution_pence: 20_000,
+        employer_monthly_contribution_pence: 0,
+        projected_annual_rate: 6,
+        projected_rate_type: 'growth',
+        include_lisa_bonus: 0,
+        is_active: 1
+      }
+    ],
+    startMonth: '2026-05'
+  });
+
+  assert.equal(higherGrowth.projectedValueAtTargetDatePence > lowGrowth.projectedValueAtTargetDatePence, true);
 });
 
 test('manual savings goals keep manual contributions and ignore linked-pot top-ups', () => {
@@ -310,6 +368,21 @@ test('lifetime ISA bonus respects the annual allowance and resets for a new Apri
   );
   assert.equal(projection.accounts[0].totalBonusPence, 150000);
   assert.equal(projection.accounts[0].projectedBalancePence, 950000);
+});
+
+test('savings account defaults distinguish spendable cash from long-term pots', () => {
+  assert.deepEqual(defaultAccessSettingsForAccount('current_account'), {
+    accessType: 'instant_access',
+    availableForHouseholdCashflow: true
+  });
+  assert.deepEqual(defaultAccessSettingsForAccount('pension'), {
+    accessType: 'locked_until_age',
+    availableForHouseholdCashflow: false
+  });
+  assert.deepEqual(defaultAccessSettingsForAccount('lifetime_isa'), {
+    accessType: 'locked_until_age',
+    availableForHouseholdCashflow: false
+  });
 });
 
 function item(name, itemType, amountPence) {

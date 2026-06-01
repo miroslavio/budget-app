@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createBudgetItem, deleteBudgetItem, updateBudgetItem } from '../repositories/budgetItemRepository.js';
 import { createIncomeEstimate } from '../repositories/incomeEstimateRepository.js';
-import { createSavingsAccount } from '../repositories/savingsAccountRepository.js';
+import { createSavingsAccount, findSavingsAccountById, updateSavingsAccount } from '../repositories/savingsAccountRepository.js';
 import { listSavingsGoalAccountLinks, replaceSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountRepository.js';
 import { createSavingsGoal, deleteSavingsGoal, findSavingsGoalById, updateSavingsGoal } from '../repositories/savingsGoalRepository.js';
 import { createTransaction, deleteTransaction, findTransactionById, updateTransaction } from '../repositories/transactionRepository.js';
@@ -194,6 +194,11 @@ test('savings goals can be linked to tracked pots', () => {
     currentBalancePence: 250_000,
     monthlyContributionPence: 20_000,
     employerMonthlyContributionPence: 0,
+    availableForHouseholdCashflow: true,
+    accessType: 'penalty_withdrawal',
+    accessDate: null,
+    accessAge: null,
+    accessNotes: null,
     projectedAnnualRate: 3.5,
     projectedRateType: 'interest',
     includeLisaBonus: false,
@@ -209,6 +214,11 @@ test('savings goals can be linked to tracked pots', () => {
     currentBalancePence: 120_000,
     monthlyContributionPence: 15_000,
     employerMonthlyContributionPence: 0,
+    availableForHouseholdCashflow: false,
+    accessType: 'locked_until_age',
+    accessDate: null,
+    accessAge: 60,
+    accessNotes: null,
     projectedAnnualRate: 4,
     projectedRateType: 'growth',
     includeLisaBonus: true,
@@ -226,6 +236,65 @@ test('savings goals can be linked to tracked pots', () => {
 
   deleteSavingsGoal(db, householdId, goal.id);
   assert.equal(listSavingsGoalAccountLinks(db, householdId).length, 0);
+});
+
+test('savings accounts persist cashflow access settings', () => {
+  const db = openTestDatabase();
+  const householdId = createHousehold(db);
+
+  const account = createSavingsAccount(db, {
+    householdId,
+    name: 'Lifetime ISA',
+    providerName: 'Provider',
+    accountType: 'lifetime_isa',
+    ownerType: 'person_a',
+    currentBalancePence: 250_000,
+    monthlyContributionPence: 30_000,
+    employerMonthlyContributionPence: 0,
+    availableForHouseholdCashflow: false,
+    accessType: 'locked_until_age',
+    accessDate: null,
+    accessAge: 60,
+    accessNotes: 'Usually held for later life or property purchase',
+    projectedAnnualRate: 6,
+    projectedRateType: 'growth',
+    includeLisaBonus: true,
+    isActive: true,
+    notes: 'Long-term savings'
+  });
+
+  assert.equal(account.available_for_household_cashflow, 0);
+  assert.equal(account.access_type, 'locked_until_age');
+  assert.equal(account.access_age, 60);
+  assert.equal(account.access_notes, 'Usually held for later life or property purchase');
+
+  updateSavingsAccount(db, {
+    householdId,
+    id: account.id,
+    name: 'Lifetime ISA',
+    providerName: 'Provider',
+    accountType: 'lifetime_isa',
+    ownerType: 'person_a',
+    currentBalancePence: 250_000,
+    monthlyContributionPence: 30_000,
+    employerMonthlyContributionPence: 0,
+    availableForHouseholdCashflow: true,
+    accessType: 'penalty_withdrawal',
+    accessDate: null,
+    accessAge: null,
+    accessNotes: 'Possible but penalised',
+    projectedAnnualRate: 6,
+    projectedRateType: 'growth',
+    includeLisaBonus: true,
+    isActive: true,
+    notes: 'Long-term savings'
+  });
+
+  const updated = findSavingsAccountById(db, householdId, account.id);
+  assert.equal(updated.available_for_household_cashflow, 1);
+  assert.equal(updated.access_type, 'penalty_withdrawal');
+  assert.equal(updated.access_age, null);
+  assert.equal(updated.access_notes, 'Possible but penalised');
 });
 
 function openTestDatabase() {

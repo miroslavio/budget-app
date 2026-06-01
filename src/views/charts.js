@@ -186,6 +186,79 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
   </div>`;
 }
 
+export function savingsContributionChart(projection, { emptyMessage = 'No projected contributions data yet.' } = {}) {
+  if (!projection.months.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const contributionRows = buildSavingsContributionSeries(projection.months);
+  const accountNames = projection.accounts
+    .map((account) => account.name)
+    .filter((name) => contributionRows.some((row) => Number(row.byAccount[name] || 0) > 0));
+  if (!accountNames.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const width = 920;
+  const height = 360;
+  const padding = { top: 24, right: 28, bottom: 54, left: 86 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(0, ...contributionRows.map((row) => row.totalPence));
+  const range = maxValue || 1;
+  const step = plotWidth / Math.max(1, contributionRows.length);
+  const barWidth = Math.max(24, step * 0.58);
+  const yTicks = buildCurrencyTicks(maxValue, 5);
+
+  return `<div class="cashflow-chart-block" role="img" aria-label="Monthly contributions by pot">
+    <svg class="cashflow-chart" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+      ${yTicks
+        .map((value) => {
+          const y = yFor(value, 0, range, padding, plotHeight);
+          return `<line class="guide-line" x1="${padding.left}" y1="${round(y)}" x2="${width - padding.right}" y2="${round(y)}"></line>
+            <text class="axis-label" x="12" y="${round(y + 4)}">${formatAxisCurrency(value)}</text>`;
+        })
+        .join('')}
+      <line class="axis-line" x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}"></line>
+      ${contributionRows
+        .map((row, rowIndex) => {
+          const x = padding.left + step * rowIndex + step / 2;
+          let runningTotal = 0;
+          const stacks = accountNames
+            .map((name, accountIndex) => {
+              const value = Number(row.byAccount[name] || 0);
+              if (value <= 0) return '';
+              const lower = runningTotal;
+              runningTotal += value;
+              const topY = yFor(runningTotal, 0, range, padding, plotHeight);
+              const bottomY = yFor(lower, 0, range, padding, plotHeight);
+              return `<rect class="contribution-bar stack-${accountIndex % 8}" x="${round(x - barWidth / 2)}" y="${round(topY)}" width="${round(barWidth)}" height="${round(bottomY - topY)}"></rect>`;
+            })
+            .join('');
+          return `<g>
+            ${stacks}
+            <rect class="closing-hit" x="${round(x - step / 2)}" y="${padding.top}" width="${round(step)}" height="${plotHeight}" tabindex="0" data-chart-tooltip="${escapeHtml(savingsContributionTooltip(row, accountNames))}" aria-label="${escapeHtml(savingsContributionTooltip(row, accountNames))}">
+              <title>${savingsContributionTooltip(row, accountNames)}</title>
+            </rect>
+          </g>`;
+        })
+        .join('')}
+      ${contributionRows
+        .map((row, rowIndex) => {
+          const x = padding.left + step * rowIndex + step / 2;
+          return `<text class="month-label" x="${round(x)}" y="${height - 20}" text-anchor="middle">${escapeHtml(shortMonth(row.month))}</text>`;
+        })
+        .join('')}
+    </svg>
+    <div class="chart-legend forecast-legend">
+      ${accountNames
+        .map(
+          (name, index) => `<div class="legend-row simple">
+            <span class="legend-swatch swatch-${index % 8}"></span>
+            <span>${escapeHtml(name)}</span>
+          </div>`
+        )
+        .join('')}
+    </div>
+  </div>`;
+}
+
 function buildSavingsProjectionSeries(months) {
   if (!months.length) return [];
   const startingBalancePence = Number(months[0].openingBalancePence || 0);
@@ -312,7 +385,7 @@ function shortMonth(month) {
 function forecastTooltip(row) {
   return [
     monthLabel(row.month),
-    `Opening balance: ${formatCurrency(row.openingBalancePence)}`,
+    `Starting balance: ${formatCurrency(row.openingBalancePence)}`,
     `Planned income: ${formatCurrency(row.expectedIncomePence)}`,
     `Planned spending: -${formatCurrency(row.expectedExpensesPence)}`,
     `Planned savings: -${formatCurrency(row.expectedSavingsPence)}`,

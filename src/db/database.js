@@ -61,6 +61,21 @@ export function runMigrations(db) {
       db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
       continue;
     }
+    if (
+      migration === '012_add_savings_account_access_fields.sql' &&
+      tableHasColumn(db, 'savings_accounts', 'available_for_household_cashflow') &&
+      tableHasColumn(db, 'savings_accounts', 'access_type') &&
+      tableHasColumn(db, 'savings_accounts', 'access_date') &&
+      tableHasColumn(db, 'savings_accounts', 'access_age') &&
+      tableHasColumn(db, 'savings_accounts', 'access_notes')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
+    if (migration === '013_add_household_forecast_adjustment.sql' && tableHasColumn(db, 'households', 'forecast_adjustment_pence')) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {

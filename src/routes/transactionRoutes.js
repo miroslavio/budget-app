@@ -144,36 +144,53 @@ function calendarIcon() {
 }
 
 function transactionForm(ctx, categories, members, month) {
-  return `<form method="post" action="/transactions" class="stack modal-form">
+  return `<form method="post" action="/transactions" class="stack modal-form" data-stepped-form>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="/transactions?month=${escapeHtml(month)}">
-    <section class="form-section">
+    <div class="modal-stepper">
+      <div class="modal-stepper-meta">
+        <span class="modal-stepper-count">Step <strong data-step-current>1</strong> of <span data-step-total>3</span></span>
+        <strong class="modal-stepper-title" data-step-title>Transaction details</strong>
+      </div>
+      <div class="modal-stepper-track"><div class="modal-stepper-bar" data-step-progress-bar></div></div>
+    </div>
+    <section class="form-section" data-form-step data-step-title="Transaction details">
       <h3>Transaction details</h3>
-    <label>Date <input name="transaction_date" type="date" value="${todayIso()}" required data-modal-field="transactionDate"></label>
-    <label>Description <input name="description" maxlength="255" required data-modal-field="description"></label>
-    <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
-    <label>Type
-      <select name="type" data-modal-field="type" data-transaction-type-select>
-        <option value="expense">Spending</option>
-        <option value="income">Income</option>
-        <option value="savings">Savings</option>
-      </select>
-    </label>
+      <label>Date <input name="transaction_date" type="date" value="${todayIso()}" required data-modal-field="transactionDate"></label>
+      <label>Description <input name="description" maxlength="255" required data-modal-field="description"></label>
+      <label>Amount <input name="amount" ${moneyInputAttrs({ required: true, min: '0.01' })} data-modal-field="amount"></label>
+      <label>Type
+        <select name="type" data-modal-field="type" data-transaction-type-select>
+          <option value="expense">Spending</option>
+          <option value="income">Income</option>
+          <option value="savings">Savings</option>
+        </select>
+      </label>
     </section>
-    <section class="form-section">
+    <section class="form-section" data-form-step data-step-title="Classification">
       <h3>Classification</h3>
-    <label>Category
-      <select name="category_name" data-modal-field="categoryName" data-transaction-category-select>
-        <option value="">Choose a category</option>
-        ${categories.map((category) => `<option value="${escapeHtml(category.name)}" data-kind="${escapeHtml(category.kind)}">${escapeHtml(category.name)}</option>`).join('')}
-      </select>
-    </label>
-    <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
-    <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
+      <label>Category
+        <select name="category_name" data-modal-field="categoryName" data-transaction-category-select>
+          <option value="">Choose a category</option>
+          ${categories.map((category) => `<option value="${escapeHtml(category.name)}" data-kind="${escapeHtml(category.kind)}">${escapeHtml(category.name)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     </section>
-    <div class="modal-footer">
-      <button>Save transaction</button>
+    <section class="form-section" data-form-step data-step-title="Notes">
+      <h3>Notes</h3>
+      <label>Notes <textarea name="notes" rows="5" data-modal-field="notes"></textarea></label>
+    </section>
+    <div class="modal-footer modal-footer-split">
+      <div class="modal-footer-start">
+        <button type="button" class="secondary" data-close-modal>Cancel</button>
+      </div>
+      <div class="modal-footer-actions">
+        <button type="button" class="secondary" data-step-back hidden>Back</button>
+        <button type="button" data-step-next data-hide-on-final-step>Next</button>
+        <button data-show-on-final-step hidden>Save transaction</button>
+      </div>
     </div>
   </form>`;
 }

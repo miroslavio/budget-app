@@ -1207,6 +1207,52 @@ dialog.confirm-modal {
   gap: 1rem;
 }
 
+.modal-stepper {
+  display: grid;
+  gap: 0.55rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.2rem 0 0.55rem;
+  background: linear-gradient(to bottom, var(--panel) 78%, rgba(255, 250, 240, 0));
+}
+
+.modal-stepper-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.modal-stepper-count {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.modal-stepper-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.modal-stepper-track {
+  width: 100%;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgba(56, 45, 31, 0.08);
+  overflow: hidden;
+}
+
+.modal-stepper-bar {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 140ms ease;
+}
+
 .modal-form-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
@@ -1282,6 +1328,19 @@ dialog.confirm-modal {
   background: linear-gradient(to bottom, rgba(255, 250, 240, 0.72), var(--panel) 35%);
 }
 
+.modal-footer-split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-footer-start,
+.modal-footer-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .form-section {
   display: grid;
   gap: 1rem;
@@ -1294,6 +1353,19 @@ dialog.confirm-modal {
 .form-section h3 {
   margin-bottom: 0;
   font-size: 1rem;
+}
+
+.nested-form-section {
+  margin-top: 0;
+}
+
+.form-step-cluster {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-step-inactive {
+  display: none;
 }
 
 .inline-hint {
@@ -2020,6 +2092,10 @@ progress {
 .cell-stack {
   display: grid;
   gap: 0.15rem;
+}
+
+.row-ended {
+  opacity: 0.68;
 }
 
 .forecast-movement.positive {

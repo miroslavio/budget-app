@@ -112,8 +112,8 @@ export function card(title, content, extraClass = '') {
   return `<section class="card ${extraClass}"><h2>${escapeHtml(title)}</h2>${content}</section>`;
 }
 
-export function stat(label, pence, tone = '') {
-  return `<div class="stat ${tone}"><span>${escapeHtml(label)}</span><strong>${formatCurrency(pence)}</strong></div>`;
+export function stat(label, pence, tone = '', note = '') {
+  return `<div class="stat ${tone}"><span>${escapeHtml(label)}</span><strong>${formatCurrency(pence)}</strong>${note ? `<small class="plan-stat-note">${escapeHtml(note)}</small>` : ''}</div>`;
 }
 
 export function signedStat(label, pence) {

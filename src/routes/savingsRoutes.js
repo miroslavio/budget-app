@@ -8,6 +8,7 @@ import { currentMonth } from '../utils/dates.js';
 import { savingsGoalMetrics } from '../services/savingsService.js';
 import {
   buildSavingsProjection,
+  defaultAccessSettingsForAccount,
   defaultProjectedRateTypeForAccount,
   projectedRateLabelForAccount,
   savingsAccountSummary,
@@ -235,21 +236,34 @@ function saveSavingsAccountAction(ctx, db) {
     }
 
     const projectedAnnualRate = resolveProjectedAnnualRate(ctx.body);
+    const accountType = requireChoice(
+      ctx.body.account_type,
+      ['current_account', 'easy_access_savings', 'fixed_savings', 'cash_isa', 'stocks_and_shares_isa', 'lifetime_isa', 'pension', 'other'],
+      'Account type'
+    );
+    const accessDefaults = defaultAccessSettingsForAccount(accountType);
 
     const payload = {
       householdId: ctx.user.household_id,
       id: accountId,
       name: requireString(ctx.body.name, 'Name', 120),
       providerName: optionalString(ctx.body.provider_name, 120),
-      accountType: requireChoice(
-        ctx.body.account_type,
-        ['current_account', 'easy_access_savings', 'fixed_savings', 'cash_isa', 'stocks_and_shares_isa', 'lifetime_isa', 'pension', 'other'],
-        'Account type'
-      ),
+      accountType,
       ownerType: requireChoice(ctx.body.owner_type, ['person_a', 'person_b', 'shared'], 'Owner'),
       currentBalancePence: optionalMoney(ctx.body.current_balance, 'Current balance'),
       monthlyContributionPence: optionalMoney(ctx.body.monthly_contribution, 'Monthly contribution'),
       employerMonthlyContributionPence: 0,
+      availableForHouseholdCashflow: ctx.body.available_for_household_cashflow !== undefined
+        ? checkboxValue(ctx.body.available_for_household_cashflow)
+        : accessDefaults.availableForHouseholdCashflow,
+      accessType: requireChoice(
+        ctx.body.access_type || accessDefaults.accessType,
+        ['instant_access', 'notice', 'penalty_withdrawal', 'locked_until_date', 'locked_until_age'],
+        'Access type'
+      ),
+      accessDate: optionalString(ctx.body.access_date, 10),
+      accessAge: optionalInteger(ctx.body.access_age, 'Access age', { min: 0, max: 120 }),
+      accessNotes: optionalString(ctx.body.access_notes),
       projectedAnnualRate,
       projectedRateType: resolveProjectedRateType(ctx.body.account_type, ctx.body.projected_rate_type_override || ctx.body.projected_rate_type),
       includeLisaBonus: false,
@@ -438,11 +452,18 @@ function savingsAccountDialog(ctx, members, returnTo) {
 }
 
 function goalForm(ctx, members, accounts, returnTo) {
-  return `<form method="post" action="/savings/goals" class="stack modal-form">
+  return `<form method="post" action="/savings/goals" class="stack modal-form" data-stepped-form>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-    <section class="form-section">
+    <div class="modal-stepper">
+      <div class="modal-stepper-meta">
+        <span class="modal-stepper-count">Step <strong data-step-current>1</strong> of <span data-step-total>3</span></span>
+        <strong class="modal-stepper-title" data-step-title>Goal</strong>
+      </div>
+      <div class="modal-stepper-track"><div class="modal-stepper-bar" data-step-progress-bar></div></div>
+    </div>
+    <section class="form-section" data-form-step data-step-title="Goal">
       <h3>Goal</h3>
       <label>Goal name <input name="name" maxlength="120" required data-modal-field="name"></label>
       <label>How should progress be tracked?
@@ -461,12 +482,12 @@ function goalForm(ctx, members, accounts, returnTo) {
       <label>Target date <input name="target_date" type="date" data-modal-field="targetDate"></label>
       <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     </section>
-    <section class="form-section" data-controlled-by="tracking_mode" data-show-when="manual" hidden>
+    <section class="form-section" data-form-step data-step-title="Progress tracking" data-controlled-by="tracking_mode" data-show-when="manual" hidden>
       <h3>Manual progress</h3>
       <label>Current saved amount <input name="current_saved_amount" ${moneyInputAttrs()} data-modal-field="currentSavedAmount"></label>
       <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
     </section>
-    <section class="form-section" data-controlled-by="tracking_mode" data-show-when="linked_pots">
+    <section class="form-section" data-form-step data-step-title="Progress tracking" data-controlled-by="tracking_mode" data-show-when="linked_pots">
       <h3>Linked pots</h3>
       ${
         accounts.length
@@ -484,7 +505,7 @@ function goalForm(ctx, members, accounts, returnTo) {
           : '<p class="hint">Track an account or pot first if you want to link this goal to where the money sits.</p>'
       }
     </section>
-    <section class="form-section">
+    <section class="form-section" data-form-step data-step-title="Status and notes">
       <h3>Status and notes</h3>
       <label>Status
         <select name="status" data-modal-field="status">
@@ -495,8 +516,15 @@ function goalForm(ctx, members, accounts, returnTo) {
       </label>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <div class="modal-footer">
-      <button>Save goal</button>
+    <div class="modal-footer modal-footer-split">
+      <div class="modal-footer-start">
+        <button type="button" class="secondary" data-close-modal>Cancel</button>
+      </div>
+      <div class="modal-footer-actions">
+        <button type="button" class="secondary" data-step-back hidden>Back</button>
+        <button type="button" data-step-next data-hide-on-final-step>Next</button>
+        <button data-show-on-final-step hidden>Save goal</button>
+      </div>
     </div>
   </form>`;
 }
@@ -504,13 +532,21 @@ function goalForm(ctx, members, accounts, returnTo) {
 function accountForm(ctx, members, returnTo) {
   const defaultRateType = defaultProjectedRateTypeForAccount('current_account');
   const defaultRateLabel = projectedRateLabelForAccount('current_account', defaultRateType);
-  return `<form method="post" action="/savings/accounts" class="stack modal-form" data-savings-projection-form>
+  const defaultAccess = defaultAccessSettingsForAccount('current_account');
+  return `<form method="post" action="/savings/accounts" class="stack modal-form" data-savings-projection-form data-stepped-form>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
     <input type="hidden" name="projected_annual_rate" value="0" data-modal-field="projectedAnnualRate">
     <input type="hidden" name="projected_rate_type" value="${escapeHtml(defaultRateType)}" data-modal-field="projectedRateType">
-    <section class="form-section">
+    <div class="modal-stepper">
+      <div class="modal-stepper-meta">
+        <span class="modal-stepper-count">Step <strong data-step-current>1</strong> of <span data-step-total>5</span></span>
+        <strong class="modal-stepper-title" data-step-title>Account or pot</strong>
+      </div>
+      <div class="modal-stepper-track"><div class="modal-stepper-bar" data-step-progress-bar></div></div>
+    </div>
+    <section class="form-section" data-form-step data-step-title="Account or pot">
       <h3>Account or pot</h3>
       <label>Name <input name="name" maxlength="120" required data-modal-field="name"></label>
       <label>Provider or wrapper <input name="provider_name" maxlength="120" data-modal-field="providerName"></label>
@@ -522,8 +558,8 @@ function accountForm(ctx, members, returnTo) {
       <p class="inline-hint">Choose the wrapper or account the money actually sits in, such as a current account, cash savings account, ISA, pension, or another pot.</p>
       <label>Owner <select name="owner_type" data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
     </section>
-    <section class="form-section">
-      <h3>Balance and projection</h3>
+    <section class="form-section" data-form-step data-step-title="Contributions and access">
+      <h3>Contributions and access</h3>
       <label>Current balance <input name="current_balance" ${moneyInputAttrs()} data-modal-field="currentBalance"></label>
       <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
       <p class="inline-hint">This is the amount you personally plan to add each month. It is the figure counted in the household budget.</p>
@@ -531,7 +567,27 @@ function accountForm(ctx, members, returnTo) {
         <label>Employer monthly contribution <input name="employer_monthly_contribution" ${moneyInputAttrs()} data-modal-field="employerMonthlyContribution"></label>
         <p class="inline-hint">For pensions, add the employer top-up separately. It affects the projection, but not your household spending budget.</p>
       </div>
-      <div class="form-section" data-controlled-by="account_type" data-show-when="lifetime_isa">
+      <label class="checkbox-line">
+        <input type="checkbox" name="available_for_household_cashflow" value="1" ${defaultAccess.availableForHouseholdCashflow ? 'checked' : ''} data-modal-field="availableForHouseholdCashflow">
+        <span>Include this balance in household cashflow forecasts</span>
+      </label>
+      <label>Access type
+        <select name="access_type" data-modal-field="accessType" data-savings-access-type>
+          ${accessTypeOptions(defaultAccess.accessType)}
+        </select>
+      </label>
+      <div data-controlled-by="access_type" data-show-when="locked_until_date">
+        <label>Access date <input name="access_date" type="date" data-modal-field="accessDate"></label>
+      </div>
+      <div data-controlled-by="access_type" data-show-when="locked_until_age">
+        <label>Access age <input name="access_age" ${decimalInputAttrs({ min: '0', max: '120', decimals: 0, step: '1' })} data-modal-field="accessAge"></label>
+      </div>
+      <label>Access notes <textarea name="access_notes" rows="2" data-modal-field="accessNotes"></textarea></label>
+      <p class="inline-hint">Turn on household cashflow access only if this balance could realistically be used to cover normal household spending.</p>
+    </section>
+    <section class="form-section" data-form-step data-step-title="Projection assumptions">
+      <h3>Projection assumptions</h3>
+      <div class="form-section nested-form-section" data-controlled-by="account_type" data-show-when="lifetime_isa">
         <h3>Lifetime ISA bonus</h3>
         <label class="checkbox-line">
           <input type="checkbox" name="include_lisa_bonus" value="1" data-modal-field="includeLisaBonus">
@@ -565,8 +621,9 @@ function accountForm(ctx, members, returnTo) {
         <input type="checkbox" name="is_active" value="1" checked data-modal-field="isActive">
         <span>Include this pot in projections</span>
       </label>
+      <p class="inline-hint">If you pause a pot, it stays in the table but no longer feeds savings projections or linked-goal forecasting.</p>
     </section>
-    <section class="form-section modal-summary-card" data-savings-projection-form>
+    <section class="form-section modal-summary-card" data-form-step data-step-title="Projection preview" data-savings-projection-form>
       <h3>12-month projection preview</h3>
       <dl class="summary-list">
         <div><dt>Monthly contribution</dt><dd data-savings-preview-monthly>£0.00</dd></div>
@@ -581,12 +638,19 @@ function accountForm(ctx, members, returnTo) {
         <dl class="summary-list" data-savings-scenarios-list></dl>
       </div>
     </section>
-    <section class="form-section">
+    <section class="form-section" data-form-step data-step-title="Notes">
       <h3>Notes</h3>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <div class="modal-footer">
-      <button>Save account or pot</button>
+    <div class="modal-footer modal-footer-split">
+      <div class="modal-footer-start">
+        <button type="button" class="secondary" data-close-modal>Cancel</button>
+      </div>
+      <div class="modal-footer-actions">
+        <button type="button" class="secondary" data-step-back hidden>Back</button>
+        <button type="button" data-step-next data-hide-on-final-step>Next</button>
+        <button data-show-on-final-step hidden>Save account or pot</button>
+      </div>
     </div>
   </form>`;
 }
@@ -658,6 +722,11 @@ function savingsAccountsTable(ctx, accounts, members) {
                 data-fill-current-balance="${escapeHtml((Number(account.current_balance_pence || 0) / 100).toFixed(2))}"
                 data-fill-monthly-contribution="${escapeHtml((Number(account.monthly_contribution_pence || 0) / 100).toFixed(2))}"
                 data-fill-employer-monthly-contribution="${escapeHtml((Number(account.employer_monthly_contribution_pence || 0) / 100).toFixed(2))}"
+                data-fill-available-for-household-cashflow="${Number(account.available_for_household_cashflow) === 1 ? 'true' : 'false'}"
+                data-fill-access-type="${escapeHtml(account.access_type || defaultAccessSettingsForAccount(account.account_type).accessType)}"
+                data-fill-access-date="${escapeHtml(account.access_date || '')}"
+                data-fill-access-age="${escapeHtml(account.access_age ?? '')}"
+                data-fill-access-notes="${escapeHtml(account.access_notes || '')}"
                 data-fill-projected-annual-rate="${escapeHtml(String(Number(account.projected_annual_rate || 0)))}"
                 data-fill-projected-rate-type="${escapeHtml(account.projected_rate_type)}"
                 data-fill-include-lisa-bonus="${Number(account.include_lisa_bonus) === 1 ? 'true' : 'false'}"
@@ -822,4 +891,26 @@ function resolveProjectedRateType(accountType, overrideValue) {
 function parseIdList(value) {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   return [...new Set(values.flatMap((entry) => String(entry || '').split(',')).map((entry) => Number(entry)).filter((entry) => Number.isInteger(entry) && entry > 0))];
+}
+
+function accessTypeOptions(selectedValue = 'instant_access') {
+  return [
+    ['instant_access', 'Available now'],
+    ['notice', 'Notice account'],
+    ['penalty_withdrawal', 'Withdrawal penalty'],
+    ['locked_until_date', 'Locked until a date'],
+    ['locked_until_age', 'Locked until an age']
+  ]
+    .map(([value, label]) => `<option value="${value}" ${value === selectedValue ? 'selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
+}
+
+function optionalInteger(value, fieldName, { min = null, max = null } = {}) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return null;
+  const number = Number(trimmed);
+  if (!Number.isInteger(number)) throw new Error(`${fieldName} must be a whole number.`);
+  if (min !== null && number < min) throw new Error(`${fieldName} must be at least ${min}.`);
+  if (max !== null && number > max) throw new Error(`${fieldName} must be no more than ${max}.`);
+  return number;
 }

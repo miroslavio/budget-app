@@ -130,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireSpendingWarningSelects();
   wireIncomeEstimateForms();
   wireSavingsProjectionForms();
+  wireSteppedForms();
   wireMonthPickers();
   wireConfirmActions();
   wireModals();
@@ -361,6 +362,12 @@ function wireModals(root = document) {
       wireSpendingWarningSelects(dialog);
       wireIncomeEstimateForms(dialog);
       wireSavingsProjectionForms(dialog);
+      wireSteppedForms(dialog);
+      dialog.querySelectorAll('form[data-stepped-form]').forEach((form) => {
+        if (typeof form._resetSteppedForm === 'function') {
+          form._resetSteppedForm();
+        }
+      });
       dialog.showModal();
     });
   });
@@ -605,7 +612,13 @@ function wireIncomeEstimateForms(root = document) {
 
 function wireSavingsProjectionForms(root = document) {
   root.querySelectorAll('form[data-savings-projection-form]').forEach((form) => {
-    if (!(form instanceof HTMLFormElement) || form.dataset.savingsProjectionBound === 'true') return;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.dataset.savingsProjectionBound === 'true') {
+      if (typeof form._refreshSavingsProjection === 'function') {
+        form._refreshSavingsProjection();
+      }
+      return;
+    }
     form.dataset.savingsProjectionBound = 'true';
 
     const accountTypeField = form.querySelector('[name="account_type"]');
@@ -614,10 +627,13 @@ function wireSavingsProjectionForms(root = document) {
     const hiddenRateField = form.querySelector('[name="projected_annual_rate"]');
     const hiddenRateTypeField = form.querySelector('[name="projected_rate_type"]');
     const rateTypeOverrideField = form.querySelector('[name="projected_rate_type_override"]');
+    const idField = form.querySelector('[name="id"]');
     const currentBalanceField = form.querySelector('[name="current_balance"]');
     const monthlyContributionField = form.querySelector('[name="monthly_contribution"]');
     const employerContributionField = form.querySelector('[name="employer_monthly_contribution"]');
     const includeLisaBonusField = form.querySelector('[name="include_lisa_bonus"]');
+    const availableForCashflowField = form.querySelector('[name="available_for_household_cashflow"]');
+    const accessTypeField = form.querySelector('[name="access_type"]');
     const rateLabel = form.querySelector('[data-savings-rate-label]');
     const rateHelper = form.querySelector('[data-savings-rate-helper]');
     const customRateWrapper = form.querySelector('[data-savings-custom-rate]');
@@ -633,6 +649,7 @@ function wireSavingsProjectionForms(root = document) {
     const previewTotal = form.querySelector('[data-savings-preview-total]');
     const scenariosRoot = form.querySelector('[data-savings-scenarios]');
     const scenariosList = form.querySelector('[data-savings-scenarios-list]');
+    let accessDirty = false;
 
     const ratePresets = [
       { value: '0', label: 'No growth: 0%', rate: 0 },
@@ -656,8 +673,14 @@ function wireSavingsProjectionForms(root = document) {
 
     const update = () => {
       const accountType = accountTypeField instanceof HTMLSelectElement ? accountTypeField.value : 'current_account';
+      const accessDefaults = defaultSavingsAccess(accountType);
       const rateType = resolveSavingsRateType(accountType, rateTypeOverrideField instanceof HTMLSelectElement ? rateTypeOverrideField.value : 'interest');
       const rateLabelText = rateType === 'growth' ? 'Projected annual growth assumption' : 'Projected annual interest rate';
+
+      if (!accessDirty && idField instanceof HTMLInputElement && !idField.value) {
+        if (accessTypeField instanceof HTMLSelectElement) accessTypeField.value = accessDefaults.accessType;
+        if (availableForCashflowField instanceof HTMLInputElement) availableForCashflowField.checked = accessDefaults.availableForHouseholdCashflow;
+      }
 
       if (rateLabel instanceof HTMLElement) rateLabel.textContent = rateLabelText;
       if (previewRateLabel instanceof HTMLElement) previewRateLabel.textContent = rateLabelText;
@@ -740,6 +763,16 @@ function wireSavingsProjectionForms(root = document) {
       field.addEventListener('input', update);
     });
 
+    [availableForCashflowField, accessTypeField].forEach((field) => {
+      if (!(field instanceof HTMLElement)) return;
+      field.addEventListener('change', () => {
+        accessDirty = true;
+      });
+      field.addEventListener('input', () => {
+        accessDirty = true;
+      });
+    });
+
     form.addEventListener('submit', () => {
       const annualRate = resolveSavingsPresetRate(presetField, customRateField, hiddenRateField);
       if (hiddenRateField instanceof HTMLInputElement) hiddenRateField.value = String(annualRate);
@@ -749,7 +782,132 @@ function wireSavingsProjectionForms(root = document) {
       }
     });
 
+    form._refreshSavingsProjection = () => {
+      accessDirty = Boolean(idField instanceof HTMLInputElement && idField.value);
+      updatePresetFromRate();
+      update();
+    };
+
     update();
+  });
+}
+
+function wireSteppedForms(root = document) {
+  root.querySelectorAll('form[data-stepped-form]').forEach((form) => {
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.dataset.steppedFormBound === 'true') {
+      if (typeof form._refreshSteppedForm === 'function') {
+        form._refreshSteppedForm();
+      }
+      return;
+    }
+    form.dataset.steppedFormBound = 'true';
+
+    const stepTitle = form.querySelector('[data-step-title]');
+    const stepCurrent = form.querySelector('[data-step-current]');
+    const stepTotal = form.querySelector('[data-step-total]');
+    const progressBar = form.querySelector('[data-step-progress-bar]');
+    const backButton = form.querySelector('[data-step-back]');
+    const nextButton = form.querySelector('[data-step-next]');
+    const finalOnly = [...form.querySelectorAll('[data-show-on-final-step]')];
+    const firstOnly = [...form.querySelectorAll('[data-hide-on-final-step]')];
+
+    const getVisibleSteps = () =>
+      [...form.querySelectorAll('[data-form-step]')].filter((step) => step instanceof HTMLElement && !step.hidden);
+
+    const readCurrentStep = () => {
+      const steps = getVisibleSteps();
+      if (!steps.length) return { steps, index: 0 };
+      const rawIndex = Number(form.dataset.currentStep || 0);
+      return { steps, index: Math.min(Math.max(rawIndex, 0), steps.length - 1) };
+    };
+
+    const render = () => {
+      const { steps } = readCurrentStep();
+      let { index } = readCurrentStep();
+      if (!steps.length) return;
+
+      const currentStepId = form.dataset.currentStepId || '';
+      const matchingIndex = steps.findIndex((step) => step.dataset.stepId === currentStepId);
+      if (matchingIndex >= 0) index = matchingIndex;
+      form.dataset.currentStep = String(index);
+      form.dataset.currentStepId = steps[index].dataset.stepId || '';
+
+      steps.forEach((step, stepIndex) => {
+        step.classList.toggle('form-step-inactive', stepIndex !== index);
+        step.setAttribute('aria-hidden', stepIndex !== index ? 'true' : 'false');
+      });
+
+      if (stepTitle instanceof HTMLElement) {
+        stepTitle.textContent = steps[index].dataset.stepTitle || `Step ${index + 1}`;
+      }
+      if (stepCurrent instanceof HTMLElement) stepCurrent.textContent = String(index + 1);
+      if (stepTotal instanceof HTMLElement) stepTotal.textContent = String(steps.length);
+      if (progressBar instanceof HTMLElement) {
+        const percentage = steps.length > 1 ? ((index + 1) / steps.length) * 100 : 100;
+        progressBar.style.width = `${percentage}%`;
+      }
+      if (backButton instanceof HTMLElement) backButton.toggleAttribute('hidden', index === 0);
+      if (nextButton instanceof HTMLElement) nextButton.toggleAttribute('hidden', index >= steps.length - 1);
+      finalOnly.forEach((element) => element.toggleAttribute('hidden', index < steps.length - 1));
+      firstOnly.forEach((element) => element.toggleAttribute('hidden', index >= steps.length - 1));
+    };
+
+    const validateStep = (step) => {
+      if (!(step instanceof HTMLElement)) return true;
+      const fields = [...step.querySelectorAll('input, select, textarea')].filter((field) => {
+        if (!(field instanceof HTMLElement)) return false;
+        if (field.closest('[hidden]')) return false;
+        if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
+          return !field.disabled;
+        }
+        return false;
+      });
+
+      for (const field of fields) {
+        if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
+          if (!field.reportValidity()) return false;
+        }
+      }
+      return true;
+    };
+
+    if (backButton instanceof HTMLButtonElement) {
+      backButton.addEventListener('click', () => {
+        const { index } = readCurrentStep();
+        form.dataset.currentStep = String(Math.max(0, index - 1));
+        form.dataset.currentStepId = '';
+        render();
+      });
+    }
+
+    if (nextButton instanceof HTMLButtonElement) {
+      nextButton.addEventListener('click', () => {
+        const { steps, index } = readCurrentStep();
+        const step = steps[index];
+        if (!validateStep(step)) return;
+        form.dataset.currentStep = String(Math.min(steps.length - 1, index + 1));
+        form.dataset.currentStepId = '';
+        render();
+      });
+    }
+
+    form._refreshSteppedForm = render;
+    form._resetSteppedForm = () => {
+      form.dataset.currentStep = '0';
+      form.dataset.currentStepId = '';
+      render();
+    };
+
+    form.addEventListener('change', render);
+    form.addEventListener('input', render);
+    form.querySelectorAll('[data-form-step]').forEach((step, index) => {
+      if (step instanceof HTMLElement && !step.dataset.stepId) {
+        step.dataset.stepId = `step-${index + 1}`;
+      }
+    });
+
+    render();
   });
 }
 
@@ -771,6 +929,25 @@ function resolveSavingsRateType(accountType, overrideValue) {
     return overrideValue === 'growth' ? 'growth' : 'interest';
   }
   return ['stocks_and_shares_isa', 'lifetime_isa', 'pension'].includes(accountType) ? 'growth' : 'interest';
+}
+
+function defaultSavingsAccess(accountType) {
+  switch (accountType) {
+    case 'current_account':
+    case 'easy_access_savings':
+      return { accessType: 'instant_access', availableForHouseholdCashflow: true };
+    case 'fixed_savings':
+      return { accessType: 'notice', availableForHouseholdCashflow: false };
+    case 'cash_isa':
+      return { accessType: 'penalty_withdrawal', availableForHouseholdCashflow: true };
+    case 'stocks_and_shares_isa':
+      return { accessType: 'penalty_withdrawal', availableForHouseholdCashflow: false };
+    case 'lifetime_isa':
+    case 'pension':
+      return { accessType: 'locked_until_age', availableForHouseholdCashflow: false };
+    default:
+      return { accessType: 'instant_access', availableForHouseholdCashflow: false };
+  }
 }
 
 function projectSavingsPreview({ accountType, currentBalancePence, monthlyContributionPence, employerContributionPence, annualRate, includeLisaBonus, months = 12 }) {

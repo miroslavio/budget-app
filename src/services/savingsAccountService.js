@@ -4,14 +4,14 @@ const LISA_ANNUAL_ALLOWANCE_PENCE = 400_000;
 const LISA_BONUS_RATE = 0.25;
 
 const ACCOUNT_TYPE_META = {
-  current_account: { label: 'Current account', group: 'cash', defaultRateType: 'interest' },
-  easy_access_savings: { label: 'Easy-access savings', group: 'cash', defaultRateType: 'interest' },
-  fixed_savings: { label: 'Fixed savings', group: 'cash', defaultRateType: 'interest' },
-  cash_isa: { label: 'Cash ISA', group: 'isa', defaultRateType: 'interest' },
-  stocks_and_shares_isa: { label: 'Stocks and Shares ISA', group: 'investments', defaultRateType: 'growth' },
-  lifetime_isa: { label: 'Lifetime ISA', group: 'isa', defaultRateType: 'growth' },
-  pension: { label: 'Pension', group: 'pension', defaultRateType: 'growth' },
-  other: { label: 'Other pot', group: 'other', defaultRateType: 'interest' }
+  current_account: { label: 'Current account', group: 'cash', defaultRateType: 'interest', defaultAccessType: 'instant_access', defaultCashflowAccess: true },
+  easy_access_savings: { label: 'Easy-access savings', group: 'cash', defaultRateType: 'interest', defaultAccessType: 'instant_access', defaultCashflowAccess: true },
+  fixed_savings: { label: 'Fixed savings', group: 'cash', defaultRateType: 'interest', defaultAccessType: 'notice', defaultCashflowAccess: false },
+  cash_isa: { label: 'Cash ISA', group: 'isa', defaultRateType: 'interest', defaultAccessType: 'penalty_withdrawal', defaultCashflowAccess: true },
+  stocks_and_shares_isa: { label: 'Stocks and Shares ISA', group: 'investments', defaultRateType: 'growth', defaultAccessType: 'penalty_withdrawal', defaultCashflowAccess: false },
+  lifetime_isa: { label: 'Lifetime ISA', group: 'isa', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
+  pension: { label: 'Pension', group: 'pension', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
+  other: { label: 'Other pot', group: 'other', defaultRateType: 'interest', defaultAccessType: 'instant_access', defaultCashflowAccess: false }
 };
 
 export function savingsAccountTypeOptions() {
@@ -28,6 +28,14 @@ export function savingsAccountTypeLabel(accountType) {
 
 export function defaultProjectedRateTypeForAccount(accountType) {
   return ACCOUNT_TYPE_META[accountType]?.defaultRateType || 'interest';
+}
+
+export function defaultAccessSettingsForAccount(accountType) {
+  const meta = ACCOUNT_TYPE_META[accountType] || ACCOUNT_TYPE_META.other;
+  return {
+    accessType: meta.defaultAccessType || 'instant_access',
+    availableForHouseholdCashflow: Boolean(meta.defaultCashflowAccess)
+  };
 }
 
 export function projectedRateLabelForAccount(accountType, projectedRateType = defaultProjectedRateTypeForAccount(accountType)) {

@@ -4,11 +4,13 @@ import { createImportBatch, addImportRows, findImportBatch, listImportRows, upda
 import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
 import { createTransaction, listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
+import { listSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { actualMonthlySummary, plannedMonthlySummary, varianceSummary } from '../services/budgetService.js';
-import { budgetItemsCsv, generateCsv, savingsGoalsCsv, summaryCsv, transactionsCsv } from '../services/csvExportService.js';
+import { budgetItemsCsv, generateCsv, plannedSpendingCsv, savingsGoalsCsv, summaryCsv, transactionsCsv } from '../services/csvExportService.js';
 import { buildCsvImportReview, parseCsv } from '../services/csvImportService.js';
-import { plannedSavingsBudgetItems } from '../services/savingsService.js';
+import { plannedSavingsBudgetItems, savingsGoalMetrics } from '../services/savingsService.js';
+import { buildUnifiedSpendingBudgetRows, plannedSpendingSummary } from '../services/spendingBudgetService.js';
 import { currentMonth, monthRange } from '../utils/dates.js';
 import { requireChoice, requireMoney, requireString } from '../utils/validation.js';
 import { csrfField, escapeHtml, formatCurrency, ownerLabel, page, typeLabel } from '../views/html.js';
@@ -290,33 +292,96 @@ export function registerCsvRoutes(router, db) {
       return csv(ctx.res, 'income-items.csv', budgetItemsCsv(listBudgetItems(db, householdId, 'income')));
     }
     if (type === 'expenses') {
-      return csv(ctx.res, 'expense-items.csv', budgetItemsCsv(listBudgetItems(db, householdId, 'expense')));
+      const members = listHouseholdMembers(db, householdId);
+      const month = currentMonth();
+      const rows = buildUnifiedSpendingBudgetRows({
+        expenseItems: listBudgetItems(db, householdId, 'expense'),
+        defaultBudgets: listCategoryBudgetDefaults(db, householdId),
+        monthBudgets: [],
+        transactions: [],
+        month
+      }).rows.map((row) => ({
+        ...row,
+        typeLabel: row.rowType === 'committed_cost' ? 'Regular' : 'Variable estimate',
+        ownerLabel: exportOwnerLabel(row, members),
+        frequencyLabel: exportSpendingFrequencyLabel(row)
+      }));
+      return csv(ctx.res, 'planned-spending.csv', plannedSpendingCsv(rows));
     }
     if (type === 'transactions') {
       return csv(ctx.res, 'transactions.csv', transactionsCsv(listTransactions(db, householdId)));
     }
     if (type === 'savings') {
-      return csv(ctx.res, 'savings-goals.csv', savingsGoalsCsv(listSavingsGoals(db, householdId)));
+      const accounts = listSavingsAccounts(db, householdId);
+      const goalLinks = listSavingsGoalAccountLinks(db, householdId);
+      const accountsById = new Map(accounts.map((account) => [String(account.id), account]));
+      const linkedAccountsByGoalId = new Map();
+      for (const row of goalLinks) {
+        const current = linkedAccountsByGoalId.get(String(row.goal_id)) || [];
+        const account = accountsById.get(String(row.savings_account_id));
+        if (account) current.push(account);
+        linkedAccountsByGoalId.set(String(row.goal_id), current);
+      }
+      const goals = listSavingsGoals(db, householdId).map((goal) => {
+        const linkedAccounts = linkedAccountsByGoalId.get(String(goal.id)) || [];
+        return {
+          ...goal,
+          linkedAccounts,
+          metrics: savingsGoalMetrics(goal, {
+            linkedAccounts,
+            startMonth: currentMonth()
+          })
+        };
+      });
+      return csv(ctx.res, 'savings-goals.csv', savingsGoalsCsv(goals));
     }
     if (type === 'monthly-summary') {
+      const budgetItems = listBudgetItems(db, householdId);
+      const savingsAccounts = listSavingsAccounts(db, householdId, { activeOnly: true });
+      const goals = listSavingsGoals(db, householdId);
       const items = [
-        ...listBudgetItems(db, householdId),
+        ...budgetItems,
         ...plannedSavingsBudgetItems({
-          goals: listSavingsGoals(db, householdId),
-          accounts: listSavingsAccounts(db, householdId, { activeOnly: true })
+          goals,
+          accounts: savingsAccounts
         })
       ];
-      return csv(ctx.res, 'monthly-budget-summary.csv', summaryCsv(plannedMonthlySummary(items, month)));
+      const baseSummary = plannedMonthlySummary(items, month);
+      const spendingSummary = plannedSpendingSummary({
+        expenseItems: budgetItems.filter((item) => item.item_type === 'expense'),
+        defaultBudgets: listCategoryBudgetDefaults(db, householdId),
+        monthBudgets: [],
+        month
+      });
+      return csv(ctx.res, 'monthly-budget-summary.csv', summaryCsv({
+        ...baseSummary,
+        plannedExpensePence: spendingSummary.totalPlannedSpendingPence,
+        plannedSurplusPence: baseSummary.plannedIncomePence - spendingSummary.totalPlannedSpendingPence - baseSummary.plannedSavingsPence
+      }));
     }
     if (type === 'variance') {
+      const budgetItems = listBudgetItems(db, householdId);
+      const savingsAccounts = listSavingsAccounts(db, householdId, { activeOnly: true });
+      const goals = listSavingsGoals(db, householdId);
       const items = [
-        ...listBudgetItems(db, householdId),
+        ...budgetItems,
         ...plannedSavingsBudgetItems({
-          goals: listSavingsGoals(db, householdId),
-          accounts: listSavingsAccounts(db, householdId, { activeOnly: true })
+          goals,
+          accounts: savingsAccounts
         })
       ];
-      const planned = plannedMonthlySummary(items, month);
+      const basePlanned = plannedMonthlySummary(items, month);
+      const spendingSummary = plannedSpendingSummary({
+        expenseItems: budgetItems.filter((item) => item.item_type === 'expense'),
+        defaultBudgets: listCategoryBudgetDefaults(db, householdId),
+        monthBudgets: [],
+        month
+      });
+      const planned = {
+        ...basePlanned,
+        plannedExpensePence: spendingSummary.totalPlannedSpendingPence,
+        plannedSurplusPence: basePlanned.plannedIncomePence - spendingSummary.totalPlannedSpendingPence - basePlanned.plannedSavingsPence
+      };
       const actual = actualMonthlySummary(listTransactions(db, householdId, { startDate: range.start, endDate: range.end }));
       const variance = varianceSummary(planned, actual);
       return csv(
@@ -336,6 +401,22 @@ export function registerCsvRoutes(router, db) {
 
     return redirectWithError(ctx.res, '/csv', 'Unknown export type.');
   });
+}
+
+function exportOwnerLabel(row, members) {
+  if (row.ownerType !== 'shared') return ownerLabel(row.ownerType, members);
+  if (row.splitType === 'manual_percentage') {
+    return `Shared household (${Number(row.personAPercentage || 50)}% / ${Number(row.personBPercentage || 50)}%)`;
+  }
+  return 'Shared household';
+}
+
+function exportSpendingFrequencyLabel(row) {
+  if (row.rowType === 'committed_cost') {
+    if (row.frequency === 'yearly') return `${formatCurrency(row.sourceAmountPence)}/year`;
+    return `${formatCurrency(row.sourceAmountPence)}/month`;
+  }
+  return 'Monthly estimate';
 }
 
 function mappingSelect(key, label, headers, { required = false, optional = false, aliases = [] } = {}) {

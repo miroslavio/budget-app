@@ -7,7 +7,7 @@ import { listSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountR
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { listCategoryBudgets, listCategoryBudgetDefaults } from '../repositories/categoryBudgetRepository.js';
 import { yearlyItems } from '../services/budgetService.js';
-import { buildMonthlyForecast } from '../services/forecastService.js';
+import { buildMonthlyForecast, deriveForecastStartingBalance, spendableHouseholdBalancePence } from '../services/forecastService.js';
 import { buildPeriodReport } from '../services/reportService.js';
 import { savingsGoalMetrics, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { buildFlexibleSpendingByMonth, plannedSpendingCategorySeries } from '../services/spendingBudgetService.js';
@@ -85,7 +85,9 @@ export function registerDashboardRoutes(router, db) {
       members,
       planningItems,
       household,
+      savingsAccounts,
       flexibleSpendingByMonth: report.flexibleSpendingByMonth,
+      plannedFlexibleSpendingPence: report.plannedFlexibleSpendingPence,
       plannedExpenseSeries,
       period,
       selectedMonth
@@ -110,10 +112,7 @@ export function registerDashboardRoutes(router, db) {
               ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth)}
               ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth)}
             </nav>
-            ${period.key === 'specific_month' ? `<form method="get" action="/dashboard" class="inline-form dashboard-month-form" data-submit-on-change>
-              <input type="hidden" name="period" value="specific_month">
-              <label>Month <input type="month" name="month" value="${escapeHtml(selectedMonth)}"></label>
-            </form>` : ''}
+            ${period.key === 'specific_month' ? dashboardSpecificMonthControls(selectedMonth) : ''}
           </div>
         </section>
 
@@ -130,6 +129,7 @@ export function registerDashboardRoutes(router, db) {
       updateHouseholdSettings(db, ctx.user.household_id, {
         name: household.name,
         openingBalancePence: household.opening_balance_pence,
+        forecastAdjustmentPence: household.forecast_adjustment_pence,
         skipPlannedSavings: 1
       });
       redirectWithSuccess(ctx.res, '/dashboard', 'Planned savings skipped for now. You can add them later.');
@@ -152,7 +152,9 @@ function dashboardStateContent({
   members,
   planningItems,
   household,
+  savingsAccounts,
   flexibleSpendingByMonth,
+  plannedFlexibleSpendingPence,
   plannedExpenseSeries,
   period,
   selectedMonth
@@ -170,8 +172,8 @@ function dashboardStateContent({
   if (!hasActualData) {
     const yearlyCostItems = yearlyItems(items);
     return `<div class="dashboard-state plan-ready-state">
-      ${plannedSummaryCards(planned)}
-      ${forecastSnapshot(planningItems, household, flexibleSpendingByMonth)}
+      ${plannedSummaryCards(planned, plannedFlexibleSpendingPence)}
+      ${forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpendingByMonth, period)}
       <section class="grid two">
         ${yearlyCostItems.length ? `<div class="card">
           <h2>Yearly costs smoothed monthly</h2>
@@ -195,9 +197,9 @@ function dashboardStateContent({
   }
 
   return `<div class="dashboard-state active-state">
-    ${plannedSummaryCards(planned)}
+    ${plannedSummaryCards(planned, plannedFlexibleSpendingPence)}
     ${actualSummaryCards(actual)}
-    ${forecastSnapshot(planningItems, household, flexibleSpendingByMonth)}
+    ${forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpendingByMonth, period)}
     ${categoryBreakdownCard(plannedExpenseSeries)}
     <section class="grid two">
       ${varianceSummaryCard(variance)}
@@ -214,12 +216,13 @@ function dashboardStateContent({
   </div>`;
 }
 
-function plannedSummaryCards(planned) {
+function plannedSummaryCards(planned, plannedFlexibleSpendingPence = 0) {
+  const committedPlannedSpendingPence = Math.max(0, Number(planned.plannedExpensePence || 0) - Number(plannedFlexibleSpendingPence || 0));
   return `<section class="grid four">
     ${stat('Planned income', planned.plannedIncomePence, 'good')}
-    ${stat('Planned spending', planned.plannedExpensePence)}
-    ${stat('Planned savings', planned.plannedSavingsPence)}
-    ${movementStat('Available after plan', planned.plannedSurplusPence, 'Planned income minus planned spending and planned savings.')}
+    ${stat('Planned spending', planned.plannedExpensePence, '', `Regular ${formatCurrency(committedPlannedSpendingPence)} · Variable estimate ${formatCurrency(plannedFlexibleSpendingPence)}`)}
+    ${stat('Planned savings', planned.plannedSavingsPence, 'good')}
+    ${movementStat('Available after plan', planned.plannedSurplusPence)}
   </section>`;
 }
 
@@ -258,13 +261,19 @@ function categoryBreakdownCard(plannedExpenseSeries) {
   </section>`;
 }
 
-function forecastSnapshot(planningItems, household, flexibleSpendingByMonth) {
+function forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpendingByMonth, period) {
+  const forecastWindow = forecastWindowForPeriod(period);
+  const spendableStartingBalancePence = spendableHouseholdBalancePence(savingsAccounts);
+  const forecastAdjustmentPence = Number(household.forecast_adjustment_pence || 0);
   const forecast = applyFlexibleSpendingToForecast(
     buildMonthlyForecast({
       items: planningItems,
-      startMonth: currentMonth(),
-      months: 3,
-      openingBalancePence: household.opening_balance_pence
+      startMonth: forecastWindow.startMonth,
+      months: forecastWindow.months,
+      openingBalancePence: deriveForecastStartingBalance({
+        accounts: savingsAccounts,
+        adjustmentPence: forecastAdjustmentPence
+      })
     }),
     flexibleSpendingByMonth
   );
@@ -274,18 +283,38 @@ function forecastSnapshot(planningItems, household, flexibleSpendingByMonth) {
   const finalRow = forecast.at(-1);
   const lowestRow = forecast.reduce((lowest, row) => (row.closingBalancePence < lowest.closingBalancePence ? row : lowest), forecast[0]);
   return `<section class="grid three">
-    ${stat('Forecast opening balance', forecast[0].openingBalancePence)}
+    <div class="stat">
+      <span>Spendable starting balance</span>
+      <strong>${formatCurrency(forecast[0].openingBalancePence)}</strong>
+      <small class="plan-stat-note">Accounts ${formatCurrency(spendableStartingBalancePence)}${forecastAdjustmentPence ? ` · Adjustment ${formatCurrency(forecastAdjustmentPence)}` : ''}</small>
+    </div>
     <div class="stat ${finalRow.closingBalancePence < 0 ? 'bad' : finalRow.closingBalancePence > 0 ? 'good' : ''}">
-      <span>Forecast closing balance</span>
+      <span>Projected balance at end of forecast</span>
       <strong>${formatCurrency(finalRow.closingBalancePence)}</strong>
       <small class="plan-stat-note">After ${escapeHtml(monthLabel(finalRow.month))}</small>
     </div>
     <div class="stat ${lowestRow.closingBalancePence < 0 ? 'bad' : ''}">
-      <span>Lowest forecast balance</span>
+      <span>Lowest projected balance</span>
       <strong>${formatCurrency(lowestRow.closingBalancePence)}</strong>
       <small class="plan-stat-note">${escapeHtml(monthLabel(lowestRow.month))}</small>
     </div>
   </section>`;
+}
+
+function forecastWindowForPeriod(period) {
+  switch (period.key) {
+    case 'next_month':
+      return { startMonth: period.range.label, months: 1 };
+    case 'last_3_months':
+      return { startMonth: period.startMonth, months: 3 };
+    case 'tax_year':
+      return { startMonth: period.startMonth, months: 12 };
+    case 'specific_month':
+      return { startMonth: period.range.label, months: 1 };
+    case 'this_month':
+    default:
+      return { startMonth: period.range.label, months: 1 };
+  }
 }
 
 function applyFlexibleSpendingToReport(report, categoryBudgetDefaults, categoryBudgetOverrides, items) {
@@ -417,12 +446,14 @@ function setupChecklistItems({
       actionHtml: savingsChecklistActions(ctx)
     },
     {
-      title: 'Add forecast opening balance',
-      description: 'Set the cash balance available at the start of your forecast period.',
+      title: 'Review forecast adjustment',
+      description: 'Forecast starts from balances in accounts marked for household cashflow. Add an adjustment if those balances need a small correction.',
       href: '/forecast',
       action: 'Open forecast',
       optional: true,
-      complete: Number(household.opening_balance_pence || 0) !== 0
+      complete:
+        savingsAccounts.some((account) => Number(account.is_active ?? 1) && Number(account.available_for_household_cashflow || 0)) ||
+        Number(household.forecast_adjustment_pence || 0) !== 0
     },
     {
       title: 'Start tracking actuals',
@@ -474,6 +505,7 @@ function resolveDashboardPeriod(periodKey, selectedMonth) {
       const endMonth = thisMonth;
       return {
         key: periodKey,
+        startMonth,
         range: {
           start: monthRange(startMonth).start,
           end: monthRange(endMonth).end,
@@ -484,8 +516,10 @@ function resolveDashboardPeriod(periodKey, selectedMonth) {
       };
     }
     case 'tax_year': {
+      const taxYearStartMonth = currentTaxYear.split('-')[0] + '-04';
       return {
         key: periodKey,
+        startMonth: taxYearStartMonth,
         range: {
           ...taxYearRange(currentTaxYear),
           label: currentTaxYear,
@@ -497,6 +531,7 @@ function resolveDashboardPeriod(periodKey, selectedMonth) {
     case 'specific_month': {
       return {
         key: periodKey,
+        startMonth: selectedMonth,
         range: { ...monthRange(selectedMonth), label: selectedMonth, periodType: 'month' },
         summaryLabel: `${monthLabel(selectedMonth)}`
       };
@@ -505,6 +540,7 @@ function resolveDashboardPeriod(periodKey, selectedMonth) {
     default:
       return {
         key: 'this_month',
+        startMonth: thisMonth,
         range: { ...monthRange(thisMonth), label: thisMonth, periodType: 'month' },
         summaryLabel: `This month · ${monthLabel(thisMonth)}`
       };
@@ -518,6 +554,48 @@ function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth) {
   });
   const active = selectedPeriod === periodKey;
   return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
+}
+
+function dashboardSpecificMonthControls(month) {
+  const inputId = 'dashboard-month-input';
+  return `<form method="get" action="/dashboard" class="budget-plan-month-form" data-submit-on-change>
+    <input type="hidden" name="period" value="specific_month">
+    <input id="${inputId}" class="budget-plan-month-input" type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month">
+  </form>
+  <div class="budget-plan-month-controls" role="group" aria-label="Dashboard month">
+    <a class="period-pill budget-plan-month-step" href="/dashboard?period=specific_month&month=${encodeURIComponent(previousMonth(month))}" aria-label="Previous month">
+      <span aria-hidden="true">&lsaquo;</span>
+    </a>
+    <button type="button" class="period-pill budget-plan-current-month-button" data-open-month-picker="${inputId}" aria-label="Pick month" title="Pick month">
+      ${escapeHtml(monthLabel(month))}
+    </button>
+    <a class="period-pill budget-plan-month-step" href="/dashboard?period=specific_month&month=${encodeURIComponent(nextMonth(month))}" aria-label="Next month">
+      <span aria-hidden="true">&rsaquo;</span>
+    </a>
+    <button type="button" class="period-pill budget-plan-month-step" data-open-month-picker="${inputId}" aria-label="Open month picker" title="Open month picker">
+      ${calendarIcon()}
+    </button>
+  </div>`;
+}
+
+function previousMonth(month) {
+  const [year, monthNumber] = String(month).split('-').map(Number);
+  const date = new Date(Date.UTC(year, (monthNumber || 1) - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function nextMonth(month) {
+  const [year, monthNumber] = String(month).split('-').map(Number);
+  const date = new Date(Date.UTC(year, monthNumber || 1, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function calendarIcon() {
+  return `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+    <rect x="4" y="5" width="16" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M8 3.8v3.4M16 3.8v3.4M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M8.2 13h2.6M13.2 13h2.6M8.2 16.5h2.6M13.2 16.5h2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
 }
 
 function yearlyTable(items) {

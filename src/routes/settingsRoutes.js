@@ -148,7 +148,7 @@ export function registerSettingsRoutes(router, db) {
               ${csrfField(ctx)}
               <div>
                 <h3>Reset household data</h3>
-                <p class="hint">Keeps the household and member logins, but clears Budget Plan, Actuals, imports, savings, custom categories, and the forecast opening balance.</p>
+                <p class="hint">Keeps the household and member logins, but clears Budget Plan, Actuals, imports, savings, custom categories, and the forecast adjustment.</p>
               </div>
               <label>Type RESET to confirm <input name="confirmation" autocomplete="off" required></label>
               <button class="danger-button">Reset data</button>
@@ -175,6 +175,7 @@ export function registerSettingsRoutes(router, db) {
       updateHouseholdSettings(db, ctx.user.household_id, {
         name: requireString(ctx.body.name, 'Household name', 120),
         openingBalancePence: household.opening_balance_pence,
+        forecastAdjustmentPence: household.forecast_adjustment_pence,
         skipPlannedSavings: household.skip_planned_savings
       });
       redirectWithSuccess(ctx.res, '/settings/household', 'Settings saved.');

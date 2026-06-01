@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from '../db/database.js';
 import { addImportRows, createImportBatch, listImportRows, updateImportBatchStatus, updateImportRowStatus } from '../repositories/csvImportRepository.js';
 import { parseCsv, parseImportedDate, buildCsvImportReview } from '../services/csvImportService.js';
-import { generateCsv } from '../services/csvExportService.js';
+import { generateCsv, plannedSpendingCsv, savingsGoalsCsv, summaryCsv } from '../services/csvExportService.js';
 
 test('CSV parser handles quoted commas and headers', () => {
   const parsed = parseCsv('Date,Description,Amount\n2026-05-01,"Groceries, weekly",45.20\n');
@@ -20,6 +20,84 @@ test('CSV export quotes cells when needed', () => {
   const output = generateCsv(['Description', 'Amount'], [{ Description: 'Groceries, weekly', Amount: '45.20' }]);
 
   assert.equal(output, 'Description,Amount\n"Groceries, weekly",45.20');
+});
+
+test('planned spending export includes regular and variable estimate rows', () => {
+  const output = plannedSpendingCsv([
+    {
+      name: 'Mortgage',
+      categoryName: 'Mortgage',
+      typeLabel: 'Regular',
+      ownerLabel: 'Shared household',
+      frequencyLabel: '1250.00/month',
+      plannedMonthlyPence: 125000,
+      startDate: '2026-05-01',
+      endDate: '',
+      status: 'Active',
+      countedInPlan: true,
+      notes: ''
+    },
+    {
+      name: 'Groceries',
+      categoryName: 'Groceries',
+      typeLabel: 'Variable estimate',
+      ownerLabel: 'Shared household',
+      frequencyLabel: 'Monthly estimate',
+      plannedMonthlyPence: 30000,
+      startDate: '',
+      endDate: '',
+      status: 'Active',
+      countedInPlan: true,
+      notes: 'Expected weekly food shop'
+    }
+  ]);
+
+  assert.match(output, /Mortgage/);
+  assert.match(output, /Groceries/);
+  assert.match(output, /Variable estimate/);
+  assert.match(output, /300\.00/);
+});
+
+test('savings goals export uses linked-pot metrics when available', () => {
+  const output = savingsGoalsCsv([
+    {
+      name: 'Retirement',
+      goal_type: 'retirement',
+      target_amount_pence: 50000000,
+      target_date: '2055-06-01',
+      owner_type: 'person_a',
+      notes: 'Long-term',
+      linkedAccounts: [{ name: 'Pension' }, { name: 'Lifetime ISA' }],
+      metrics: {
+        trackingMode: 'linked_pots',
+        currentSavedPence: 2900000,
+        monthlyAdditionsPence: 75000,
+        projectedValueAtTargetDatePence: 64000000,
+        projectedShortfallSurplusPence: 14000000,
+        statusLabel: 'Ahead of target'
+      }
+    }
+  ]);
+
+  assert.match(output, /Retirement/);
+  assert.match(output, /Linked pots/);
+  assert.match(output, /29000\.00/);
+  assert.match(output, /750\.00/);
+  assert.match(output, /Pension, Lifetime ISA/);
+  assert.match(output, /Ahead of target/);
+});
+
+test('summary export uses planning-first labels', () => {
+  const output = summaryCsv({
+    plannedIncomePence: 298329,
+    plannedExpensePence: 196133,
+    plannedSavingsPence: 107250,
+    plannedSurplusPence: -5054
+  });
+
+  assert.match(output, /Planned spending/);
+  assert.match(output, /Available after plan/);
+  assert.doesNotMatch(output, /Planned expenses/);
 });
 
 test('statement import accepts UK style dates', () => {

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS households (
   name TEXT NOT NULL,
   invite_code TEXT NOT NULL UNIQUE,
   opening_balance_pence INTEGER NOT NULL DEFAULT 0,
+  forecast_adjustment_pence INTEGER NOT NULL DEFAULT 0,
   skip_planned_savings INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -180,6 +181,19 @@ CREATE TABLE IF NOT EXISTS savings_accounts (
   current_balance_pence INTEGER NOT NULL DEFAULT 0,
   monthly_contribution_pence INTEGER NOT NULL DEFAULT 0,
   employer_monthly_contribution_pence INTEGER NOT NULL DEFAULT 0,
+  available_for_household_cashflow INTEGER NOT NULL DEFAULT 0,
+  access_type TEXT NOT NULL CHECK (
+    access_type IN (
+      'instant_access',
+      'notice',
+      'penalty_withdrawal',
+      'locked_until_date',
+      'locked_until_age'
+    )
+  ) DEFAULT 'instant_access',
+  access_date TEXT,
+  access_age INTEGER,
+  access_notes TEXT,
   projected_annual_rate REAL NOT NULL DEFAULT 0,
   projected_rate_type TEXT NOT NULL CHECK (projected_rate_type IN ('interest', 'growth')) DEFAULT 'interest',
   include_lisa_bonus INTEGER NOT NULL DEFAULT 0,

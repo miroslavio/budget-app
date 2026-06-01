@@ -22,7 +22,7 @@ import { estimateTakeHomePay } from '../services/takeHomePayService.js';
 import { listTaxYears, latestTaxYear } from '../services/taxRulesService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { optionalMoney, optionalString, parsePercentage, requireChoice, requireDecimal, requireMoney, requireString } from '../utils/validation.js';
-import { actionIconButton, csrfField, escapeHtml, formatCurrency, moneyInputValue, ownerLabel, page } from '../views/html.js';
+import { actionIconButton, csrfField, escapeHtml, formatCurrency, moneyInputValue, movementStat, ownerLabel, page } from '../views/html.js';
 import { categoryOptions, decimalInputAttrs, frequencyOptions, moneyInputAttrs, ownerOptions, taxYearOptions } from '../views/forms.js';
 import { pieChart } from '../views/charts.js';
 import { html, json, redirect } from '../http/response.js';
@@ -90,9 +90,7 @@ function renderBudgetPlanOverview(ctx, db) {
         flexibleSpendingTargetPence: spendingSummary.flexibleTotalPence,
         plannedSpendingPence,
         plannedSavingsContributionsPence,
-        plannedSurplusPence,
-        yearlyCostsPence: yearlyMonthlyEquivalentPence(expenseItems),
-        completeness
+        plannedSurplusPence
       })}
       ${budgetPlanTable([
         {
@@ -122,7 +120,8 @@ function renderBudgetPlanOverview(ctx, db) {
           actionHref: '/budget-plan/planned-savings',
           actionLabel: 'Review planned savings'
         }
-      ])}` : budgetPlanEmptyState()}</div>`
+      ])}
+      ${completeness.missingCount > 0 ? planCompletenessCard(completeness) : ''}` : budgetPlanEmptyState()}</div>`
     })
   );
 }
@@ -304,28 +303,18 @@ function budgetPlanSummaryCards({
   flexibleSpendingTargetPence,
   plannedSpendingPence,
   plannedSavingsContributionsPence,
-  plannedSurplusPence,
-  yearlyCostsPence,
-  completeness
+  plannedSurplusPence
 }) {
-  const balanceLabel = plannedSurplusPence >= 0 ? 'Available after plan' : 'Shortfall after plan';
-  const balanceTone = plannedSurplusPence >= 0 ? 'good' : 'bad';
   return `<section class="grid four">
-    ${planSummaryStat('Planned income', plannedIncomePence)}
+    ${planSummaryStat('Planned income', plannedIncomePence, '', 'good')}
     ${planSummaryStat('Planned spending', plannedSpendingPence, `Regular ${formatCurrency(committedSpendingPence)} · Variable estimate ${formatCurrency(flexibleSpendingTargetPence)}`)}
-    ${planSummaryStat('Planned savings', plannedSavingsContributionsPence)}
-    <div class="card plan-balance-card ${balanceTone}">
-      <span class="plan-balance-label">${balanceLabel}</span>
-      <strong>${formatCurrency(plannedSurplusPence)}</strong>
-    </div>
-  </section>
-  <section class="grid two budget-plan-status-row">
-    ${planCompletenessCard(completeness)}
+    ${planSummaryStat('Planned savings', plannedSavingsContributionsPence, '', 'good')}
+    ${movementStat('Available after plan', plannedSurplusPence)}
   </section>`;
 }
 
-function planSummaryStat(label, valuePence, note = '') {
-  return `<div class="stat">
+function planSummaryStat(label, valuePence, note = '', tone = '') {
+  return `<div class="stat ${escapeHtml(tone)}">
     <span>${escapeHtml(label)}</span>
     <strong>${formatCurrency(valuePence)}</strong>
     ${note ? `<small class="plan-stat-note">${escapeHtml(note)}</small>` : ''}
@@ -485,10 +474,18 @@ function spendingOwnerLabel(row, members) {
 
 function spendingFrequencyLabel(row) {
   if (row.rowType === 'committed_cost') {
-    if (row.frequency === 'yearly') return `Yearly, ${formatCurrency(row.sourceAmountPence)}/year`;
-    return `Monthly, ${formatCurrency(row.sourceAmountPence)}/month`;
+    if (row.frequency === 'yearly') return `${formatCurrency(row.sourceAmountPence)}/year`;
+    return `${formatCurrency(row.sourceAmountPence)}/month`;
   }
   return 'Monthly estimate';
+}
+
+function spendingTimingSummary(row) {
+  if (row.status === 'Ended' && row.endDate) return `Ended on ${row.endDate}`;
+  if (row.startDate && row.endDate) return `${row.startDate} to ${row.endDate}`;
+  if (row.startDate) return `From ${row.startDate}`;
+  if (row.endDate) return `Until ${row.endDate}`;
+  return '';
 }
 
 function spendingBudgetsReturnTo() {
@@ -668,17 +665,30 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
   return `<table class="data-table category-budget-table spending-budget-table">
     <thead><tr><th>Name</th><th>Category</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${rows
-      .map((row) => `<tr>
+      .map((row) => `<tr class="${row.status === 'Ended' ? 'row-ended' : row.isActive === false ? 'row-paused' : ''}">
         <td>
           <div class="cell-stack">
             <strong>${escapeHtml(row.name)}</strong>
-            ${row.overlap ? '<small class="hint">Review overlap with another planned item</small>' : row.isActive === false ? '<small class="hint">Paused</small>' : ''}
+            ${
+              row.overlap
+                ? '<small class="hint">Review overlap with another planned item</small>'
+                : row.status === 'Ended'
+                  ? `<small class="hint">Ended${row.endDate ? ` · ${escapeHtml(row.endDate)}` : ''}</small>`
+                  : row.isActive === false
+                    ? '<small class="hint">Paused</small>'
+                    : ''
+            }
           </div>
         </td>
         <td>${escapeHtml(row.categoryName)}</td>
         <td>${escapeHtml(row.rowType === 'committed_cost' ? 'Regular' : 'Variable estimate')}</td>
         <td>${escapeHtml(spendingOwnerLabel(row, members))}</td>
-        <td>${escapeHtml(spendingFrequencyLabel(row))}</td>
+        <td>
+          <div class="cell-stack">
+            <span>${escapeHtml(spendingFrequencyLabel(row))}</span>
+            ${spendingTimingSummary(row) ? `<small class="hint">${escapeHtml(spendingTimingSummary(row))}</small>` : ''}
+          </div>
+        </td>
         <td>${formatCurrency(row.plannedMonthlyPence)}</td>
         <td class="actions-col">${spendingBudgetActions(ctx, row, returnTo)}</td>
       </tr>`)
@@ -736,11 +746,18 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
   const firstMemberLabel = ownerLabel('person_a', members);
   const secondMemberLabel = ownerLabel('person_b', members);
 
-  return `<form method="post" action="/budget-plan/spending" class="stack budget-form modal-form">
+  return `<form method="post" action="/budget-plan/spending" class="stack budget-form modal-form" data-stepped-form>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-    <section class="form-section">
+    <div class="modal-stepper">
+      <div class="modal-stepper-meta">
+        <span class="modal-stepper-count">Step <strong data-step-current>1</strong> of <span data-step-total>3</span></span>
+        <strong class="modal-stepper-title" data-step-title>Basic details</strong>
+      </div>
+      <div class="modal-stepper-track"><div class="modal-stepper-bar" data-step-progress-bar></div></div>
+    </div>
+    <section class="form-section" data-form-step data-step-title="Basic details">
       <h3>Basic details</h3>
       <label>Spending type
         <select name="spending_type" data-controls data-modal-field="spendingType">
@@ -763,7 +780,8 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
       >${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
       <p class="inline-hint warning-text" data-spending-duplicate-warning hidden></p>
     </section>
-    <section class="form-section" data-controlled-by="spending_type" data-show-when="regular">
+    <div class="form-step-cluster" data-form-step data-step-title="Spending details" data-controlled-by="spending_type" data-show-when="regular">
+    <section class="form-section">
       <h3>Regular spending details</h3>
       <p class="hint">Regular spending is predictable, such as mortgage, council tax, subscriptions, or insurance.</p>
       <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
@@ -808,12 +826,13 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
         </div>
       </div>
     </fieldset>
-    <section class="form-section" data-controlled-by="spending_type" data-show-when="variable_estimate" hidden>
+    </div>
+    <section class="form-section" data-form-step data-step-title="Spending details" data-controlled-by="spending_type" data-show-when="variable_estimate" hidden>
       <h3>Variable estimate details</h3>
       <p class="hint">Use this for expected amounts such as groceries, transport, eating out, clothing, entertainment, or personal spending.</p>
       <label>Planned monthly amount <input name="variable_amount" ${moneyInputAttrs({ min: '0.01' })} data-modal-field="variableAmount" data-required-when-visible="true"></label>
     </section>
-    <section class="form-section">
+    <section class="form-section" data-form-step data-step-title="Timing and notes">
       <h3>Timing and notes</h3>
       <div class="grid two compact" data-controlled-by="spending_type" data-show-when="regular">
         <label>Start date <input name="start_date" type="date" value="${todayIso()}" data-modal-field="startDate"></label>
@@ -821,21 +840,35 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
       </div>
       <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
     </section>
-    <div class="modal-footer">
-      <button>Save planned spending</button>
+    <div class="modal-footer modal-footer-split">
+      <div class="modal-footer-start">
+        <button type="button" class="secondary" data-close-modal>Cancel</button>
+      </div>
+      <div class="modal-footer-actions">
+        <button type="button" class="secondary" data-step-back hidden>Back</button>
+        <button type="button" data-step-next data-hide-on-final-step>Next</button>
+        <button data-show-on-final-step hidden>Save planned spending</button>
+      </div>
     </div>
   </form>`;
 }
 
 function incomeForm(ctx, members, returnTo) {
   const taxYears = listTaxYears();
-  return `<form method="post" action="/income" class="stack budget-form modal-form modal-form--income" data-income-estimate-form novalidate>
+  return `<form method="post" action="/income" class="stack budget-form modal-form modal-form--income" data-income-estimate-form data-stepped-form novalidate>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
     <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+    <div class="modal-stepper">
+      <div class="modal-stepper-meta">
+        <span class="modal-stepper-count">Step <strong data-step-current>1</strong> of <span data-step-total>5</span></span>
+        <strong class="modal-stepper-title" data-step-title>Basic details</strong>
+      </div>
+      <div class="modal-stepper-track"><div class="modal-stepper-bar" data-step-progress-bar></div></div>
+    </div>
     <div class="modal-form-grid">
       <div class="modal-form-main">
-        <section class="form-section">
+        <section class="form-section" data-form-step data-step-title="Basic details">
           <h3>Basic details</h3>
           <div class="grid two compact">
             <label>Name <input name="name" required maxlength="120" data-modal-field="name"></label>
@@ -849,13 +882,13 @@ function incomeForm(ctx, members, returnTo) {
           </label>
         </section>
 
-        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="manual_net">
+        <section class="form-section" data-form-step data-step-title="Income amount" data-controlled-by="income_entry_mode" data-show-when="manual_net">
           <h3>Manual income</h3>
           <label>Net income <input name="manual_amount" ${moneyInputAttrs({ min: '0.01' })} data-required-when-visible="true" data-modal-field="manualAmount" data-income-summary-trigger></label>
           <label>Frequency <select name="manual_frequency" data-modal-field="manualFrequency" data-income-summary-trigger>${frequencyOptions('monthly')}</select></label>
         </section>
 
-        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+        <section class="form-section" data-form-step data-step-title="Salary details" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
           <h3>Salary details</h3>
           <label>Gross annual salary <input name="gross_annual_salary" ${moneyInputAttrs({ min: '0.01' })} data-required-when-visible="true" data-modal-field="grossAnnualSalary" data-income-summary-trigger></label>
           <div class="grid two compact">
@@ -864,7 +897,7 @@ function incomeForm(ctx, members, returnTo) {
           </div>
         </section>
 
-        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+        <section class="form-section" data-form-step data-step-title="Student loans" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
           <h3>Student loans</h3>
           <div class="grid two compact">
             <label>Do you repay a student loan?
@@ -891,7 +924,7 @@ function incomeForm(ctx, members, returnTo) {
           </label>
         </section>
 
-        <section class="form-section" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+        <section class="form-section" data-form-step data-step-title="Pension and deductions" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
           <h3>Pension</h3>
           <div class="grid two compact">
             <label>Do you contribute to a pension?
@@ -929,7 +962,7 @@ function incomeForm(ctx, members, returnTo) {
           </div>
         </details>
 
-        <section class="form-section">
+        <section class="form-section" data-form-step data-step-title="Timing and notes">
           <h3>Timing and notes</h3>
           <div class="grid two compact">
             <label>Start date <input name="start_date" type="date" value="${todayIso()}" data-modal-field="startDate"></label>
@@ -982,9 +1015,16 @@ function incomeForm(ctx, members, returnTo) {
         </div>
       </aside>
     </div>
-    <div class="modal-footer">
-      <button type="button" class="secondary" data-calculate-income-estimate>Calculate estimate</button>
-      <button name="action" value="save">Save income</button>
+    <div class="modal-footer modal-footer-split">
+      <div class="modal-footer-start">
+        <button type="button" class="secondary" data-close-modal>Cancel</button>
+      </div>
+      <div class="modal-footer-actions">
+        <button type="button" class="secondary" data-step-back hidden>Back</button>
+        <button type="button" data-step-next data-hide-on-final-step>Next</button>
+        <button type="button" class="secondary" data-calculate-income-estimate data-show-on-final-step hidden>Calculate estimate</button>
+        <button name="action" value="save" data-show-on-final-step hidden>Save income</button>
+      </div>
     </div>
   </form>`;
 }

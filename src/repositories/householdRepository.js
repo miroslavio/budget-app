@@ -14,11 +14,14 @@ export function findHouseholdByInviteCode(db, inviteCode) {
   return db.prepare('SELECT * FROM households WHERE invite_code = ?').get(inviteCode);
 }
 
-export function updateHouseholdSettings(db, householdId, { name, openingBalancePence, skipPlannedSavings }) {
+export function updateHouseholdSettings(db, householdId, { name, openingBalancePence, forecastAdjustmentPence, skipPlannedSavings }) {
   const household = findHouseholdById(db, householdId);
-  db.prepare('UPDATE households SET name = ?, opening_balance_pence = ?, skip_planned_savings = ? WHERE id = ?').run(
+  db.prepare(
+    'UPDATE households SET name = ?, opening_balance_pence = ?, forecast_adjustment_pence = ?, skip_planned_savings = ? WHERE id = ?'
+  ).run(
     name ?? household.name,
     openingBalancePence ?? Number(household.opening_balance_pence || 0),
+    forecastAdjustmentPence ?? Number(household.forecast_adjustment_pence || 0),
     skipPlannedSavings ?? Number(household.skip_planned_savings || 0),
     householdId
   );

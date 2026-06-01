@@ -1,6 +1,18 @@
 import { addMonths } from '../utils/dates.js';
 import { plannedMonthlySummary } from './budgetService.js';
 
+export function spendableHouseholdBalancePence(accounts = []) {
+  return accounts.reduce((sum, account) => {
+    if (!Number(account.is_active ?? 1)) return sum;
+    if (!Number(account.available_for_household_cashflow || 0)) return sum;
+    return sum + Number(account.current_balance_pence || 0);
+  }, 0);
+}
+
+export function deriveForecastStartingBalance({ accounts = [], adjustmentPence = 0 } = {}) {
+  return spendableHouseholdBalancePence(accounts) + Number(adjustmentPence || 0);
+}
+
 export function buildMonthlyForecast({ items, startMonth, months = 12, openingBalancePence = 0 }) {
   const forecast = [];
   let opening = Number(openingBalancePence || 0);

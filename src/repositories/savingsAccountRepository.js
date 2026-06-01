@@ -4,8 +4,9 @@ export function createSavingsAccount(db, account) {
       `INSERT INTO savings_accounts (
         household_id, name, provider_name, account_type, owner_type,
         current_balance_pence, monthly_contribution_pence, employer_monthly_contribution_pence,
+        available_for_household_cashflow, access_type, access_date, access_age, access_notes,
         projected_annual_rate, projected_rate_type, include_lisa_bonus, is_active, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       account.householdId,
@@ -16,6 +17,11 @@ export function createSavingsAccount(db, account) {
       account.currentBalancePence,
       account.monthlyContributionPence,
       account.employerMonthlyContributionPence,
+      Number(account.availableForHouseholdCashflow) ? 1 : 0,
+      account.accessType,
+      account.accessDate || null,
+      account.accessAge ?? null,
+      account.accessNotes || null,
       account.projectedAnnualRate,
       account.projectedRateType,
       Number(account.includeLisaBonus) ? 1 : 0,
@@ -31,6 +37,7 @@ export function updateSavingsAccount(db, account) {
     `UPDATE savings_accounts
      SET name = ?, provider_name = ?, account_type = ?, owner_type = ?,
          current_balance_pence = ?, monthly_contribution_pence = ?, employer_monthly_contribution_pence = ?,
+         available_for_household_cashflow = ?, access_type = ?, access_date = ?, access_age = ?, access_notes = ?,
          projected_annual_rate = ?, projected_rate_type = ?, include_lisa_bonus = ?, is_active = ?,
          notes = ?, updated_at = CURRENT_TIMESTAMP
      WHERE household_id = ? AND id = ?`
@@ -42,6 +49,11 @@ export function updateSavingsAccount(db, account) {
     account.currentBalancePence,
     account.monthlyContributionPence,
     account.employerMonthlyContributionPence,
+    Number(account.availableForHouseholdCashflow) ? 1 : 0,
+    account.accessType,
+    account.accessDate || null,
+    account.accessAge ?? null,
+    account.accessNotes || null,
     account.projectedAnnualRate,
     account.projectedRateType,
     Number(account.includeLisaBonus) ? 1 : 0,
