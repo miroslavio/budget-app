@@ -10,7 +10,7 @@ import {
 } from '../repositories/categoryBudgetRepository.js';
 import { createIncomeEstimate, attachEstimateToBudgetItem, deleteIncomeEstimate, updateIncomeEstimate } from '../repositories/incomeEstimateRepository.js';
 import { listCategories } from '../repositories/categoryRepository.js';
-import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';
+import { createSavingsAccount, findSavingsAccountById, listSavingsAccounts, updateSavingsAccount } from '../repositories/savingsAccountRepository.js';
 import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
@@ -130,6 +130,7 @@ function renderIncomePlanPage(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
   const members = listHouseholdMembers(db, ctx.user.household_id);
   const items = listBudgetItems(db, ctx.user.household_id, 'income');
+  const savingsAccounts = listSavingsAccounts(db, ctx.user.household_id);
   const returnTo = '/budget-plan/income';
 
   html(
@@ -140,7 +141,7 @@ function renderIncomePlanPage(ctx, db) {
       body: `<div class="budget-plan-layout">
       ${budgetPlanPageIntro('income')}
       <section class="action-row">
-        ${formDisclosure('income', ctx, [], members, returnTo)}
+        ${formDisclosure('income', ctx, [], members, returnTo, {}, savingsAccounts)}
       </section>
       <section class="grid one">
         <div class="card">
@@ -707,7 +708,7 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
   </table>`;
 }
 
-function formDisclosure(itemType, ctx, categories, members, returnTo, options = {}) {
+function formDisclosure(itemType, ctx, categories, members, returnTo, options = {}, savingsAccounts = []) {
   const label = itemType === 'income' ? 'Add planned income' : 'Add planned spending';
   const modalId = `${itemType}-modal`;
   return `<button type="button" data-open-modal="${modalId}" data-reset-modal="true">${label}</button>
@@ -719,7 +720,7 @@ function formDisclosure(itemType, ctx, categories, members, returnTo, options = 
           </div>
           <button type="button" class="secondary icon-button" data-close-modal aria-label="Close">Close</button>
         </div>
-      ${itemType === 'income' ? incomeForm(ctx, members, returnTo) : expenseForm(ctx, categories, members, returnTo, options)}
+      ${itemType === 'income' ? incomeForm(ctx, members, returnTo, savingsAccounts) : expenseForm(ctx, categories, members, returnTo, options)}
       </div>
     </dialog>`;
 }
@@ -853,8 +854,9 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
   </form>`;
 }
 
-function incomeForm(ctx, members, returnTo) {
+function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
   const taxYears = listTaxYears();
+  const pensionAccounts = savingsAccounts.filter((account) => account.account_type === 'pension');
   return `<form method="post" action="/income" class="stack budget-form modal-form modal-form--income" data-income-estimate-form data-stepped-form novalidate>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
@@ -951,16 +953,59 @@ function incomeForm(ctx, members, returnTo) {
               </select>
             </label>
           </div>
+          <div class="nested-form-section" data-controlled-by="has_pension" data-show-when="yes" hidden>
+            <h4>Track this pension in Savings</h4>
+            <p class="hint">Link this pension to a savings pot if you want your personal pension deduction and any employer contribution to feed Savings, Goals, and long-term projections.</p>
+            <label>Pension pot in Savings
+              <select name="pension_tracking_mode" data-controls data-modal-field="pensionTrackingMode">
+                <option value="none">Do not track in Savings</option>
+                ${pensionAccounts.length ? '<option value="link_existing">Link to an existing pension pot</option>' : ''}
+                <option value="create_new">Create a pension pot in Savings</option>
+              </select>
+            </label>
+            <label data-controlled-by="pension_tracking_mode" data-show-when="link_existing" hidden>Existing pension pot
+              <select name="linked_savings_account_id" data-modal-field="linkedSavingsAccountId">
+                <option value="">Choose a pension pot</option>
+                ${pensionAccountOptions(pensionAccounts, members)}
+              </select>
+            </label>
+            <label data-controlled-by="pension_tracking_mode" data-show-when="create_new" hidden>Pension pot name
+              <input name="new_pension_account_name" maxlength="120" placeholder="e.g. Workplace pension" data-modal-field="newPensionAccountName">
+            </label>
+            <div data-controlled-by="pension_tracking_mode" data-show-when="link_existing|create_new" hidden>
+              <div class="grid two compact">
+                <label>Does your employer contribute?
+                  <select name="has_employer_pension_contribution" data-controls data-modal-field="hasEmployerPensionContribution">
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </label>
+                <label data-controlled-by="has_employer_pension_contribution" data-show-when="yes" hidden>Employer contribution
+                  <select name="employer_pension_contribution_type" data-controls data-modal-field="employerPensionContributionType">
+                    <option value="none">Choose contribution type</option>
+                    <option value="fixed_amount">Fixed amount</option>
+                    <option value="percentage">Percentage of gross salary</option>
+                  </select>
+                </label>
+              </div>
+              <div class="grid two compact" data-controlled-by="has_employer_pension_contribution" data-show-when="yes" hidden>
+                <label>Employer contribution amount <input name="employer_pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="employerPensionContributionValue"></label>
+                <div class="hint-block">
+                  <p class="hint">Employer contributions do not reduce take-home pay, but they will increase the linked pension pot in Savings projections and linked goals.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <details class="form-section form-details" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
-          <summary>Other deductions</summary>
+        <section class="form-section" data-form-step data-step-title="Other deductions" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+          <h3>Other deductions</h3>
           <p class="hint">Optional. Add regular deductions that appear on your payslip.</p>
           <div class="grid two compact">
             <label>Other deductions before tax <input name="other_pre_tax_deductions" ${moneyInputAttrs()} data-modal-field="otherPreTaxDeductions" data-income-summary-trigger></label>
             <label>Other deductions after tax <input name="other_post_tax_deductions" ${moneyInputAttrs()} data-modal-field="otherPostTaxDeductions" data-income-summary-trigger></label>
           </div>
-        </details>
+        </section>
 
         <section class="form-section" data-form-step data-step-title="Timing and notes">
           <h3>Timing and notes</h3>
@@ -1323,6 +1368,12 @@ function formatTaxYearLabel(taxYear) {
   return `${start}/${String(end).slice(-2)}`;
 }
 
+function pensionAccountOptions(accounts, members) {
+  return accounts
+    .map((account) => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)} · ${escapeHtml(ownerLabel(account.owner_type, members))}</option>`)
+    .join('');
+}
+
 function capitalise(value) {
   const text = String(value || '');
   return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
@@ -1422,6 +1473,12 @@ function incomeEditAttributes(item) {
     `data-fill-pension-contribution-type="${escapeHtml(item.estimate_pension_contribution_type || 'none')}"`,
     `data-fill-pension-contribution-value="${pensionContributionValue}"`,
     `data-fill-pension-contribution-tax-treatment="${escapeHtml(item.estimate_pension_contribution_tax_treatment || 'pre_tax')}"`,
+    `data-fill-pension-tracking-mode="${item.estimate_linked_savings_account_id ? 'link_existing' : 'none'}"`,
+    `data-fill-linked-savings-account-id="${escapeHtml(item.estimate_linked_savings_account_id || '')}"`,
+    `data-fill-new-pension-account-name="${escapeHtml(item.name ? `${item.name} pension` : 'Workplace pension')}"`,
+    `data-fill-has-employer-pension-contribution="${item.estimate_employer_pension_contribution_type && item.estimate_employer_pension_contribution_type !== 'none' ? 'yes' : 'no'}"`,
+    `data-fill-employer-pension-contribution-type="${escapeHtml(item.estimate_employer_pension_contribution_type || 'none')}"`,
+    `data-fill-employer-pension-contribution-value="${item.estimate_employer_pension_contribution_type === 'fixed_amount' ? moneyInputValue(item.estimate_employer_pension_contribution_value || 0) : escapeHtml(item.estimate_employer_pension_contribution_value || '')}"`,
     `data-fill-other-pre-tax-deductions="${item.estimate_other_pre_tax_deductions_pence ? moneyInputValue(item.estimate_other_pre_tax_deductions_pence) : ''}"`,
     `data-fill-other-post-tax-deductions="${item.estimate_other_post_tax_deductions_pence ? moneyInputValue(item.estimate_other_post_tax_deductions_pence) : ''}"`,
     `data-fill-start-date="${escapeHtml(item.start_date || todayIso())}"`,
@@ -1505,6 +1562,14 @@ function createIncome(ctx, db) {
       const estimate = buildEstimate(ctx);
       const frequency = requireChoice(ctx.body.estimated_frequency, ['monthly', 'yearly'], 'Estimated frequency');
       const amountPence = frequency === 'monthly' ? estimate.estimatedNetMonthlyIncomePence : estimate.estimatedNetAnnualIncomePence;
+      const pensionTracking = resolveIncomePensionTracking({
+        ctx,
+        db,
+        estimate,
+        existingItem,
+        ownerType,
+        incomeName: name
+      });
       const estimatePayload = {
         householdId: ctx.user.household_id,
         budgetItemId: existingItem?.id || null,
@@ -1525,7 +1590,10 @@ function createIncome(ctx, db) {
         pensionContributionPence: estimate.pensionContributionPence,
         estimatedOtherDeductionsPence: estimate.estimatedOtherDeductionsPence,
         estimatedNetMonthlyIncomePence: estimate.estimatedNetMonthlyIncomePence,
-        estimatedNetAnnualIncomePence: estimate.estimatedNetAnnualIncomePence
+        estimatedNetAnnualIncomePence: estimate.estimatedNetAnnualIncomePence,
+        linkedSavingsAccountId: pensionTracking.linkedSavingsAccountId,
+        employerPensionContributionType: pensionTracking.employerPensionContributionType,
+        employerPensionContributionValue: pensionTracking.employerPensionContributionValue
       };
       const savedEstimate = existingItem?.income_estimate_id
         ? updateIncomeEstimate(db, { ...estimatePayload, id: existingItem.income_estimate_id })
@@ -1549,6 +1617,113 @@ function createIncome(ctx, db) {
   } catch (error) {
     redirectWithError(ctx.res, ctx.body.return_to || '/budget-plan/income', error);
   }
+}
+
+function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerType, incomeName }) {
+  const hasPension = String(ctx.body.has_pension || 'no') === 'yes' && estimate.pensionContributionPence > 0;
+  if (!hasPension) {
+    return {
+      linkedSavingsAccountId: null,
+      employerPensionContributionType: 'none',
+      employerPensionContributionValue: 0
+    };
+  }
+
+  const trackingMode = requireChoice(ctx.body.pension_tracking_mode || 'none', ['none', 'link_existing', 'create_new'], 'Pension pot in Savings');
+  const employerContribution = parseEmployerPensionContribution(ctx.body, estimate.grossAnnualSalaryPence);
+
+  if (trackingMode === 'none') {
+    return {
+      linkedSavingsAccountId: null,
+      employerPensionContributionType: employerContribution.type,
+      employerPensionContributionValue: employerContribution.value
+    };
+  }
+
+  const employeeMonthlyContributionPence = Math.round(Number(estimate.pensionContributionPence || 0) / 12);
+  const employerMonthlyContributionPence = Math.round(Number(employerContribution.annualContributionPence || 0) / 12);
+  if (trackingMode === 'link_existing') {
+    const linkedSavingsAccountId = Number(ctx.body.linked_savings_account_id || 0) || null;
+    if (!linkedSavingsAccountId) throw new Error('Choose an existing pension pot.');
+    const existingAccount = findSavingsAccountById(db, ctx.user.household_id, linkedSavingsAccountId);
+    if (!existingAccount || existingAccount.account_type !== 'pension') {
+      throw new Error('Selected pension pot was not found.');
+    }
+    updateSavingsAccount(db, {
+      id: existingAccount.id,
+      householdId: ctx.user.household_id,
+      name: existingAccount.name,
+      providerName: existingAccount.provider_name,
+      accountType: existingAccount.account_type,
+      ownerType: existingAccount.owner_type,
+      currentBalancePence: Number(existingAccount.current_balance_pence || 0),
+      monthlyContributionPence: employeeMonthlyContributionPence,
+      employerMonthlyContributionPence,
+      availableForHouseholdCashflow: Number(existingAccount.available_for_household_cashflow) === 1,
+      accessType: existingAccount.access_type,
+      accessDate: existingAccount.access_date,
+      accessAge: existingAccount.access_age,
+      accessNotes: existingAccount.access_notes,
+      projectedAnnualRate: Number(existingAccount.projected_annual_rate || 0),
+      projectedRateType: existingAccount.projected_rate_type,
+      includeLisaBonus: Number(existingAccount.include_lisa_bonus) === 1,
+      isActive: Number(existingAccount.is_active) === 1,
+      notes: existingAccount.notes
+    });
+    return {
+      linkedSavingsAccountId,
+      employerPensionContributionType: employerContribution.type,
+      employerPensionContributionValue: employerContribution.value
+    };
+  }
+
+  const newAccountName = requireString(ctx.body.new_pension_account_name || `${incomeName} pension`, 'Pension pot name', 120);
+  const createdAccount = createSavingsAccount(db, {
+    householdId: ctx.user.household_id,
+    name: newAccountName,
+    providerName: null,
+    accountType: 'pension',
+    ownerType,
+    currentBalancePence: 0,
+    monthlyContributionPence: employeeMonthlyContributionPence,
+    employerMonthlyContributionPence,
+    availableForHouseholdCashflow: false,
+    accessType: 'locked_until_age',
+    accessDate: null,
+    accessAge: null,
+    accessNotes: 'Created from planned income pension settings.',
+    projectedAnnualRate: 0,
+    projectedRateType: 'growth',
+    includeLisaBonus: false,
+    isActive: true,
+    notes: 'Review this pension pot in Savings to confirm balance, provider, and growth assumption.'
+  });
+  return {
+    linkedSavingsAccountId: createdAccount.id,
+    employerPensionContributionType: employerContribution.type,
+    employerPensionContributionValue: employerContribution.value
+  };
+}
+
+function parseEmployerPensionContribution(body, grossAnnualSalaryPence) {
+  const hasEmployerPensionContribution = String(body.has_employer_pension_contribution || 'no') === 'yes';
+  if (!hasEmployerPensionContribution) {
+    return { type: 'none', value: 0, annualContributionPence: 0 };
+  }
+  const type = requireChoice(body.employer_pension_contribution_type || 'none', ['none', 'fixed_amount', 'percentage'], 'Employer contribution');
+  if (type === 'none') {
+    throw new Error('Choose an employer contribution type.');
+  }
+  const rawValue = body.employer_pension_contribution_value || '0';
+  const value =
+    type === 'fixed_amount'
+      ? requireMoney(rawValue, 'Employer contribution amount')
+      : requireDecimal(rawValue, 'Employer contribution amount', { min: 0.01, max: 100 });
+  const annualContributionPence =
+    type === 'fixed_amount'
+      ? value
+      : Math.round(Number(grossAnnualSalaryPence || 0) * (Number(value || 0) / 100));
+  return { type, value, annualContributionPence };
 }
 
 function renderIncomeEstimatePreview(ctx, estimate) {

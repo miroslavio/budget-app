@@ -76,6 +76,15 @@ export function runMigrations(db) {
       db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
       continue;
     }
+    if (
+      migration === '014_add_income_estimate_pension_link_fields.sql' &&
+      tableHasColumn(db, 'income_estimates', 'linked_savings_account_id') &&
+      tableHasColumn(db, 'income_estimates', 'employer_pension_contribution_type') &&
+      tableHasColumn(db, 'income_estimates', 'employer_pension_contribution_value')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {

@@ -1,4 +1,5 @@
 import { listBudgetItems } from '../repositories/budgetItemRepository.js';
+import { listCategoryBudgetDefaults } from '../repositories/categoryBudgetRepository.js';
 import { findOrCreateCategory, listCategories } from '../repositories/categoryRepository.js';
 import { createImportBatch, addImportRows, findImportBatch, listImportRows, updateImportBatchStatus, updateImportRowStatus } from '../repositories/csvImportRepository.js';
 import { listSavingsAccounts } from '../repositories/savingsAccountRepository.js';

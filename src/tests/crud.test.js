@@ -35,7 +35,10 @@ test('budget items can be updated and deleted with linked income estimates clean
     pensionContributionPence: 0,
     estimatedOtherDeductionsPence: 0,
     estimatedNetMonthlyIncomePence: 358333,
-    estimatedNetAnnualIncomePence: 4300000
+    estimatedNetAnnualIncomePence: 4300000,
+    linkedSavingsAccountId: null,
+    employerPensionContributionType: 'none',
+    employerPensionContributionValue: 0
   });
 
   const item = createBudgetItem(db, {

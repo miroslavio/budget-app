@@ -8,8 +8,9 @@ export function createIncomeEstimate(db, estimate) {
         has_postgraduate_loan, estimated_income_tax_pence, estimated_national_insurance_pence,
         estimated_student_loan_repayment_pence, estimated_postgraduate_loan_repayment_pence,
         pension_contribution_pence, estimated_other_deductions_pence,
-        estimated_net_monthly_income_pence, estimated_net_annual_income_pence
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        estimated_net_monthly_income_pence, estimated_net_annual_income_pence,
+        linked_savings_account_id, employer_pension_contribution_type, employer_pension_contribution_value
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       estimate.householdId,
@@ -31,7 +32,10 @@ export function createIncomeEstimate(db, estimate) {
       estimate.pensionContributionPence,
       estimate.estimatedOtherDeductionsPence,
       estimate.estimatedNetMonthlyIncomePence,
-      estimate.estimatedNetAnnualIncomePence
+      estimate.estimatedNetAnnualIncomePence,
+      estimate.linkedSavingsAccountId || null,
+      estimate.employerPensionContributionType || 'none',
+      estimate.employerPensionContributionValue || 0
     );
   return findIncomeEstimateById(db, estimate.householdId, result.lastInsertRowid);
 }
@@ -53,7 +57,8 @@ export function updateIncomeEstimate(db, estimate) {
          has_postgraduate_loan = ?, estimated_income_tax_pence = ?, estimated_national_insurance_pence = ?,
          estimated_student_loan_repayment_pence = ?, estimated_postgraduate_loan_repayment_pence = ?,
          pension_contribution_pence = ?, estimated_other_deductions_pence = ?,
-         estimated_net_monthly_income_pence = ?, estimated_net_annual_income_pence = ?
+         estimated_net_monthly_income_pence = ?, estimated_net_annual_income_pence = ?,
+         linked_savings_account_id = ?, employer_pension_contribution_type = ?, employer_pension_contribution_value = ?
      WHERE household_id = ? AND id = ?`
   ).run(
     estimate.grossAnnualSalaryPence,
@@ -74,6 +79,9 @@ export function updateIncomeEstimate(db, estimate) {
     estimate.estimatedOtherDeductionsPence,
     estimate.estimatedNetMonthlyIncomePence,
     estimate.estimatedNetAnnualIncomePence,
+    estimate.linkedSavingsAccountId || null,
+    estimate.employerPensionContributionType || 'none',
+    estimate.employerPensionContributionValue || 0,
     estimate.householdId,
     estimate.id
   );

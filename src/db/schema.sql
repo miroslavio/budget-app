@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS income_estimates (
   estimated_other_deductions_pence INTEGER NOT NULL,
   estimated_net_monthly_income_pence INTEGER NOT NULL,
   estimated_net_annual_income_pence INTEGER NOT NULL,
+  linked_savings_account_id INTEGER REFERENCES savings_accounts(id) ON DELETE SET NULL,
+  employer_pension_contribution_type TEXT NOT NULL CHECK (employer_pension_contribution_type IN ('none', 'fixed_amount', 'percentage')) DEFAULT 'none',
+  employer_pension_contribution_value REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

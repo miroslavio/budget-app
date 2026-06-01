@@ -90,7 +90,10 @@ export function findBudgetItemById(db, householdId, id) {
               income_estimates.pension_contribution_pence AS estimate_pension_contribution_pence,
               income_estimates.estimated_other_deductions_pence AS estimate_other_deductions_pence,
               income_estimates.estimated_net_monthly_income_pence AS estimate_net_monthly_income_pence,
-              income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence
+              income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence,
+              income_estimates.linked_savings_account_id AS estimate_linked_savings_account_id,
+              income_estimates.employer_pension_contribution_type AS estimate_employer_pension_contribution_type,
+              income_estimates.employer_pension_contribution_value AS estimate_employer_pension_contribution_value
        FROM budget_items
        LEFT JOIN categories ON categories.id = budget_items.category_id
        LEFT JOIN income_estimates ON income_estimates.id = budget_items.income_estimate_id
@@ -119,7 +122,10 @@ export function listBudgetItems(db, householdId, itemType = null) {
             income_estimates.pension_contribution_pence AS estimate_pension_contribution_pence,
             income_estimates.estimated_other_deductions_pence AS estimate_other_deductions_pence,
             income_estimates.estimated_net_monthly_income_pence AS estimate_net_monthly_income_pence,
-            income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence
+            income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence,
+            income_estimates.linked_savings_account_id AS estimate_linked_savings_account_id,
+            income_estimates.employer_pension_contribution_type AS estimate_employer_pension_contribution_type,
+            income_estimates.employer_pension_contribution_value AS estimate_employer_pension_contribution_value
      FROM budget_items
      LEFT JOIN categories ON categories.id = budget_items.category_id
      LEFT JOIN income_estimates ON income_estimates.id = budget_items.income_estimate_id
@@ -150,7 +156,10 @@ export function listActiveBudgetItems(db, householdId) {
               income_estimates.pension_contribution_pence AS estimate_pension_contribution_pence,
               income_estimates.estimated_other_deductions_pence AS estimate_other_deductions_pence,
               income_estimates.estimated_net_monthly_income_pence AS estimate_net_monthly_income_pence,
-              income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence
+              income_estimates.estimated_net_annual_income_pence AS estimate_net_annual_income_pence,
+              income_estimates.linked_savings_account_id AS estimate_linked_savings_account_id,
+              income_estimates.employer_pension_contribution_type AS estimate_employer_pension_contribution_type,
+              income_estimates.employer_pension_contribution_value AS estimate_employer_pension_contribution_value
        FROM budget_items
        LEFT JOIN categories ON categories.id = budget_items.category_id
        LEFT JOIN income_estimates ON income_estimates.id = budget_items.income_estimate_id
