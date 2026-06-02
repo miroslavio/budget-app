@@ -206,7 +206,7 @@ function transactionsTable(ctx, transactions, members, month) {
       </div>
     </div>`;
   }
-  return `<table class="data-table">
+  const desktopTable = `<table class="data-table">
     <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th>Owner</th><th>Amount</th><th class="actions-col"></th></tr></thead>
     <tbody>${transactions
       .map(
@@ -246,4 +246,83 @@ function transactionsTable(ctx, transactions, members, month) {
       )
       .join('')}</tbody>
   </table>`;
+  const mobileCardsId = 'transactions-mobile-cards';
+  return responsiveFinanceTable(desktopTable, `
+    ${mobileSortControl(mobileCardsId, transactions.length, [
+      ['date:desc', 'Date, newest first'],
+      ['amount:desc', 'Amount, high to low'],
+      ['description:asc', 'Description, A to Z'],
+      ['category:asc', 'Category, A to Z'],
+      ['owner:asc', 'Owner, A to Z']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${transactions.map((transaction) => transactionMobileCard(ctx, transaction, members, month)).join('')}
+    </div>
+  `);
+}
+
+function transactionMobileCard(ctx, transaction, members, month) {
+  return `<article class="mobile-finance-card" data-mobile-sort-card
+    data-sort-date="${escapeHtml(transaction.transaction_date)}"
+    data-sort-description="${escapeHtml(String(transaction.description || '').toLowerCase())}"
+    data-sort-category="${escapeHtml(String(transaction.category_name || '').toLowerCase())}"
+    data-sort-owner="${escapeHtml(ownerLabel(transaction.owner_type, members).toLowerCase())}"
+    data-sort-amount="${Number(transaction.amount_pence || 0)}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(transaction.description)}</h3>
+        <p>${escapeHtml(transaction.transaction_date)} · ${typeLabel(transaction.type)}</p>
+      </div>
+      <span class="mobile-card-status">${escapeHtml(typeLabel(transaction.type))}</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(transaction.amount_pence)}</strong>
+      <span>Actual movement</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Category</dt><dd>${escapeHtml(transaction.category_name || 'Uncategorised')}</dd></div>
+      <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(transaction.owner_type, members))}</dd></div>
+    </dl>
+    <div class="mobile-card-actions">
+      <div class="table-actions">
+        ${actionIconButton({
+          label: 'Edit transaction',
+          icon: 'edit',
+          variant: 'edit',
+          attributes: `data-open-modal="transaction-modal"
+          data-reset-modal="true"
+          data-fill-id="${escapeHtml(transaction.id)}"
+          data-fill-transaction-date="${escapeHtml(transaction.transaction_date)}"
+          data-fill-description="${escapeHtml(transaction.description)}"
+          data-fill-amount="${escapeHtml((Number(transaction.amount_pence || 0) / 100).toFixed(2))}"
+          data-fill-type="${escapeHtml(transaction.type)}"
+          data-fill-category-name="${escapeHtml(transaction.category_name || '')}"
+          data-fill-owner-type="${escapeHtml(transaction.owner_type)}"
+          data-fill-notes="${escapeHtml(transaction.notes || '')}"`
+        })}
+        <form method="post" action="/transactions/delete" data-confirm="Delete this transaction?">
+          ${csrfField(ctx)}
+          <input type="hidden" name="id" value="${transaction.id}">
+          <input type="hidden" name="return_to" value="/transactions?month=${escapeHtml(month)}">
+          ${actionIconButton({ label: 'Delete transaction', icon: 'delete', variant: 'delete', type: 'submit' })}
+        </form>
+      </div>
+    </div>
+  </article>`;
+}
+
+function responsiveFinanceTable(tableHtml, mobileHtml) {
+  return `<div class="desktop-table-wrapper">${tableHtml}</div>
+  <div class="mobile-card-region">${mobileHtml}</div>`;
+}
+
+function mobileSortControl(listId, rowCount, options) {
+  if (rowCount < 2) return '';
+  const selectId = `${listId}-sort`;
+  return `<div class="mobile-sort-control">
+    <label for="${escapeHtml(selectId)}">Sort by</label>
+    <select id="${escapeHtml(selectId)}" data-mobile-card-sort="${escapeHtml(listId)}">
+      ${options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}
+    </select>
+  </div>`;
 }

@@ -674,7 +674,7 @@ function goalProgress(goal) {
 function accountsSnapshotTable(accounts, members) {
   if (!accounts.length) return '<p class="empty">No accounts or pots tracked yet.</p>';
 
-  return `<table class="data-table">
+  const desktopTable = `<table class="data-table">
     <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>Balance</th><th>Monthly additions</th></tr></thead>
     <tbody>${accounts
       .map((account) => `<tr>
@@ -686,12 +686,24 @@ function accountsSnapshotTable(accounts, members) {
       </tr>`)
       .join('')}</tbody>
   </table>`;
+  const mobileCardsId = 'accounts-snapshot-mobile-cards';
+  return responsiveFinanceTable(desktopTable, `
+    ${mobileSortControl(mobileCardsId, accounts.length, [
+      ['balance:desc', 'Balance, high to low'],
+      ['name:asc', 'Name, A to Z'],
+      ['owner:asc', 'Owner, A to Z'],
+      ['monthly:desc', 'Monthly additions, high to low']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${accounts.map((account) => savingsAccountMobileCard(account, members)).join('')}
+    </div>
+  `);
 }
 
 function savingsAccountsTable(ctx, accounts, members) {
   if (!accounts.length) return '<p class="empty">No accounts or pots tracked yet.</p>';
 
-  return `<table class="data-table">
+  const desktopTable = `<table class="data-table">
     <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>Balance</th><th>Monthly additions</th><th class="actions-col"></th></tr></thead>
     <tbody>${accounts
       .map((account) => {
@@ -706,52 +718,31 @@ function savingsAccountsTable(ctx, accounts, members) {
           <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
           <td>${formatCurrency(account.current_balance_pence)}</td>
           <td>${monthlyAdditionsCell(account)}</td>
-          <td class="actions-col">
-            <div class="table-actions">
-              ${actionIconButton({
-                label: 'Edit account or pot',
-                icon: 'edit',
-                variant: 'edit',
-                attributes: `data-open-modal="savings-account-modal"
-                data-reset-modal="true"
-                data-fill-id="${escapeHtml(account.id)}"
-                data-fill-name="${escapeHtml(account.name)}"
-                data-fill-provider-name="${escapeHtml(account.provider_name || '')}"
-                data-fill-account-type="${escapeHtml(account.account_type)}"
-                data-fill-owner-type="${escapeHtml(account.owner_type)}"
-                data-fill-current-balance="${escapeHtml((Number(account.current_balance_pence || 0) / 100).toFixed(2))}"
-                data-fill-monthly-contribution="${escapeHtml((Number(account.monthly_contribution_pence || 0) / 100).toFixed(2))}"
-                data-fill-employer-monthly-contribution="${escapeHtml((Number(account.employer_monthly_contribution_pence || 0) / 100).toFixed(2))}"
-                data-fill-available-for-household-cashflow="${Number(account.available_for_household_cashflow) === 1 ? 'true' : 'false'}"
-                data-fill-access-type="${escapeHtml(account.access_type || defaultAccessSettingsForAccount(account.account_type).accessType)}"
-                data-fill-access-date="${escapeHtml(account.access_date || '')}"
-                data-fill-access-age="${escapeHtml(account.access_age ?? '')}"
-                data-fill-access-notes="${escapeHtml(account.access_notes || '')}"
-                data-fill-projected-annual-rate="${escapeHtml(String(Number(account.projected_annual_rate || 0)))}"
-                data-fill-projected-rate-type="${escapeHtml(account.projected_rate_type)}"
-                data-fill-include-lisa-bonus="${Number(account.include_lisa_bonus) === 1 ? 'true' : 'false'}"
-                data-fill-is-active="${Number(account.is_active) === 1 ? 'true' : 'false'}"
-                data-fill-notes="${escapeHtml(account.notes || '')}"`
-              })}
-              <form method="post" action="/savings/accounts/delete" data-confirm="Delete this account or pot?">
-                ${csrfField(ctx)}
-                <input type="hidden" name="id" value="${account.id}">
-                <input type="hidden" name="return_to" value="/savings/accounts">
-                ${actionIconButton({ label: 'Delete account or pot', icon: 'delete', variant: 'delete', type: 'submit' })}
-              </form>
-            </div>
-          </td>
+          <td class="actions-col">${savingsAccountActions(ctx, account)}</td>
         </tr>`;
       })
       .join('')}</tbody>
   </table>`;
+  const mobileCardsId = 'savings-accounts-mobile-cards';
+  return responsiveFinanceTable(desktopTable, `
+    ${mobileSortControl(mobileCardsId, accounts.length, [
+      ['balance:desc', 'Balance, high to low'],
+      ['name:asc', 'Name, A to Z'],
+      ['owner:asc', 'Owner, A to Z'],
+      ['monthly:desc', 'Monthly additions, high to low'],
+      ['status:asc', 'Status, A to Z']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${accounts.map((account) => savingsAccountMobileCard(account, members, savingsAccountActions(ctx, account))).join('')}
+    </div>
+  `);
 }
 
 function goalsTable(ctx, goals, members, returnTo) {
   if (!goals.length) {
     return '<div class="empty-state compact"><h3>No savings goals yet</h3><p>Add a goal to track progress towards an emergency fund, holiday, house deposit, or other target.</p></div>';
   }
-  return `<table class="data-table">
+  const desktopTable = `<table class="data-table">
     <thead><tr><th>Goal</th><th>Owner</th><th>Target</th><th>Current saved</th><th>Projected at target date</th><th>Shortfall / surplus</th><th>Linked pots</th><th>Status</th><th class="actions-col"></th></tr></thead>
     <tbody>${goals
       .map((goal) => {
@@ -770,39 +761,177 @@ function goalsTable(ctx, goals, members, returnTo) {
           <td class="${progress.projectedShortfallSurplusPence > 0 ? 'forecast-movement positive' : progress.projectedShortfallSurplusPence < 0 ? 'forecast-movement negative' : ''}">${progress.projectedShortfallSurplusPence === null ? '—' : formatSignedCurrency(progress.projectedShortfallSurplusPence)}</td>
           <td>${escapeHtml(goalLinkedPotsSummary(goal))}</td>
           <td>${escapeHtml(progress.statusLabel)}</td>
-          <td class="actions-col">
-            <div class="table-actions">
-              ${actionIconButton({
-                label: 'Edit savings goal',
-                icon: 'edit',
-                variant: 'edit',
-                attributes: `data-open-modal="savings-goal-modal"
-                data-reset-modal="true"
-                data-fill-id="${escapeHtml(goal.id)}"
-                data-fill-name="${escapeHtml(goal.name)}"
-                data-fill-tracking-mode="${escapeHtml(progress.trackingMode)}"
-                data-fill-goal-type="${escapeHtml(goal.goal_type || 'general')}"
-                data-fill-target-amount="${escapeHtml((Number(goal.target_amount_pence || 0) / 100).toFixed(2))}"
-                data-fill-owner-type="${escapeHtml(goal.owner_type)}"
-                data-fill-current-saved-amount="${escapeHtml((Number(goal.current_saved_amount_pence || 0) / 100).toFixed(2))}"
-                data-fill-monthly-contribution="${escapeHtml((Number(goal.monthly_contribution_pence || 0) / 100).toFixed(2))}"
-                data-fill-target-date="${escapeHtml(goal.target_date || '')}"
-                data-fill-status="${escapeHtml(goal.status)}"
-                data-fill-notes="${escapeHtml(goal.notes || '')}"
-                data-fill-linked-account-ids="${escapeHtml(goal.linkedAccounts?.map((account) => account.id).join(',') || '')}"`
-              })}
-              <form method="post" action="/savings/delete" data-confirm="Delete this savings goal?">
-                ${csrfField(ctx)}
-                <input type="hidden" name="id" value="${goal.id}">
-                <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
-                ${actionIconButton({ label: 'Delete savings goal', icon: 'delete', variant: 'delete', type: 'submit' })}
-              </form>
-            </div>
-          </td>
+          <td class="actions-col">${savingsGoalActions(ctx, goal, progress, returnTo)}</td>
         </tr>`;
       })
       .join('')}</tbody>
   </table>`;
+  const mobileCardsId = 'savings-goals-mobile-cards';
+  return responsiveFinanceTable(desktopTable, `
+    ${mobileSortControl(mobileCardsId, goals.length, [
+      ['targetDate:asc', 'Target date, soonest first'],
+      ['target:desc', 'Target, high to low'],
+      ['name:asc', 'Name, A to Z'],
+      ['owner:asc', 'Owner, A to Z'],
+      ['status:asc', 'Status, A to Z']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${goals
+        .map((goal) => {
+          const progress = goal.metrics || savingsGoalMetrics(goal, { linkedAccounts: goal.linkedAccounts || [] });
+          return savingsGoalMobileCard(ctx, goal, progress, members, returnTo);
+        })
+        .join('')}
+    </div>
+  `);
+}
+
+function savingsAccountActions(ctx, account) {
+  return `<div class="table-actions">
+    ${actionIconButton({
+      label: 'Edit account or pot',
+      icon: 'edit',
+      variant: 'edit',
+      attributes: `data-open-modal="savings-account-modal"
+      data-reset-modal="true"
+      data-fill-id="${escapeHtml(account.id)}"
+      data-fill-name="${escapeHtml(account.name)}"
+      data-fill-provider-name="${escapeHtml(account.provider_name || '')}"
+      data-fill-account-type="${escapeHtml(account.account_type)}"
+      data-fill-owner-type="${escapeHtml(account.owner_type)}"
+      data-fill-current-balance="${escapeHtml((Number(account.current_balance_pence || 0) / 100).toFixed(2))}"
+      data-fill-monthly-contribution="${escapeHtml((Number(account.monthly_contribution_pence || 0) / 100).toFixed(2))}"
+      data-fill-employer-monthly-contribution="${escapeHtml((Number(account.employer_monthly_contribution_pence || 0) / 100).toFixed(2))}"
+      data-fill-available-for-household-cashflow="${Number(account.available_for_household_cashflow) === 1 ? 'true' : 'false'}"
+      data-fill-access-type="${escapeHtml(account.access_type || defaultAccessSettingsForAccount(account.account_type).accessType)}"
+      data-fill-access-date="${escapeHtml(account.access_date || '')}"
+      data-fill-access-age="${escapeHtml(account.access_age ?? '')}"
+      data-fill-access-notes="${escapeHtml(account.access_notes || '')}"
+      data-fill-projected-annual-rate="${escapeHtml(String(Number(account.projected_annual_rate || 0)))}"
+      data-fill-projected-rate-type="${escapeHtml(account.projected_rate_type)}"
+      data-fill-include-lisa-bonus="${Number(account.include_lisa_bonus) === 1 ? 'true' : 'false'}"
+      data-fill-is-active="${Number(account.is_active) === 1 ? 'true' : 'false'}"
+      data-fill-notes="${escapeHtml(account.notes || '')}"`
+    })}
+    <form method="post" action="/savings/accounts/delete" data-confirm="Delete this account or pot?">
+      ${csrfField(ctx)}
+      <input type="hidden" name="id" value="${account.id}">
+      <input type="hidden" name="return_to" value="/savings/accounts">
+      ${actionIconButton({ label: 'Delete account or pot', icon: 'delete', variant: 'delete', type: 'submit' })}
+    </form>
+  </div>`;
+}
+
+function savingsGoalActions(ctx, goal, progress, returnTo) {
+  return `<div class="table-actions">
+    ${actionIconButton({
+      label: 'Edit savings goal',
+      icon: 'edit',
+      variant: 'edit',
+      attributes: `data-open-modal="savings-goal-modal"
+      data-reset-modal="true"
+      data-fill-id="${escapeHtml(goal.id)}"
+      data-fill-name="${escapeHtml(goal.name)}"
+      data-fill-tracking-mode="${escapeHtml(progress.trackingMode)}"
+      data-fill-goal-type="${escapeHtml(goal.goal_type || 'general')}"
+      data-fill-target-amount="${escapeHtml((Number(goal.target_amount_pence || 0) / 100).toFixed(2))}"
+      data-fill-owner-type="${escapeHtml(goal.owner_type)}"
+      data-fill-current-saved-amount="${escapeHtml((Number(goal.current_saved_amount_pence || 0) / 100).toFixed(2))}"
+      data-fill-monthly-contribution="${escapeHtml((Number(goal.monthly_contribution_pence || 0) / 100).toFixed(2))}"
+      data-fill-target-date="${escapeHtml(goal.target_date || '')}"
+      data-fill-status="${escapeHtml(goal.status)}"
+      data-fill-notes="${escapeHtml(goal.notes || '')}"
+      data-fill-linked-account-ids="${escapeHtml(goal.linkedAccounts?.map((account) => account.id).join(',') || '')}"`
+    })}
+    <form method="post" action="/savings/delete" data-confirm="Delete this savings goal?">
+      ${csrfField(ctx)}
+      <input type="hidden" name="id" value="${goal.id}">
+      <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+      ${actionIconButton({ label: 'Delete savings goal', icon: 'delete', variant: 'delete', type: 'submit' })}
+    </form>
+  </div>`;
+}
+
+function savingsAccountMobileCard(account, members, actions = '') {
+  const status = Number(account.is_active) === 1 ? 'Active' : 'Excluded';
+  const monthlyTotalPence = Number(account.monthly_contribution_pence || 0) + Number(account.employer_monthly_contribution_pence || 0);
+  return `<article class="mobile-finance-card ${mobileStatusClass(status)}" data-mobile-sort-card
+    data-sort-name="${escapeHtml(String(account.name || '').toLowerCase())}"
+    data-sort-owner="${escapeHtml(ownerLabel(account.owner_type, members).toLowerCase())}"
+    data-sort-balance="${Number(account.current_balance_pence || 0)}"
+    data-sort-monthly="${monthlyTotalPence}"
+    data-sort-status="${escapeHtml(status.toLowerCase())}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(account.name)}</h3>
+        <p>${escapeHtml(account.provider_name || savingsAccountTypeLabel(account.account_type))}</p>
+      </div>
+      <span class="mobile-card-status ${mobileStatusClass(status)}">${escapeHtml(status)}</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(account.current_balance_pence)}</strong>
+      <span>Current balance</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Type</dt><dd>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</dd></div>
+      <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(account.owner_type, members))}</dd></div>
+      <div><dt>Monthly additions</dt><dd>${monthlyAdditionsCell(account)}</dd></div>
+    </dl>
+    ${actions ? `<div class="mobile-card-actions">${actions}</div>` : ''}
+  </article>`;
+}
+
+function savingsGoalMobileCard(ctx, goal, progress, members, returnTo) {
+  const projected = progress.projectedValueAtTargetDatePence === null ? 'Not projected' : formatCurrency(progress.projectedValueAtTargetDatePence);
+  const shortfallSurplus = progress.projectedShortfallSurplusPence === null ? 'Not projected' : formatSignedCurrency(progress.projectedShortfallSurplusPence);
+  return `<article class="mobile-finance-card ${mobileStatusClass(progress.statusLabel)}" data-mobile-sort-card
+    data-sort-name="${escapeHtml(String(goal.name || '').toLowerCase())}"
+    data-sort-owner="${escapeHtml(ownerLabel(goal.owner_type, members).toLowerCase())}"
+    data-sort-target="${Number(goal.target_amount_pence || 0)}"
+    data-sort-target-date="${escapeHtml(goal.target_date || '9999-12-31')}"
+    data-sort-status="${escapeHtml(String(progress.statusLabel || '').toLowerCase())}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(goal.name)}</h3>
+        <p>${escapeHtml(goal.goal_type === 'retirement' ? 'Retirement' : progress.trackingMode === 'linked_pots' ? 'Linked pots' : 'Manual progress')}</p>
+      </div>
+      <span class="mobile-card-status ${mobileStatusClass(progress.statusLabel)}">${escapeHtml(progress.statusLabel)}</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(progress.currentSavedPence)}</strong>
+      <span>Current saved towards ${formatCurrency(goal.target_amount_pence)}</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(goal.owner_type, members))}</dd></div>
+      <div><dt>Projected at target date</dt><dd>${escapeHtml(projected)}</dd></div>
+      <div><dt>Shortfall / surplus</dt><dd>${escapeHtml(shortfallSurplus)}</dd></div>
+      <div><dt>Linked pots</dt><dd>${escapeHtml(goalLinkedPotsSummary(goal))}</dd></div>
+    </dl>
+    <div class="mobile-card-actions">${savingsGoalActions(ctx, goal, progress, returnTo)}</div>
+  </article>`;
+}
+
+function responsiveFinanceTable(tableHtml, mobileHtml) {
+  return `<div class="desktop-table-wrapper">${tableHtml}</div>
+  <div class="mobile-card-region">${mobileHtml}</div>`;
+}
+
+function mobileSortControl(listId, rowCount, options) {
+  if (rowCount < 2) return '';
+  const selectId = `${listId}-sort`;
+  return `<div class="mobile-sort-control">
+    <label for="${escapeHtml(selectId)}">Sort by</label>
+    <select id="${escapeHtml(selectId)}" data-mobile-card-sort="${escapeHtml(listId)}">
+      ${options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
+function mobileStatusClass(status) {
+  const value = String(status || '').toLowerCase();
+  if (value.includes('excluded') || value.includes('pause') || value.includes('behind')) return 'warning';
+  if (value.includes('end')) return 'ended';
+  return '';
 }
 
 function decorateGoalsWithLinkedAccounts(goals, linkedAccountRows, accounts = []) {

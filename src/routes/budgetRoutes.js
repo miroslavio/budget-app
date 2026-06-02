@@ -603,7 +603,7 @@ function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccount
       return '<p class="empty">No active savings-account contributions are currently included in the budget.</p>';
     }
 
-    return `<table class="data-table">
+    const desktopTable = `<table class="data-table">
       <thead><tr><th>Account or pot</th><th>Owner</th><th>Monthly contribution</th><th>Type</th><th>Projected annual rate</th></tr></thead>
       <tbody>${rows
         .map((account) => `<tr>
@@ -615,6 +615,23 @@ function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccount
         </tr>`)
         .join('')}</tbody>
     </table>`;
+    const totalPence = rows.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0);
+    const mobileCardsId = 'planned-savings-mobile-cards';
+    return responsiveFinanceTable(desktopTable, `
+      <div class="mobile-card-summary">
+        <span>Total planned savings</span>
+        <strong>${formatCurrency(totalPence)} / month</strong>
+      </div>
+      ${mobileSortControl(mobileCardsId, rows.length, [
+        ['amount:desc', 'Monthly contribution, high to low'],
+        ['name:asc', 'Name, A to Z'],
+        ['owner:asc', 'Owner, A to Z'],
+        ['type:asc', 'Type, A to Z']
+      ])}
+      <div id="${mobileCardsId}" class="mobile-finance-card-list">
+        ${rows.map((account) => plannedSavingsAccountMobileCard(account, members)).join('')}
+      </div>
+    `);
   }
 
   const rows = goals.filter((goal) => goal.status === 'active' && Number(goal.monthly_contribution_pence || 0) > 0);
@@ -622,7 +639,7 @@ function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccount
     return `<p class="empty">No planned savings contributions are currently included in the budget. Add a monthly contribution to an active savings goal or start tracking savings accounts and pots.</p>`;
   }
 
-  return `<table class="data-table">
+  const desktopTable = `<table class="data-table">
     <thead><tr><th>Goal</th><th>Owner</th><th>Monthly contribution</th><th>Status</th><th>Target date</th></tr></thead>
     <tbody>${rows
       .map((goal) => `<tr>
@@ -634,6 +651,96 @@ function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccount
       </tr>`)
       .join('')}</tbody>
   </table>`;
+  const totalPence = rows.reduce((sum, goal) => sum + Number(goal.monthly_contribution_pence || 0), 0);
+  const mobileCardsId = 'planned-savings-goals-mobile-cards';
+  return responsiveFinanceTable(desktopTable, `
+    <div class="mobile-card-summary">
+      <span>Total planned savings</span>
+      <strong>${formatCurrency(totalPence)} / month</strong>
+    </div>
+    ${mobileSortControl(mobileCardsId, rows.length, [
+      ['amount:desc', 'Monthly contribution, high to low'],
+      ['name:asc', 'Name, A to Z'],
+      ['owner:asc', 'Owner, A to Z'],
+      ['status:asc', 'Status, A to Z']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${rows.map((goal) => plannedSavingsGoalMobileCard(goal, members)).join('')}
+    </div>
+  `);
+}
+
+function plannedSavingsAccountMobileCard(account, members) {
+  const rate = `${Number(account.projected_annual_rate || 0).toFixed(2).replace(/\.00$/, '')}%`;
+  return `<article class="mobile-finance-card" data-mobile-sort-card
+    data-sort-name="${escapeHtml(String(account.name || '').toLowerCase())}"
+    data-sort-owner="${escapeHtml(ownerLabel(account.owner_type, members).toLowerCase())}"
+    data-sort-type="${escapeHtml(savingsAccountTypeLabel(account.account_type).toLowerCase())}"
+    data-sort-amount="${Number(account.monthly_contribution_pence || 0)}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(account.name)}</h3>
+        <p>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</p>
+      </div>
+      <span class="mobile-card-status">Active</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(Number(account.monthly_contribution_pence || 0))}</strong>
+      <span>Monthly contribution</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(account.owner_type, members))}</dd></div>
+      <div><dt>Projected annual rate</dt><dd>${escapeHtml(rate)}</dd></div>
+    </dl>
+  </article>`;
+}
+
+function plannedSavingsGoalMobileCard(goal, members) {
+  return `<article class="mobile-finance-card" data-mobile-sort-card
+    data-sort-name="${escapeHtml(String(goal.name || '').toLowerCase())}"
+    data-sort-owner="${escapeHtml(ownerLabel(goal.owner_type, members).toLowerCase())}"
+    data-sort-amount="${Number(goal.monthly_contribution_pence || 0)}"
+    data-sort-status="${escapeHtml(String(goal.status || '').toLowerCase())}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(goal.name)}</h3>
+        <p>Manual savings contribution</p>
+      </div>
+      <span class="mobile-card-status">${escapeHtml(goal.status)}</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(Number(goal.monthly_contribution_pence || 0))}</strong>
+      <span>Monthly contribution</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(goal.owner_type, members))}</dd></div>
+      <div><dt>Target date</dt><dd>${escapeHtml(goal.target_date || 'No target date')}</dd></div>
+    </dl>
+  </article>`;
+}
+
+function responsiveFinanceTable(tableHtml, mobileHtml) {
+  return `<div class="desktop-table-wrapper">${tableHtml}</div>
+  <div class="mobile-card-region">${mobileHtml}</div>`;
+}
+
+function mobileSortControl(listId, rowCount, options) {
+  if (rowCount < 2) return '';
+  const selectId = `${listId}-sort`;
+  return `<div class="mobile-sort-control">
+    <label for="${escapeHtml(selectId)}">Sort by</label>
+    <select id="${escapeHtml(selectId)}" data-mobile-card-sort="${escapeHtml(listId)}">
+      ${options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
+function mobileStatusClass(status) {
+  const value = String(status || '').toLowerCase();
+  if (value.includes('pause')) return 'paused';
+  if (value.includes('end')) return 'ended';
+  if (value.includes('warning') || value.includes('behind')) return 'warning';
+  return '';
 }
 
 function plannedSavingsContributionCell(account) {
@@ -663,7 +770,7 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
     0
   );
 
-  return `<table class="data-table category-budget-table spending-budget-table">
+  const desktopTable = `<table class="data-table category-budget-table spending-budget-table">
     <thead><tr><th>Name</th><th>Category</th><th>Type</th><th>Owner / split</th><th>Frequency</th><th>Planned monthly</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${rows
       .map((row) => `<tr class="${row.status === 'Ended' ? 'row-ended' : row.isActive === false ? 'row-paused' : ''}">
@@ -706,6 +813,52 @@ function spendingBudgetsTable(ctx, rows, members, returnTo) {
       </tr>
     </tfoot>
   </table>`;
+  const mobileCardsId = 'planned-spending-mobile-cards';
+  return responsiveFinanceTable(desktopTable, `
+    <div class="mobile-card-summary">
+      <span>Total planned spending</span>
+      <strong>${formatCurrency(totalPlannedMonthlyPence)} / month</strong>
+    </div>
+    ${mobileSortControl(mobileCardsId, rows.length, [
+      ['amount:desc', 'Planned monthly, high to low'],
+      ['name:asc', 'Name, A to Z'],
+      ['category:asc', 'Category, A to Z'],
+      ['type:asc', 'Type, A to Z'],
+      ['status:asc', 'Status, A to Z']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${rows.map((row) => plannedSpendingMobileCard(ctx, row, members, returnTo)).join('')}
+    </div>
+  `);
+}
+
+function plannedSpendingMobileCard(ctx, row, members, returnTo) {
+  const status = row.status || (row.isActive === false ? 'Paused' : 'Active');
+  const typeLabel = row.rowType === 'committed_cost' ? 'Regular' : 'Variable estimate';
+  return `<article class="mobile-finance-card ${mobileStatusClass(status)}" data-mobile-sort-card
+    data-sort-name="${escapeHtml(String(row.name || '').toLowerCase())}"
+    data-sort-category="${escapeHtml(String(row.categoryName || '').toLowerCase())}"
+    data-sort-type="${escapeHtml(typeLabel.toLowerCase())}"
+    data-sort-amount="${Number(row.plannedMonthlyPence || 0)}"
+    data-sort-status="${escapeHtml(status.toLowerCase())}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(row.name)}</h3>
+        <p>${escapeHtml(row.categoryName)} · ${escapeHtml(typeLabel)}</p>
+      </div>
+      <span class="mobile-card-status ${mobileStatusClass(status)}">${escapeHtml(status)}</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(row.plannedMonthlyPence)}</strong>
+      <span>Planned monthly</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Owner / split</dt><dd>${escapeHtml(spendingOwnerLabel(row, members))}</dd></div>
+      <div><dt>Frequency</dt><dd>${escapeHtml(spendingFrequencyLabel(row))}</dd></div>
+      ${spendingTimingSummary(row) ? `<div><dt>Timing</dt><dd>${escapeHtml(spendingTimingSummary(row))}</dd></div>` : ''}
+    </dl>
+    <div class="mobile-card-actions">${spendingBudgetActions(ctx, row, returnTo)}</div>
+  </article>`;
 }
 
 function formDisclosure(itemType, ctx, categories, members, returnTo, options = {}, savingsAccounts = []) {
@@ -1160,7 +1313,7 @@ function incomeItemsTable(ctx, items, members, returnTo = '/budget-plan/income')
   }
 
   const totalPlannedMonthlyPence = items.reduce((total, item) => total + Number(item.monthly_equivalent_pence || 0), 0);
-  return `<table class="data-table income-plan-table">
+  const desktopTable = `<table class="data-table income-plan-table">
     <thead><tr><th>Name</th><th>Owner</th><th>Frequency</th><th>Planned monthly</th><th>Status</th><th class="actions-col">Actions</th></tr></thead>
     <tbody>${items.map((item) => incomeTableRows(ctx, item, members, returnTo)).join('')}</tbody>
     <tfoot>
@@ -1174,6 +1327,22 @@ function incomeItemsTable(ctx, items, members, returnTo = '/budget-plan/income')
       </tr>
     </tfoot>
   </table>`;
+  const mobileCardsId = 'planned-income-mobile-cards';
+  return `${responsiveFinanceTable(desktopTable, `
+    <div class="mobile-card-summary">
+      <span>Total planned income</span>
+      <strong>${formatCurrency(totalPlannedMonthlyPence)} / month</strong>
+    </div>
+    ${mobileSortControl(mobileCardsId, items.length, [
+      ['amount:desc', 'Planned monthly, high to low'],
+      ['name:asc', 'Name, A to Z'],
+      ['owner:asc', 'Owner, A to Z'],
+      ['status:asc', 'Status, A to Z']
+    ])}
+    <div id="${mobileCardsId}" class="mobile-finance-card-list">
+      ${items.map((item) => incomeMobileCard(ctx, item, members, returnTo)).join('')}
+    </div>
+  `)}`;
 }
 
 function incomeTableRows(ctx, item, members, returnTo) {
@@ -1229,6 +1398,73 @@ function incomeTableRows(ctx, item, members, returnTo) {
     <tr id="${escapeHtml(breakdownId)}" class="income-breakdown-row" hidden>
       <td colspan="6">${incomeBreakdownCard(item)}</td>
     </tr>`;
+}
+
+function incomeMobileCard(ctx, item, members, returnTo) {
+  const status = itemStatusLabel(item);
+  const breakdownId = `income-breakdown-mobile-${item.id}`;
+  return `<article class="mobile-finance-card ${mobileStatusClass(status)}" data-mobile-sort-card
+    data-sort-name="${escapeHtml(String(item.name || '').toLowerCase())}"
+    data-sort-owner="${escapeHtml(ownerLabel(item.owner_type, members).toLowerCase())}"
+    data-sort-amount="${Number(item.monthly_equivalent_pence || 0)}"
+    data-sort-status="${escapeHtml(status.toLowerCase())}">
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(item.name)}</h3>
+        <p>${escapeHtml(incomeMethodSummary(item))}</p>
+      </div>
+      <span class="mobile-card-status ${mobileStatusClass(status)}">${escapeHtml(status)}</span>
+    </div>
+    <div class="mobile-card-amount">
+      <strong>${formatCurrency(item.monthly_equivalent_pence)}</strong>
+      <span>Planned monthly</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(item.owner_type, members))}</dd></div>
+      <div><dt>Frequency</dt><dd>${escapeHtml(incomeFrequencySummary(item))}</dd></div>
+    </dl>
+    <div class="mobile-card-actions">
+      ${incomeMobileActions(ctx, item, returnTo, breakdownId)}
+    </div>
+    <div id="${escapeHtml(breakdownId)}" hidden>${incomeBreakdownCard(item)}</div>
+  </article>`;
+}
+
+function incomeMobileActions(ctx, item, returnTo, breakdownId) {
+  return `<div class="table-actions">
+    ${actionIconButton({
+      label: 'View income breakdown',
+      icon: 'view',
+      variant: 'view',
+      attributes: `aria-expanded="false" data-toggle-row="${escapeHtml(breakdownId)}"`
+    })}
+    ${actionIconButton({
+      label: 'Edit income',
+      icon: 'edit',
+      variant: 'edit',
+      attributes: `data-open-modal="income-modal"
+        data-reset-modal="true"
+        ${incomeEditAttributes(item)}`
+    })}
+    <form method="post" action="/budget-item/toggle">
+      ${csrfField(ctx)}
+      <input type="hidden" name="id" value="${item.id}">
+      <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+      <input type="hidden" name="is_active" value="${item.is_active ? '0' : '1'}">
+      ${actionIconButton({
+        label: Number(item.is_active) === 1 ? 'Pause income' : 'Resume income',
+        icon: Number(item.is_active) === 1 ? 'pause' : 'play',
+        variant: Number(item.is_active) === 1 ? 'warn' : 'good',
+        type: 'submit'
+      })}
+    </form>
+    <form method="post" action="/budget-item/delete" data-confirm="Delete this income item?">
+      ${csrfField(ctx)}
+      <input type="hidden" name="id" value="${item.id}">
+      <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+      ${actionIconButton({ label: 'Delete income', icon: 'delete', variant: 'delete', type: 'submit' })}
+    </form>
+  </div>`;
 }
 
 function incomeMethodSummary(item) {

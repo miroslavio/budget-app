@@ -2328,6 +2328,155 @@ progress {
   font-weight: 700;
 }
 
+.mobile-card-region {
+  display: none;
+}
+
+.desktop-table-wrapper {
+  width: 100%;
+}
+
+.mobile-card-summary {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.mobile-card-summary span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.mobile-card-summary strong {
+  font-size: clamp(1.45rem, 8vw, 2rem);
+  letter-spacing: -0.05em;
+}
+
+.mobile-sort-control {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.mobile-sort-control label {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.mobile-finance-card-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.mobile-finance-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.mobile-finance-card.paused,
+.mobile-finance-card.ended,
+.mobile-finance-card.warning {
+  background: rgba(56, 45, 31, 0.035);
+}
+
+.mobile-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.mobile-card-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.mobile-card-head p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.mobile-card-status {
+  align-self: start;
+  min-height: 2rem;
+  padding: 0.32rem 0.65rem;
+  border: 1px solid rgba(31, 111, 91, 0.18);
+  border-radius: 999px;
+  background: rgba(31, 111, 91, 0.08);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.mobile-card-status.paused,
+.mobile-card-status.ended,
+.mobile-card-status.warning {
+  border-color: rgba(157, 79, 29, 0.2);
+  background: rgba(157, 79, 29, 0.1);
+  color: var(--warn);
+}
+
+.mobile-card-amount {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.mobile-card-amount strong {
+  font-size: clamp(1.4rem, 7vw, 1.85rem);
+  letter-spacing: -0.05em;
+}
+
+.mobile-card-amount span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.mobile-card-meta {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.mobile-card-meta div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.42fr) minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.mobile-card-meta dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.mobile-card-meta dd {
+  margin: 0;
+}
+
+.mobile-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.mobile-card-actions .table-actions {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 @media (max-width: 900px) {
   .hero {
     align-items: stretch;
@@ -2506,5 +2655,24 @@ progress {
 
   .forecast-legend {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .desktop-table-wrapper {
+    display: none;
+  }
+
+  .mobile-card-region {
+    display: block;
+  }
+
+  .card {
+    overflow-x: hidden;
+  }
+
+  .mobile-card-meta div {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
   }
 }

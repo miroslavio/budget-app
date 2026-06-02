@@ -123,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireViewToggles();
   wireRowToggles();
   wireSortableTables();
+  wireMobileCardSorts();
   wireCountUps();
   wireECharts();
   wireChartTooltips();
@@ -333,6 +334,45 @@ function wireSortableTables(root = document) {
       });
     });
   });
+}
+
+function wireMobileCardSorts(root = document) {
+  root.querySelectorAll('[data-mobile-card-sort]').forEach((control) => {
+    if (!(control instanceof HTMLSelectElement) || control.dataset.mobileSortBound === 'true') return;
+    const listId = control.dataset.mobileCardSort || '';
+    const list = listId ? root.getElementById?.(listId) || document.getElementById(listId) : null;
+    if (!(list instanceof HTMLElement)) return;
+    control.dataset.mobileSortBound = 'true';
+
+    const sortCards = () => {
+      const [key, direction = 'asc'] = String(control.value || '').split(':');
+      if (!key) return;
+      const cards = [...list.querySelectorAll('[data-mobile-sort-card]')].filter((card) => card instanceof HTMLElement);
+      cards.sort((a, b) => compareMobileCardValues(a, b, key, direction));
+      cards.forEach((card) => list.appendChild(card));
+    };
+
+    control.addEventListener('change', sortCards);
+    sortCards();
+  });
+}
+
+function compareMobileCardValues(a, b, key, direction) {
+  const sortDirection = direction === 'desc' ? 'desc' : 'asc';
+  const first = readMobileCardSortValue(a, key);
+  const second = readMobileCardSortValue(b, key);
+  const result = typeof first === 'number' && typeof second === 'number'
+    ? first - second
+    : String(first).localeCompare(String(second), 'en-GB', { sensitivity: 'base', numeric: true });
+  return sortDirection === 'desc' ? 0 - result : result;
+}
+
+function readMobileCardSortValue(card, key) {
+  if (!(card instanceof HTMLElement)) return '';
+  const value = card.dataset[`sort${capitalise(key)}`] ?? '';
+  const numeric = Number(value);
+  if (value !== '' && Number.isFinite(numeric)) return numeric;
+  return value;
 }
 
 function sortTableByColumn(table, tbody, headers, columnIndex, direction) {
