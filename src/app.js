@@ -10,7 +10,6 @@ import { registerBudgetRoutes } from './routes/budgetRoutes.js';
 import { registerTransactionRoutes } from './routes/transactionRoutes.js';
 import { registerSavingsRoutes } from './routes/savingsRoutes.js';
 import { registerForecastRoutes } from './routes/forecastRoutes.js';
-import { registerReportRoutes } from './routes/reportRoutes.js';
 import { registerCsvRoutes } from './routes/csvRoutes.js';
 import { registerSettingsRoutes } from './routes/settingsRoutes.js';
 
@@ -30,6 +29,7 @@ app.use((req, res, next) => {
 
 const staticAssetMaxAge = process.env.NODE_ENV === 'production' ? '5m' : 0;
 app.use('/assets', express.static(path.join(__dirname, 'assets'), { maxAge: staticAssetMaxAge }));
+app.use('/vendor/echarts', express.static(path.join(__dirname, '..', 'node_modules', 'echarts', 'dist'), { maxAge: staticAssetMaxAge }));
 app.use(express.urlencoded({ extended: false, limit: '2mb' }));
 
 registerAuthRoutes(router, db);
@@ -38,7 +38,6 @@ registerBudgetRoutes(router, db);
 registerTransactionRoutes(router, db);
 registerSavingsRoutes(router, db);
 registerForecastRoutes(router, db);
-registerReportRoutes(router, db);
 registerCsvRoutes(router, db);
 registerSettingsRoutes(router, db);
 
@@ -57,8 +56,24 @@ app.use((error, req, res, next) => {
 });
 
 const port = Number(process.env.PORT || 3000);
-const server = app.listen(port, () => {
-  console.log(`UK Household Budget app listening on http://localhost:${port}`);
+const host = process.env.HOST || '127.0.0.1';
+const server = app.listen(port, host, () => {
+  const address = server.address();
+  const resolvedPort =
+    address && typeof address === 'object' && 'port' in address ? address.port : port;
+  const resolvedHost =
+    address && typeof address === 'object' && 'address' in address ? address.address : host;
+  console.log(`UK Household Budget app listening on http://${resolvedHost}:${resolvedPort}`);
+});
+
+server.on('error', (error) => {
+  console.error('Failed to start UK Household Budget app');
+  console.error(error);
+  process.exitCode = 1;
+});
+
+server.on('close', () => {
+  console.error('UK Household Budget app server closed.');
 });
 
 export { app, server };

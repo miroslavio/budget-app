@@ -7,8 +7,8 @@ import { createTransaction, listTransactions } from '../repositories/transaction
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listSavingsGoalAccountLinks } from '../repositories/savingsGoalAccountRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
-import { actualMonthlySummary, plannedMonthlySummary, varianceSummary } from '../services/budgetService.js';
-import { budgetItemsCsv, generateCsv, plannedSpendingCsv, savingsGoalsCsv, summaryCsv, transactionsCsv } from '../services/csvExportService.js';
+import { plannedMonthlySummary } from '../services/budgetService.js';
+import { budgetItemsCsv, plannedSpendingCsv, savingsGoalsCsv, summaryCsv, transactionsCsv } from '../services/csvExportService.js';
 import { buildCsvImportReview, parseCsv } from '../services/csvImportService.js';
 import { plannedSavingsBudgetItems, savingsGoalMetrics } from '../services/savingsService.js';
 import { buildUnifiedSpendingBudgetRows, plannedSpendingSummary } from '../services/spendingBudgetService.js';
@@ -60,7 +60,6 @@ export function registerCsvRoutes(router, db) {
               <a class="button" href="/export?type=expenses">Budget Plan costs</a>
               <a class="button" href="/export?type=transactions">Actual transactions</a>
               <a class="button" href="/export?type=monthly-summary">Monthly budget summary</a>
-              <a class="button" href="/export?type=variance">Monthly variance report</a>
               <a class="button" href="/export?type=savings">Savings goals</a>
             </div>
           </div>
@@ -360,46 +359,6 @@ export function registerCsvRoutes(router, db) {
         plannedSurplusPence: baseSummary.plannedIncomePence - spendingSummary.totalPlannedSpendingPence - baseSummary.plannedSavingsPence
       }));
     }
-    if (type === 'variance') {
-      const budgetItems = listBudgetItems(db, householdId);
-      const savingsAccounts = listSavingsAccounts(db, householdId, { activeOnly: true });
-      const goals = listSavingsGoals(db, householdId);
-      const items = [
-        ...budgetItems,
-        ...plannedSavingsBudgetItems({
-          goals,
-          accounts: savingsAccounts
-        })
-      ];
-      const basePlanned = plannedMonthlySummary(items, month);
-      const spendingSummary = plannedSpendingSummary({
-        expenseItems: budgetItems.filter((item) => item.item_type === 'expense'),
-        defaultBudgets: listCategoryBudgetDefaults(db, householdId),
-        monthBudgets: [],
-        month
-      });
-      const planned = {
-        ...basePlanned,
-        plannedExpensePence: spendingSummary.totalPlannedSpendingPence,
-        plannedSurplusPence: basePlanned.plannedIncomePence - spendingSummary.totalPlannedSpendingPence - basePlanned.plannedSavingsPence
-      };
-      const actual = actualMonthlySummary(listTransactions(db, householdId, { startDate: range.start, endDate: range.end }));
-      const variance = varianceSummary(planned, actual);
-      return csv(
-        ctx.res,
-        'monthly-variance-report.csv',
-        generateCsv(
-          ['Metric', 'Variance'],
-          [
-            { Metric: 'Income variance', Variance: variance.incomeVariancePence / 100 },
-            { Metric: 'Expense variance', Variance: variance.expenseVariancePence / 100 },
-            { Metric: 'Savings variance', Variance: variance.savingsVariancePence / 100 },
-            { Metric: 'Surplus variance', Variance: variance.surplusVariancePence / 100 }
-          ]
-        )
-      );
-    }
-
     return redirectWithError(ctx.res, '/csv', 'Unknown export type.');
   });
 }

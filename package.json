@@ -12,6 +12,7 @@
     "test": "node --no-warnings=ExperimentalWarning --test src/tests/*.test.js"
   },
   "dependencies": {
+    "echarts": "^6.1.0",
     "express": "^5.2.1",
     "multer": "^2.1.1"
   }

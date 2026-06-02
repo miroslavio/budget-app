@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-05-28-chart-tooltips-table-sorting';
+const ASSET_VERSION = '2026-06-02-dashboard-echarts-flow';
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -43,6 +43,7 @@ export function page(ctx, { title, body, wide = false }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)} · UK Household Budget</title>
   <link rel="stylesheet" href="/assets/styles.css?v=${ASSET_VERSION}">
+  <script src="/vendor/echarts/echarts.min.js?v=${ASSET_VERSION}" defer></script>
   <script src="/assets/app.js?v=${ASSET_VERSION}" defer></script>
 </head>
 <body>
@@ -70,7 +71,6 @@ function nav(ctx) {
     { href: '/transactions', label: 'Actuals', matches: ['/transactions'] },
     { href: '/savings', label: 'Savings & goals', matches: ['/savings'] },
     { href: '/forecast', label: 'Forecast', matches: ['/forecast'] },
-    { href: '/reports', label: 'Reports', matches: ['/reports'] },
     { href: '/csv', label: 'Import/Export', matches: ['/csv', '/csv/preview', '/export'] },
     { href: '/settings', label: 'Settings', matches: ['/settings'] }
   ];

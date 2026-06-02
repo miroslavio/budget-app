@@ -259,6 +259,126 @@ export function savingsContributionChart(projection, { emptyMessage = 'No projec
   </div>`;
 }
 
+export function incomeAllocationSankeyChart({
+  plannedIncomePence = 0,
+  spendingPence = 0,
+  savingsPence = 0,
+  retirementPence = 0,
+  availablePence = 0,
+  shortfallPence = 0,
+  emptyMessage = 'No planned income to allocate yet.'
+} = {}) {
+  const income = Math.max(0, Number(plannedIncomePence || 0));
+  const spending = Math.max(0, Number(spendingPence || 0));
+  const savings = Math.max(0, Number(savingsPence || 0));
+  const retirement = Math.max(0, Number(retirementPence || 0));
+  const available = Math.max(0, Number(availablePence || 0));
+  const targetAllocation = spending + savings + retirement;
+  const shortfall = Math.max(0, Number(shortfallPence || 0), targetAllocation - income);
+  const totalAllocation = targetAllocation + (shortfall > 0 ? 0 : available);
+  const allocated = totalAllocation + shortfall;
+  if (income <= 0 && allocated <= 0) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const planRequiresLabel = 'Plan requires';
+  const plannedSpendingLabel = 'Planned spending';
+  const nodes = [
+    ...(income > 0 ? [allocationNode('Planned income', income, income, '#1f6f5b')] : []),
+    ...(shortfall > 0 ? [allocationNode('Shortfall', shortfall, income, '#a7342d')] : []),
+    allocationNode(planRequiresLabel, totalAllocation, income, '#7f7668', { showPercentage: false }),
+    ...(spending > 0 ? [allocationNode(plannedSpendingLabel, spending, income, '#d69a50')] : []),
+    ...(savings > 0 ? [allocationNode('Savings', savings, income, '#2f8f77')] : []),
+    ...(retirement > 0 ? [allocationNode('Retirement', retirement, income, '#6875c7')] : []),
+    ...(shortfall === 0 && available > 0 ? [allocationNode('Available after plan', available, income, '#37a98b')] : [])
+  ];
+  const links = [
+    income > 0 ? sankeyLink('Planned income', planRequiresLabel, shortfall > 0 ? income : totalAllocation, income) : null,
+    shortfall > 0 ? sankeyLink('Shortfall', planRequiresLabel, shortfall, income) : null,
+    spending > 0 ? sankeyLink(planRequiresLabel, plannedSpendingLabel, spending, income) : null,
+    savings > 0 ? sankeyLink(planRequiresLabel, 'Savings', savings, income) : null,
+    retirement > 0 ? sankeyLink(planRequiresLabel, 'Retirement', retirement, income) : null,
+    shortfall === 0 && available > 0 ? sankeyLink(planRequiresLabel, 'Available after plan', available, income) : null
+  ].filter(Boolean);
+
+  const chartId = `income-allocation-${Math.random().toString(36).slice(2)}`;
+  const chartConfig = {
+    textStyle: {
+      fontFamily: 'inherit',
+      color: '#17211b'
+    },
+    aria: {
+      enabled: true,
+      description: 'Income allocation chart showing planned income and any shortfall funding the plan requirement, then flowing to planned spending, savings, retirement, and available money where applicable.'
+    },
+    animation: true,
+    animationDuration: 650,
+    tooltip: {
+      trigger: 'item'
+    },
+    series: [
+      {
+        type: 'sankey',
+        emphasis: { focus: 'adjacency' },
+        nodeAlign: 'justify',
+        nodeGap: 14,
+        nodeWidth: 14,
+        draggable: false,
+        layoutIterations: 32,
+        data: nodes,
+        links,
+        lineStyle: {
+          color: 'gradient',
+          curveness: 0.42,
+          opacity: 0.38
+        },
+        label: {
+          color: '#17211b',
+          fontWeight: 700,
+          fontSize: 12,
+          lineHeight: 16,
+          width: 165,
+          overflow: 'break'
+        }
+      }
+    ]
+  };
+
+  return `<div class="echarts-sankey-block">
+    <div id="${chartId}" class="echarts-sankey" role="img" aria-label="Income allocation chart" data-echarts-chart data-chart-type="income-allocation" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>
+    ${shortfall > 0 ? `<div class="shortfall-warning" role="status">
+      <strong>Shortfall after plan</strong>
+      <span>Plan exceeds income by ${formatCurrency(shortfall)}.</span>
+    </div>` : ''}
+  </div>`;
+}
+
+function allocationNode(name, valuePence, incomePence, color, { showPercentage = true } = {}) {
+  return {
+    name,
+    valuePence: Number(valuePence || 0),
+    percentageOfIncome: percentOfIncome(valuePence, incomePence),
+    displayLabel: allocationLabel(name, valuePence, incomePence, { showPercentage }),
+    itemStyle: { color }
+  };
+}
+
+function allocationLabel(name, valuePence, incomePence, { showPercentage = true } = {}) {
+  const percentage = percentOfIncome(valuePence, incomePence);
+  return [
+    name,
+    showPercentage ? `${formatCurrency(valuePence)} · ${percentage}%` : formatCurrency(valuePence)
+  ].join('\n');
+}
+
+function sankeyLink(source, target, valuePence, incomePence) {
+  return {
+    source,
+    target,
+    value: Number((Number(valuePence || 0) / 100).toFixed(2)),
+    valuePence: Number(valuePence || 0),
+    percentageOfIncome: percentOfIncome(valuePence, incomePence)
+  };
+}
+
 function buildSavingsProjectionSeries(months) {
   if (!months.length) return [];
   const startingBalancePence = Number(months[0].openingBalancePence || 0);
@@ -339,6 +459,11 @@ function buildCurrencyTicks(maxValue, count = 5) {
     ticks.push(value);
   }
   return ticks;
+}
+
+function percentOfIncome(value, income) {
+  if (!income) return 0;
+  return Math.round((Number(value || 0) / Number(income || 1)) * 100);
 }
 
 function niceCurrencyStep(value) {

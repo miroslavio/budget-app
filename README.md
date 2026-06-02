@@ -30,11 +30,9 @@ It is useful as a planning tool even if you never record actual transactions.
 - `Forecast`
   - `Cashflow forecast` based on spendable balances and the current Budget Plan
   - `Savings projection` based on balances, additions, top-ups, and growth assumptions
-- `Reports`
-  - planned vs actual and other period analysis
 - `Import/Export`
   - CSV transaction import
-  - exports for Budget Plan, actuals, savings, and reports
+  - exports for Budget Plan, actuals, savings, and monthly summaries
 - `Settings`
   - `Household & members`
   - `Expense categories`
@@ -62,7 +60,7 @@ Use it if you want to:
 
 - manually record actual transactions
 - import bank statements by CSV
-- compare your plan with reality on the Dashboard and in Reports
+- compare your plan with reality on the Dashboard
 
 ### Savings & goals
 
@@ -213,7 +211,6 @@ src/
     csvRoutes.js
     dashboardRoutes.js
     forecastRoutes.js
-    reportRoutes.js
     savingsRoutes.js
     settingsRoutes.js
     transactionRoutes.js
@@ -247,7 +244,6 @@ src/
     formErrors.js
     forms.js
     html.js
-    reportViews.js
     setupChecklist.js
 config/
 data/

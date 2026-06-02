@@ -123,6 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
   wireViewToggles();
   wireRowToggles();
   wireSortableTables();
+  wireCountUps();
+  wireECharts();
   wireChartTooltips();
   wireNumberInputs();
   wireSplitSliders();
@@ -136,6 +138,166 @@ document.addEventListener('DOMContentLoaded', () => {
   wireModals();
   wireMobileNav();
 });
+
+function wireECharts(root = document) {
+  if (!window.echarts) return;
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const compactMedia = window.matchMedia?.('(max-width: 980px)');
+
+  root.querySelectorAll('[data-echarts-chart]').forEach((element) => {
+    if (!(element instanceof HTMLElement) || element.dataset.echartsBound === 'true') return;
+    element.dataset.echartsBound = 'true';
+
+    let config;
+    try {
+      config = JSON.parse(element.dataset.chartConfig || '{}');
+    } catch {
+      return;
+    }
+
+    const chart = window.echarts.init(element, null, { renderer: 'svg' });
+    const render = () => {
+      const compact = Boolean(compactMedia?.matches);
+      const option = element.dataset.chartType === 'income-allocation'
+        ? incomeAllocationChartOption(config, { compact, reducedMotion: prefersReducedMotion })
+        : { ...config, animation: !prefersReducedMotion };
+      chart.setOption(option, true);
+      chart.resize();
+    };
+
+    render();
+
+    if (compactMedia?.addEventListener) {
+      compactMedia.addEventListener('change', render);
+    }
+
+    if ('ResizeObserver' in window) {
+      const observer = new ResizeObserver(() => chart.resize());
+      observer.observe(element);
+    } else {
+      window.addEventListener('resize', () => chart.resize());
+    }
+  });
+}
+
+function incomeAllocationChartOption(config, { compact = false, reducedMotion = false } = {}) {
+  const option = {
+    ...config,
+    animation: !reducedMotion,
+    tooltip: {
+      trigger: 'item',
+      renderMode: 'richText',
+      formatter(params) {
+        const data = params.data || {};
+        if (params.dataType !== 'edge') {
+          return data.displayLabel || params.name || '';
+        }
+        return [
+          `${data.source || ''} -> ${data.target || ''}`,
+          formatCurrencyFromPence(Number(data.valuePence || 0)),
+          `${Number(data.percentageOfIncome || 0)}% of planned income`
+        ].join('\n');
+      }
+    }
+  };
+
+  if (compact) {
+    option.series = (option.series || []).map((series) => ({
+      ...series,
+      nodeGap: 12,
+      nodeWidth: 14,
+      left: 8,
+      right: 8,
+      top: 10,
+      bottom: 10,
+      orient: 'vertical',
+      label: {
+        ...(series.label || {}),
+        formatter(params) {
+          return params.data?.displayLabel || params.name || '';
+        },
+        fontSize: 12,
+        lineHeight: 15,
+        position: 'inside',
+        overflow: 'break',
+        width: 118
+      }
+    }));
+  } else {
+    option.series = (option.series || []).map((series) => ({
+      ...series,
+      left: 20,
+      right: 165,
+      top: 20,
+      bottom: 18,
+      label: {
+        ...(series.label || {}),
+        formatter(params) {
+          return params.data?.displayLabel || params.name || '';
+        },
+        position: 'right',
+        width: 148,
+        overflow: 'break'
+      }
+    }));
+  }
+
+  return option;
+}
+
+function wireCountUps(root = document) {
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  root.querySelectorAll('[data-countup-value]').forEach((element) => {
+    if (!(element instanceof HTMLElement) || element.dataset.countupBound === 'true') return;
+    element.dataset.countupBound = 'true';
+    const targetValue = Number(element.dataset.countupValue || 0);
+    const kind = element.dataset.countupKind || 'currency';
+    const delay = Math.max(0, Number(element.dataset.countupDelay || 0));
+
+    if (!Number.isFinite(targetValue) || prefersReducedMotion) {
+      element.textContent = formatCountupValue(targetValue, kind);
+      return;
+    }
+
+    const duration = 680;
+    const start = performance.now();
+    const fromValue = 0;
+
+    const tick = (now) => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const currentValue = fromValue + (targetValue - fromValue) * eased;
+      element.textContent = formatCountupValue(currentValue, kind, progress < 1);
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        element.textContent = formatCountupValue(targetValue, kind);
+      }
+    };
+
+    window.setTimeout(() => requestAnimationFrame(tick), delay);
+  });
+}
+
+function formatCountupValue(value, kind, isAnimating = false) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  switch (kind) {
+    case 'integer':
+      return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 }).format(Math.round(safeValue));
+    case 'percentage':
+      return `${Math.round(safeValue)}%`;
+    case 'currency':
+    default: {
+      const amount = safeValue / 100;
+      return new Intl.NumberFormat('en-GB', {
+        style: 'currency',
+        currency: 'GBP',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(isAnimating ? amount : Math.round(safeValue) / 100);
+    }
+  }
+}
 
 function wireSortableTables(root = document) {
   root.querySelectorAll('table.data-table:not(.chart-data-table)').forEach((table) => {

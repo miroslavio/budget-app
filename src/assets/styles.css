@@ -40,6 +40,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(31, 111, 91, 0.18), transparent 34rem),
     linear-gradient(135deg, #f8f0df 0%, #f3eadc 42%, #edf1e6 100%);
@@ -411,15 +412,22 @@ h2 {
   display: grid;
   gap: 1rem;
   margin: 1rem 0;
+  min-width: 0;
+}
+
+.grid > * {
+  min-width: 0;
 }
 
 .dashboard-layout {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .dashboard-layout > * {
   margin: 0;
+  min-width: 0;
 }
 
 .budget-plan-layout {
@@ -502,6 +510,11 @@ h2 {
   padding: 1.2rem;
   overflow-x: auto;
   width: 100%;
+  min-width: 0;
+}
+
+.chart-card {
+  overflow-x: hidden;
 }
 
 .card-heading {
@@ -510,6 +523,8 @@ h2 {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .card-heading.compact {
@@ -613,6 +628,180 @@ h2 {
   font-size: clamp(1rem, 2vw, 1.25rem);
   letter-spacing: -0.02em;
   line-height: 1.25;
+}
+
+.dashboard-analysis-grid {
+  align-items: stretch;
+}
+
+.dashboard-actuals-grid {
+  margin-top: 1rem;
+}
+
+.dashboard-insights-card {
+  display: grid;
+  align-content: start;
+}
+
+.dashboard-forecast-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.bar-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.bar-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.bar-row-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.bar-row-label strong {
+  font-size: 0.98rem;
+}
+
+.bar-row-label span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.bar-progress {
+  display: block;
+  width: 100%;
+  height: 0.9rem;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(56, 45, 31, 0.08);
+}
+
+.bar-progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: rgba(56, 45, 31, 0.08);
+}
+
+.bar-progress::-webkit-progress-value {
+  border-radius: 999px;
+  transition: inline-size 320ms ease;
+}
+
+.bar-progress::-moz-progress-bar {
+  border-radius: 999px;
+}
+
+.bar-split {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.bar-split-row {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 0.28fr) minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.bar-split-row > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.bar-progress.spending::-webkit-progress-value {
+  background: linear-gradient(90deg, rgba(212, 134, 60, 0.95), rgba(223, 166, 84, 0.95));
+}
+
+.bar-progress.spending::-moz-progress-bar {
+  background: linear-gradient(90deg, rgba(212, 134, 60, 0.95), rgba(223, 166, 84, 0.95));
+}
+
+.bar-progress.savings::-webkit-progress-value {
+  background: linear-gradient(90deg, rgba(31, 111, 91, 0.95), rgba(48, 144, 119, 0.95));
+}
+
+.bar-progress.savings::-moz-progress-bar {
+  background: linear-gradient(90deg, rgba(31, 111, 91, 0.95), rgba(48, 144, 119, 0.95));
+}
+
+.bar-progress.top-up::-webkit-progress-value {
+  background: linear-gradient(90deg, rgba(73, 94, 176, 0.94), rgba(108, 126, 209, 0.92));
+}
+
+.bar-progress.top-up::-moz-progress-bar {
+  background: linear-gradient(90deg, rgba(73, 94, 176, 0.94), rgba(108, 126, 209, 0.92));
+}
+
+.bar-progress:focus-visible {
+  outline: 2px solid rgba(23, 33, 27, 0.38);
+  outline-offset: 3px;
+}
+
+.bar-svg {
+  display: block;
+  width: 100%;
+  height: 0.9rem;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bar-svg-track {
+  fill: rgba(56, 45, 31, 0.08);
+}
+
+.bar-svg-fill.spending {
+  fill: rgb(212, 134, 60);
+}
+
+.bar-svg-fill.savings {
+  fill: rgb(31, 111, 91);
+}
+
+.bar-svg-fill.top-up {
+  fill: rgb(73, 94, 176);
+}
+
+.bar-svg:focus-visible {
+  outline: 2px solid rgba(23, 33, 27, 0.38);
+  outline-offset: 3px;
+}
+
+@keyframes dashboardGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes dashboardFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-progress::-webkit-progress-value {
+    transition: none;
+  }
 }
 
 .context-value {
@@ -1937,6 +2126,37 @@ progress {
   gap: 1rem;
 }
 
+.echarts-sankey-block {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.echarts-sankey {
+  width: 100%;
+  max-width: 100%;
+  height: 320px;
+  min-height: 300px;
+  overflow: hidden;
+}
+
+.shortfall-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(167, 52, 45, 0.24);
+  background: rgba(167, 52, 45, 0.08);
+  color: var(--bad);
+}
+
+.shortfall-warning strong {
+  color: var(--bad);
+}
+
 .cashflow-chart {
   width: 100%;
   height: auto;
@@ -2237,6 +2457,14 @@ progress {
 
   .budget-summary-row {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .echarts-sankey {
+    height: 400px;
   }
 
   .setup-step {

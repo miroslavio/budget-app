@@ -9,12 +9,13 @@ import { listCategoryBudgets, listCategoryBudgetDefaults } from '../repositories
 import { yearlyItems } from '../services/budgetService.js';
 import { buildMonthlyForecast, deriveForecastStartingBalance, spendableHouseholdBalancePence } from '../services/forecastService.js';
 import { buildPeriodReport } from '../services/reportService.js';
+import { savingsAccountTypeLabel } from '../services/savingsAccountService.js';
 import { savingsGoalMetrics, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { buildFlexibleSpendingByMonth, plannedSpendingCategorySeries } from '../services/spendingBudgetService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, movementStat, page, stat, ownerLabel, varianceLabel } from '../views/html.js';
-import { pieChart } from '../views/charts.js';
+import { incomeAllocationSankeyChart } from '../views/charts.js';
 import { renderSetupChecklist } from '../views/setupChecklist.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
@@ -24,6 +25,7 @@ export function registerDashboardRoutes(router, db) {
     if (!ensureAuthenticated(ctx)) return;
     const selectedMonth = ctx.query.get('month') || currentMonth();
     const selectedPeriod = ctx.query.get('period') || 'this_month';
+    const selectedFlowOwner = ctx.query.get('flow_owner') || 'household';
     const household = findHouseholdById(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, ctx.user.household_id);
     const items = listActiveBudgetItems(db, household.id);
@@ -86,11 +88,20 @@ export function registerDashboardRoutes(router, db) {
       planningItems,
       household,
       savingsAccounts,
-      flexibleSpendingByMonth: report.flexibleSpendingByMonth,
       plannedFlexibleSpendingPence: report.plannedFlexibleSpendingPence,
       plannedExpenseSeries,
+      forecastData: buildDashboardForecastData({
+        planningItems,
+        household,
+        savingsAccounts,
+        period,
+        expenseItems: items,
+        categoryBudgetDefaults,
+        categoryBudgetOverrides
+      }),
       period,
-      selectedMonth
+      selectedMonth,
+      selectedFlowOwner
     });
 
     html(
@@ -153,11 +164,12 @@ function dashboardStateContent({
   planningItems,
   household,
   savingsAccounts,
-  flexibleSpendingByMonth,
   plannedFlexibleSpendingPence,
   plannedExpenseSeries,
+  forecastData,
   period,
-  selectedMonth
+  selectedMonth,
+  selectedFlowOwner
 }) {
   if (!budgetPlanReady) {
     return `<div class="dashboard-state setup-state">
@@ -170,49 +182,47 @@ function dashboardStateContent({
   }
 
   if (!hasActualData) {
-    const yearlyCostItems = yearlyItems(items);
     return `<div class="dashboard-state plan-ready-state">
-      ${plannedSummaryCards(planned, plannedFlexibleSpendingPence)}
-      ${forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpendingByMonth, period)}
-      <section class="grid two">
-        ${yearlyCostItems.length ? `<div class="card">
-          <h2>Yearly costs smoothed monthly</h2>
-          ${yearlyTable(yearlyCostItems)}
-        </div>` : ''}
-        ${ownershipSnapshotCard(planned, members, { fullWidth: !yearlyCostItems.length })}
-      </section>
-      ${goals.length ? `<section class="card">
-        <h2>Savings goal progress</h2>
-        <div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>
-      </section>` : ''}
-      <section class="card plan-empty-state">
-        <h2>Want to compare your plan with reality?</h2>
-        <p>Record or import actuals to unlock planned versus actual reporting.</p>
-        <div class="button-list">
-          <a class="button" href="/transactions">Start tracking actuals</a>
-          <a class="button secondary" href="/csv">Import bank statement</a>
-        </div>
-      </section>
+      ${planningDashboardContent({
+        planned,
+        members,
+        goals,
+        savingsAccounts,
+        items,
+        plannedFlexibleSpendingPence,
+        plannedExpenseSeries,
+        forecastData,
+        hasActualData: false,
+        selectedFlowOwner,
+        period,
+        selectedMonth
+      })}
+      ${optionalActualsPrompt()}
     </div>`;
   }
 
   return `<div class="dashboard-state active-state">
-    ${plannedSummaryCards(planned, plannedFlexibleSpendingPence)}
-    ${actualSummaryCards(actual)}
-    ${forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpendingByMonth, period)}
-    ${categoryBreakdownCard(plannedExpenseSeries)}
-    <section class="grid two">
-      ${varianceSummaryCard(variance)}
-      ${yearlyItems(items).length ? `<div class="card">
-        <h2>Yearly costs in your plan</h2>
-        ${yearlyTable(yearlyItems(items))}
-      </div>` : ''}
+    ${planningDashboardContent({
+      planned,
+      members,
+      goals,
+      savingsAccounts,
+      items,
+      plannedFlexibleSpendingPence,
+      plannedExpenseSeries,
+      forecastData,
+      hasActualData: true,
+      selectedFlowOwner,
+      period,
+      selectedMonth
+    })}
+    <section class="card">
+      <h2>Plan vs actual</h2>
+      ${actualSummaryCards(actual)}
+      <div class="dashboard-actuals-grid">
+        ${varianceSummaryCard(variance)}
+      </div>
     </section>
-    ${goals.length ? `<section class="card">
-      <h2>Savings goal progress</h2>
-      <div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>
-    </section>` : ''}
-    ${ownershipSnapshotCard(planned, members)}
   </div>`;
 }
 
@@ -226,12 +236,259 @@ function plannedSummaryCards(planned, plannedFlexibleSpendingPence = 0) {
   </section>`;
 }
 
+function planningDashboardContent({
+  planned,
+  members,
+  goals,
+  savingsAccounts,
+  items,
+  plannedFlexibleSpendingPence,
+  plannedExpenseSeries,
+  forecastData,
+  hasActualData,
+  selectedFlowOwner,
+  period,
+  selectedMonth
+}) {
+  const yearlyCostItems = yearlyItems(items);
+  const spendingPressure = spendingPressureRows(plannedExpenseSeries);
+  const savingsAllocation = savingsAllocationRows(savingsAccounts, planned);
+  const requestedOwners = dashboardFlowOwners(members, selectedFlowOwner);
+  const activeFlowOwner = requestedOwners.some((owner) => owner.active) ? selectedFlowOwner : 'household';
+  const flowOwners = dashboardFlowOwners(members, activeFlowOwner);
+  const flowPlanned = plannedForFlowOwner(planned, activeFlowOwner, members);
+  const retirementAllocationPence = retirementAllocationForOwner(savingsAccounts, activeFlowOwner, members);
+  const moneyFlow = moneyFlowSegments(flowPlanned, retirementAllocationPence);
+
+  return `${plannedSummaryCards(planned, plannedFlexibleSpendingPence)}
+    ${householdMoneyFlowCard(flowPlanned, moneyFlow, flowOwners, period, selectedMonth)}
+    <section class="grid two dashboard-analysis-grid">
+      ${spendingPressureCard(spendingPressure)}
+      ${savingsAllocationCard(savingsAllocation)}
+    </section>
+    <section class="grid two dashboard-analysis-grid">
+      ${insightsCard({
+        planned,
+        spendingPressure,
+        yearlyCostItems,
+        forecastData,
+        hasActualData
+      })}
+      ${goals.length ? `<section class="card">
+        <h2>Savings goal progress</h2>
+        <div class="goal-list">${goals.map((goal) => goalProgress(goal)).join('')}</div>
+      </section>` : ''}
+    </section>`;
+}
+
 function actualSummaryCards(actual) {
   return `<section class="grid four">
     ${stat('Actual income', actual.actualIncomePence, 'good')}
     ${stat('Actual spending', actual.actualExpensePence)}
     ${stat('Actual savings', actual.actualSavingsPence)}
     ${movementStat('Actual monthly movement', actual.actualSurplusPence, 'Actual income minus actual spending and actual savings movements for the selected period.')}
+  </section>`;
+}
+
+function moneyFlowSegments(planned, retirementAllocationPence = 0) {
+  const income = Math.max(0, Number(planned.plannedIncomePence || 0));
+  const spending = Math.max(0, Number(planned.plannedExpensePence || 0));
+  const totalSavings = Math.max(0, Number(planned.plannedSavingsPence || 0));
+  const retirement = Math.max(0, Math.min(totalSavings, Number(retirementAllocationPence || 0)));
+  const savings = Math.max(0, totalSavings - retirement);
+  const available = Math.max(0, Number(planned.plannedSurplusPence || 0));
+  const shortfall = Math.max(0, 0 - Number(planned.plannedSurplusPence || 0));
+  const safeIncome = income || 1;
+  return [
+    { key: 'spending', label: 'Planned spending', amountPence: spending, share: spending / safeIncome, tone: 'spending', icon: '↗', note: 'Regular costs and variable estimates' },
+    { key: 'savings', label: 'Savings', amountPence: savings, share: savings / safeIncome, tone: 'saving', icon: '◎', note: 'Non-retirement planned savings' },
+    { key: 'retirement', label: 'Retirement', amountPence: retirement, share: retirement / safeIncome, tone: 'retirement', icon: '◌', note: 'Pension and long-term saving' },
+    shortfall > 0
+      ? { key: 'shortfall', label: 'Shortfall after plan', amountPence: shortfall, share: shortfall / safeIncome, tone: 'bad', icon: '!', note: 'Plan exceeds income' }
+      : { key: 'available', label: 'Available after plan', amountPence: available, share: available / safeIncome, tone: 'good', icon: '✓', note: 'Unallocated cash remaining' }
+  ];
+}
+
+function householdMoneyFlowCard(planned, segments, owners, period, selectedMonth) {
+  const spending = Number(segments.find((segment) => segment.key === 'spending')?.amountPence || 0);
+  const savings = Number(segments.find((segment) => segment.key === 'savings')?.amountPence || 0);
+  const retirement = Number(segments.find((segment) => segment.key === 'retirement')?.amountPence || 0);
+  const available = Number(segments.find((segment) => segment.key === 'available')?.amountPence || 0);
+  const shortfall = Number(segments.find((segment) => segment.key === 'shortfall')?.amountPence || 0);
+  return `<section class="card chart-card">
+    <div class="card-heading compact">
+      <div>
+        <h2>Household money flow</h2>
+      </div>
+      ${dashboardFlowOwnerPills(owners, period, selectedMonth)}
+    </div>
+    ${incomeAllocationSankeyChart({
+      plannedIncomePence: planned.plannedIncomePence,
+      spendingPence: spending,
+      savingsPence: savings,
+      retirementPence: retirement,
+      availablePence: available,
+      shortfallPence: shortfall
+    })}
+  </section>`;
+}
+
+function spendingPressureRows(series = []) {
+  return [...series]
+    .filter((row) => Number(row.value || 0) > 0)
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, 6)
+    .map((row) => ({
+      label: row.label,
+      valuePence: Number(row.value || 0)
+    }));
+}
+
+function spendingPressureCard(rows) {
+  if (!rows.length) return '';
+  const maxValue = Math.max(...rows.map((row) => row.valuePence), 1);
+  return `<section class="card">
+    <h2>Spending pressure</h2>
+    <div class="bar-list">
+      ${rows
+        .map((row) => `<div class="bar-row">
+          <div class="bar-row-label">
+            <strong>${escapeHtml(row.label)}</strong>
+            <span>${formatCurrency(row.valuePence)}</span>
+          </div>
+          ${dashboardBarSvg({
+            valuePence: row.valuePence,
+            maxValuePence: maxValue,
+            tone: 'spending',
+            label: `${row.label}: ${formatCurrency(row.valuePence)}`,
+            tooltip: `${row.label}\nExpected planned spending: ${formatCurrency(row.valuePence)}`
+          })}
+        </div>`)
+        .join('')}
+    </div>
+  </section>`;
+}
+
+function savingsAllocationRows(accounts, planned) {
+  const rows = accounts
+    .filter((account) => Number(account.is_active) === 1)
+    .map((account) => ({
+      label: account.name,
+      valuePence: Number(account.monthly_contribution_pence || 0),
+      topUpPence: Number(account.account_type === 'pension' ? account.employer_monthly_contribution_pence || 0 : 0),
+      typeLabel: savingsAccountTypeLabel(account.account_type)
+    }))
+    .filter((row) => row.valuePence > 0 || row.topUpPence > 0)
+    .sort((a, b) => (b.valuePence + b.topUpPence) - (a.valuePence + a.topUpPence));
+
+  if (rows.length) return rows;
+  if (Number(planned.plannedSavingsPence || 0) > 0) {
+    return [{ label: 'Planned savings', valuePence: Number(planned.plannedSavingsPence || 0), topUpPence: 0, typeLabel: 'Savings' }];
+  }
+  return [];
+}
+
+function savingsAllocationCard(rows) {
+  if (!rows.length) return '';
+  const maxValue = Math.max(...rows.map((row) => row.valuePence + row.topUpPence), 1);
+  return `<section class="card">
+    <h2>Savings allocation</h2>
+    <div class="bar-list">
+      ${rows
+        .map((row) => {
+          const total = row.valuePence + row.topUpPence;
+          const incomeTooltip = `${row.label}\nFrom household income: ${formatCurrency(row.valuePence)}\nTotal to pot: ${formatCurrency(total)}`;
+          const topUpTooltip = `${row.label}\nEmployer contributions: ${formatCurrency(row.topUpPence)}\nTotal to pot: ${formatCurrency(total)}`;
+          return `<div class="bar-row">
+            <div class="bar-row-label">
+              <strong>${escapeHtml(row.label)}</strong>
+              <span>${formatCurrency(total)}</span>
+            </div>
+            <div class="bar-split">
+              ${row.valuePence > 0 ? `<div class="bar-split-row">
+                <span>From income</span>
+                ${dashboardBarSvg({
+                  valuePence: row.valuePence,
+                  maxValuePence: maxValue,
+                  tone: 'savings',
+                  label: `${row.label} from income: ${formatCurrency(row.valuePence)}`,
+                  tooltip: incomeTooltip
+                })}
+              </div>` : ''}
+              ${row.topUpPence > 0 ? `<div class="bar-split-row">
+                <span>Employer contribution</span>
+                ${dashboardBarSvg({
+                  valuePence: row.topUpPence,
+                  maxValuePence: maxValue,
+                  tone: 'top-up',
+                  label: `${row.label} employer contribution: ${formatCurrency(row.topUpPence)}`,
+                  tooltip: topUpTooltip
+                })}
+              </div>` : ''}
+            </div>
+            <small class="plan-stat-note">${escapeHtml(row.typeLabel)}${row.topUpPence ? ` · Employer ${formatCurrency(row.topUpPence)}` : ''}</small>
+          </div>`;
+        })
+        .join('')}
+    </div>
+  </section>`;
+}
+
+function dashboardBarSvg({ valuePence, maxValuePence, tone, label, tooltip }) {
+  const safeMax = Math.max(1, Number(maxValuePence || 1));
+  const safeValue = Math.max(0, Number(valuePence || 0));
+  const width = Math.min(100, Math.max(0, (safeValue / safeMax) * 100)).toFixed(2);
+  const safeTone = ['spending', 'savings', 'top-up'].includes(tone) ? tone : 'savings';
+  return `<svg class="bar-svg ${escapeHtml(safeTone)}" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" tabindex="0" aria-label="${escapeHtml(label)}" data-chart-tooltip="${escapeHtml(tooltip)}">
+    <rect class="bar-svg-track" x="0" y="0" width="100" height="10" rx="5"></rect>
+    <rect class="bar-svg-fill ${escapeHtml(safeTone)}" x="0" y="0" width="${width}" height="10" rx="5"></rect>
+  </svg>`;
+}
+
+function insightsCard({ planned, spendingPressure, yearlyCostItems, forecastData, hasActualData }) {
+  const insights = [];
+  const surplus = Number(planned.plannedSurplusPence || 0);
+  if (surplus < 0) {
+    insights.push(`You are over-allocated by ${formatCurrency(Math.abs(surplus))}.`);
+  } else {
+    insights.push(`You have ${formatCurrency(surplus)} available after the current plan.`);
+  }
+  if (Number(planned.plannedIncomePence || 0) > 0) {
+    insights.push(`Planned savings are ${Math.round((Number(planned.plannedSavingsPence || 0) / Number(planned.plannedIncomePence || 1)) * 100)}% of income.`);
+  }
+  if (spendingPressure[0]) {
+    insights.push(`${spendingPressure[0].label} is your largest planned cost at ${formatCurrency(spendingPressure[0].valuePence)}.`);
+  }
+  const yearlyMonthly = yearlyItemsLabel(yearlyMonthlyEquivalentPence(yearlyCostItems));
+  if (yearlyCostItems.length) {
+    insights.push(`Yearly costs add ${yearlyMonthly.replace('/month from annual items', '/month')} to the plan.`);
+  }
+  if (forecastData?.forecast?.length) {
+    insights.push(
+      forecastData.negativeMonthsCount
+        ? `The cashflow forecast drops below zero in ${forecastData.negativeMonthsCount} month${forecastData.negativeMonthsCount === 1 ? '' : 's'}.`
+        : 'The cashflow forecast remains positive across the selected period.'
+    );
+  }
+  if (!hasActualData) {
+    insights.push('No actuals recorded: showing a plan-only dashboard.');
+  }
+  return `<section class="card dashboard-insights-card">
+    <h2>Insights</h2>
+    <ul class="bullet-list">
+      ${insights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+    </ul>
+  </section>`;
+}
+
+function optionalActualsPrompt() {
+  return `<section class="card plan-empty-state">
+    <h2>Want to compare your plan with reality?</h2>
+    <p>Record or import actuals to unlock planned versus actual reporting.</p>
+    <div class="button-list">
+      <a class="button" href="/transactions">Start tracking actuals</a>
+      <a class="button secondary" href="/csv">Import bank statement</a>
+    </div>
   </section>`;
 }
 
@@ -249,20 +506,25 @@ function varianceSummaryCard(variance) {
   </div>`;
 }
 
-function categoryBreakdownCard(plannedExpenseSeries) {
-  if (!plannedExpenseSeries.length) return '';
-  return `<section class="card chart-card" id="planned-expenses-chart">
-    <div class="card-heading">
-      <div>
-        <h2>Planned spending by category</h2>
-      </div>
-    </div>
-        ${pieChart(plannedExpenseSeries, { title: 'Planned spending by category', emptyMessage: 'Add planned spending to build this chart.' })}
-  </section>`;
-}
-
-function forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpendingByMonth, period) {
-  const forecastWindow = forecastWindowForPeriod(period);
+function buildDashboardForecastData({
+  planningItems,
+  household,
+  savingsAccounts,
+  period,
+  expenseItems = [],
+  categoryBudgetDefaults = [],
+  categoryBudgetOverrides = []
+}) {
+  const forecastWindow = forecastWindowForDashboard(period);
+  const forecastMonths = Array.from({ length: forecastWindow.months }, (_, index) =>
+    addMonths(forecastWindow.startMonth, index)
+  );
+  const flexibleSpendingByMonth = buildFlexibleSpendingByMonth(
+    forecastMonths,
+    categoryBudgetDefaults,
+    categoryBudgetOverrides,
+    expenseItems
+  );
   const spendableStartingBalancePence = spendableHouseholdBalancePence(savingsAccounts);
   const forecastAdjustmentPence = Number(household.forecast_adjustment_pence || 0);
   const forecast = applyFlexibleSpendingToForecast(
@@ -277,44 +539,59 @@ function forecastSnapshot(planningItems, household, savingsAccounts, flexibleSpe
     }),
     flexibleSpendingByMonth
   );
-  const hasForecastData = forecast.some((row) => row.expectedIncomePence > 0 || row.expectedExpensesPence > 0 || row.expectedSavingsPence > 0);
-  if (!hasForecastData) return '';
+  const hasForecastData = forecast.some(
+    (row) =>
+      row.expectedIncomePence > 0 ||
+      row.expectedExpensesPence > 0 ||
+      row.expectedSavingsPence > 0 ||
+      row.openingBalancePence !== 0
+  );
+  if (!hasForecastData) return null;
 
   const finalRow = forecast.at(-1);
-  const lowestRow = forecast.reduce((lowest, row) => (row.closingBalancePence < lowest.closingBalancePence ? row : lowest), forecast[0]);
-  return `<section class="grid three">
-    <div class="stat">
-      <span>Spendable starting balance</span>
-      <strong>${formatCurrency(forecast[0].openingBalancePence)}</strong>
-      <small class="plan-stat-note">Accounts ${formatCurrency(spendableStartingBalancePence)}${forecastAdjustmentPence ? ` · Adjustment ${formatCurrency(forecastAdjustmentPence)}` : ''}</small>
-    </div>
-    <div class="stat ${finalRow.closingBalancePence < 0 ? 'bad' : finalRow.closingBalancePence > 0 ? 'good' : ''}">
-      <span>Projected balance at end of forecast</span>
-      <strong>${formatCurrency(finalRow.closingBalancePence)}</strong>
-      <small class="plan-stat-note">After ${escapeHtml(monthLabel(finalRow.month))}</small>
-    </div>
-    <div class="stat ${lowestRow.closingBalancePence < 0 ? 'bad' : ''}">
-      <span>Lowest projected balance</span>
-      <strong>${formatCurrency(lowestRow.closingBalancePence)}</strong>
-      <small class="plan-stat-note">${escapeHtml(monthLabel(lowestRow.month))}</small>
-    </div>
-  </section>`;
+  const lowestRow = forecast.reduce(
+    (lowest, row) => (row.closingBalancePence < lowest.closingBalancePence ? row : lowest),
+    forecast[0]
+  );
+
+  return {
+    spendableStartingBalancePence,
+    forecastAdjustmentPence,
+    forecast,
+    finalRow,
+    lowestRow,
+    negativeMonthsCount: forecast.filter((row) => row.closingBalancePence < 0).length
+  };
 }
 
-function forecastWindowForPeriod(period) {
+function forecastWindowForDashboard(period) {
+  const dashboardStartMonth = currentMonth();
   switch (period.key) {
     case 'next_month':
-      return { startMonth: period.range.label, months: 1 };
-    case 'last_3_months':
-      return { startMonth: period.startMonth, months: 3 };
-    case 'tax_year':
-      return { startMonth: period.startMonth, months: 12 };
+      return { startMonth: addMonths(dashboardStartMonth, 1), months: 1 };
+    case 'tax_year': {
+      const endMonth = period.range.end.slice(0, 7);
+      return {
+        startMonth: dashboardStartMonth,
+        months: inclusiveMonthDistance(dashboardStartMonth, endMonth)
+      };
+    }
     case 'specific_month':
       return { startMonth: period.range.label, months: 1 };
+    case 'last_3_months':
+      return { startMonth: dashboardStartMonth, months: 3 };
     case 'this_month':
     default:
-      return { startMonth: period.range.label, months: 1 };
+      return { startMonth: dashboardStartMonth, months: 1 };
   }
+}
+
+function inclusiveMonthDistance(startMonth, endMonth) {
+  const [startYear, startValue] = String(startMonth).split('-').map(Number);
+  const [endYear, endValue] = String(endMonth).split('-').map(Number);
+  const startIndex = startYear * 12 + startValue;
+  const endIndex = endYear * 12 + endValue;
+  return Math.max(1, endIndex - startIndex + 1);
 }
 
 function applyFlexibleSpendingToReport(report, categoryBudgetDefaults, categoryBudgetOverrides, items) {
@@ -368,31 +645,6 @@ function applyFlexibleSpendingToForecast(forecast, flexibleSpendingByMonth = new
     openingBalancePence = closingBalancePence;
     return adjustedRow;
   });
-}
-
-function ownershipSnapshotCard(planned, members, options = {}) {
-  const rows = Object.entries(planned.byOwner).filter(([owner, totals]) => {
-    if (owner === 'person_b' && !members.some((member) => member.person_key === 'person_b')) {
-      return totals.income || totals.expense || totals.savings;
-    }
-    return true;
-  });
-  if (!rows.length) return '';
-
-  return `<section class="card ${options.fullWidth ? 'grid-span-two' : ''}">
-    <h2>Ownership snapshot</h2>
-    <table class="data-table financial-table ownership-table">
-      <thead><tr><th>Owner</th><th>Planned income</th><th>Planned spending</th><th>Planned savings</th></tr></thead>
-      <tbody>
-        ${rows
-          .map(
-            ([owner, totals]) =>
-              `<tr><td>${escapeHtml(ownerLabel(owner, members))}</td><td>${formatCurrency(totals.income)}</td><td>${formatCurrency(totals.expense)}</td><td>${formatCurrency(totals.savings)}</td></tr>`
-          )
-          .join('')}
-      </tbody>
-    </table>
-  </section>`;
 }
 
 function setupChecklistItems({
@@ -457,7 +709,7 @@ function setupChecklistItems({
     },
     {
       title: 'Start tracking actuals',
-      description: 'Add actual income, spending, and savings movements so reports can compare plan with reality.',
+      description: 'Add actual income, spending, and savings movements so the Dashboard can compare plan with reality.',
       href: '/transactions',
       action: 'Open actuals',
       optional: true,
@@ -578,6 +830,82 @@ function dashboardSpecificMonthControls(month) {
   </div>`;
 }
 
+function dashboardFlowOwners(members, selectedOwner = 'household') {
+  const owners = [{ value: 'household', label: 'Shared household', active: selectedOwner === 'household' }];
+  const firstMember = members.find((member) => member.person_key === 'person_a');
+  const secondMember = members.find((member) => member.person_key === 'person_b');
+  if (firstMember) {
+    owners.push({
+      value: 'person_a',
+      label: firstMember.display_name || ownerLabel('person_a', members),
+      active: selectedOwner === 'person_a'
+    });
+  }
+  if (secondMember) {
+    owners.push({
+      value: 'person_b',
+      label: secondMember.display_name || ownerLabel('person_b', members),
+      active: selectedOwner === 'person_b'
+    });
+  }
+  return owners;
+}
+
+function dashboardFlowOwnerPills(owners, period, selectedMonth) {
+  return `<div class="period-pills view-toggle-pills">
+    ${owners
+      .map((owner) => {
+        const params = new URLSearchParams({
+          period: period.key,
+          month: selectedMonth,
+          flow_owner: owner.value
+        });
+        return `<a class="period-pill${owner.active ? ' active' : ''}" ${owner.active ? 'aria-current="page"' : ''} href="/dashboard?${params.toString()}">${escapeHtml(owner.label)}</a>`;
+      })
+      .join('')}
+  </div>`;
+}
+
+function plannedForFlowOwner(planned, owner, members = []) {
+  if (owner === 'household') return planned;
+
+  const direct = planned.byOwner?.[owner] || { income: 0, expense: 0, savings: 0 };
+  const shared = planned.byOwner?.shared || { income: 0, expense: 0, savings: 0 };
+  const plannedIncomePence = Number(direct.income || 0) + sharedOwnerShare(Number(shared.income || 0), owner, members);
+  const plannedExpensePence = Number(direct.expense || 0) + sharedOwnerShare(Number(shared.expense || 0), owner, members);
+  const plannedSavingsPence = Number(direct.savings || 0) + sharedOwnerShare(Number(shared.savings || 0), owner, members);
+  return {
+    ...planned,
+    plannedIncomePence,
+    plannedExpensePence,
+    plannedSavingsPence,
+    plannedSurplusPence: plannedIncomePence - plannedExpensePence - plannedSavingsPence
+  };
+}
+
+function retirementAllocationForOwner(accounts, owner, members = []) {
+  const activePensions = accounts.filter(
+    (account) => Number(account.is_active) === 1 && account.account_type === 'pension'
+  );
+  if (owner === 'household') {
+    return activePensions.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0);
+  }
+  return activePensions.reduce((sum, account) => {
+    const contribution = Number(account.monthly_contribution_pence || 0);
+    if (account.owner_type === owner) return sum + contribution;
+    if (account.owner_type === 'shared') return sum + sharedOwnerShare(contribution, owner, members);
+    return sum;
+  }, 0);
+}
+
+function sharedOwnerShare(amountPence, owner, members = []) {
+  if (owner !== 'person_a' && owner !== 'person_b') return 0;
+  const hasSecondMember = members.some((member) => member.person_key === 'person_b');
+  if (!hasSecondMember) return owner === 'person_a' ? amountPence : 0;
+  const personAShare = Math.round(amountPence / 2);
+  return owner === 'person_a' ? personAShare : amountPence - personAShare;
+}
+
 function previousMonth(month) {
   const [year, monthNumber] = String(month).split('-').map(Number);
   const date = new Date(Date.UTC(year, (monthNumber || 1) - 2, 1));
@@ -598,17 +926,12 @@ function calendarIcon() {
   </svg>`;
 }
 
-function yearlyTable(items) {
-  if (!items.length) return '<p class="empty">No yearly active items.</p>';
-  return `<table class="data-table">
-    <thead><tr><th>Name</th><th>Yearly amount</th><th>Monthly equivalent</th></tr></thead>
-    <tbody>${items
-      .map(
-        (item) =>
-          `<tr><td>${escapeHtml(item.name)}</td><td>${formatCurrency(item.amount_pence)}</td><td>${formatCurrency(item.monthly_equivalent_pence)}</td></tr>`
-      )
-      .join('')}</tbody>
-  </table>`;
+function yearlyMonthlyEquivalentPence(items) {
+  return items.reduce((sum, item) => sum + Number(item.monthly_equivalent_pence || 0), 0);
+}
+
+function yearlyItemsLabel(monthlyEquivalentPence) {
+  return monthlyEquivalentPence > 0 ? `${formatCurrency(monthlyEquivalentPence)}/month from annual items` : 'None';
 }
 
 function decorateGoalsWithLinkedAccounts(goals, linkedAccountRows, accounts = []) {
