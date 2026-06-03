@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-06-02-dashboard-echarts-flow';
+const ASSET_VERSION = '2026-06-03-planned-spending-owner-chart';
 
 export function escapeHtml(value) {
   return String(value ?? '')

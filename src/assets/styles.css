@@ -853,6 +853,15 @@ h2 {
   outline-offset: 3px;
 }
 
+.category-owner-chart {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.category-owner-chart .echarts-dashboard-chart {
+  height: 340px;
+}
+
 .mini-legend {
   display: flex;
   flex-wrap: wrap;

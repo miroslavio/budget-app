@@ -17,14 +17,13 @@ import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { calculateMonthlyEquivalent, plannedMonthlySummary } from '../services/budgetService.js';
 import { savingsAccountTypeLabel } from '../services/savingsAccountService.js';
 import { plannedSavingsBudgetItems } from '../services/savingsService.js';
-import { buildUnifiedSpendingBudgetRows, plannedSpendingCategorySeries, plannedSpendingSummary, spendingCategoryKey } from '../services/spendingBudgetService.js';
+import { buildUnifiedSpendingBudgetRows, plannedSpendingSummary, spendingCategoryKey } from '../services/spendingBudgetService.js';
 import { estimateTakeHomePay } from '../services/takeHomePayService.js';
 import { listTaxYears, latestTaxYear } from '../services/taxRulesService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { optionalMoney, optionalString, parsePercentage, requireChoice, requireDecimal, requireMoney, requireString } from '../utils/validation.js';
 import { actionIconButton, csrfField, escapeHtml, formatCurrency, moneyInputValue, movementStat, ownerLabel, page } from '../views/html.js';
 import { categoryOptions, decimalInputAttrs, frequencyOptions, moneyInputAttrs, ownerOptions, taxYearOptions } from '../views/forms.js';
-import { pieChart } from '../views/charts.js';
 import { html, json, redirect } from '../http/response.js';
 import { checkboxValue, ensureAuthenticated, formDate, parseStudentLoanPlans, redirectWithError, redirectWithSuccess } from './helpers.js';
 
@@ -169,17 +168,7 @@ function renderSpendingBudgetsPage(ctx, db) {
     month
   });
   const returnTo = spendingBudgetsReturnTo();
-  const chartOwners = spendingChartOwners(members);
-  const spendingSeriesByOwner = chartOwners.map((owner) => ({
-    ...owner,
-    series: plannedSpendingCategorySeries({
-      expenseItems,
-      defaultBudgets,
-      monthBudgets: [],
-      months: [month],
-      owner: owner.value
-    })
-  }));
+  const spendingByCategory = plannedSpendingOwnerBarChart(rows.rows, members);
 
   html(
     ctx.res,
@@ -221,15 +210,8 @@ function renderSpendingBudgetsPage(ctx, db) {
       <section class="card chart-card" id="planned-spending-chart">
         <div class="card-heading">
           <h2>Planned spending by category</h2>
-          ${chartOwnerPills('planned-spending-owner', spendingSeriesByOwner)}
         </div>
-      ${spendingSeriesByOwner
-          .map(
-            (owner) => `<div data-view-panel="planned-spending-owner" data-view-value="${escapeHtml(owner.value)}" ${owner.active ? '' : 'hidden'}>
-              ${pieChart(owner.series, { title: `Planned spending by category for ${owner.label.toLowerCase()}`, emptyMessage: 'Add planned spending to build this chart.' })}
-            </div>`
-          )
-          .join('')}
+        ${spendingByCategory}
       </section>
       ${plannedSpendingModal(ctx, categories, members, returnTo, rows)}
       </div>`
@@ -602,23 +584,182 @@ function plannedSpendingDisclosure() {
   return `<button type="button" data-open-modal="planned-spending-modal" data-reset-modal="true">Add planned spending</button>`;
 }
 
-function spendingChartOwners(members) {
-  const owners = [{ value: 'household', label: 'Shared household', active: true }];
-  const firstMember = members.find((member) => member.person_key === 'person_a');
-  const secondMember = members.find((member) => member.person_key === 'person_b');
-  if (firstMember) owners.push({ value: 'person_a', label: firstMember.display_name || ownerLabel('person_a', members), active: false });
-  if (secondMember) owners.push({ value: 'person_b', label: secondMember.display_name || ownerLabel('person_b', members), active: false });
-  return owners;
+function plannedSpendingOwnerBarChart(rows, members) {
+  const chartRows = plannedSpendingOwnerChartRows(rows, members);
+  if (!chartRows.length) {
+    return '<div class="chart-empty">Add planned spending to build this chart.</div>';
+  }
+
+  const totalPence = chartRows.reduce((total, row) => total + row.totalPence, 0);
+  const legendOwners = spendingChartLegendOwners(chartRows);
+  const orderedRows = [...chartRows].reverse();
+  const chartId = `planned-spending-owner-${Math.random().toString(36).slice(2)}`;
+  const ownerColours = {
+    'person-a': '#1f6f5b',
+    'person-b': '#4b5fb5',
+    shared: '#d4863c'
+  };
+  const chartConfig = {
+    textStyle: {
+      fontFamily: 'inherit',
+      color: '#17211b'
+    },
+    legend: {
+      bottom: 0,
+      left: 0,
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: {
+        color: '#5e6b63',
+        fontWeight: 700
+      },
+      data: legendOwners.map((owner) => owner.label)
+    },
+    grid: {
+      left: 6,
+      right: 132,
+      top: 10,
+      bottom: legendOwners.length ? 42 : 24,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      min: 0,
+      axisLabel: {
+        formatter: '£{value}'
+      },
+      splitLine: {
+        lineStyle: { color: 'rgba(56, 45, 31, 0.09)' }
+      }
+    },
+    yAxis: {
+      type: 'category',
+      data: orderedRows.map((row) => row.label),
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: {
+        color: '#17211b',
+        fontWeight: 700
+      }
+    },
+    series: legendOwners.map((owner) => ({
+      name: owner.label,
+      type: 'bar',
+      stack: 'total',
+      barWidth: 12,
+      data: orderedRows.map((row) => {
+        const portion = row.portions.find((entry) => entry.key === owner.key);
+        const valuePence = Number(portion?.amountPence || 0);
+        return {
+          name: row.label,
+          value: Number((valuePence / 100).toFixed(2)),
+          valuePence,
+          ownerKey: owner.key,
+          ownerLabel: owner.label,
+          categoryTotalPence: row.totalPence,
+          categorySharePercentage: row.totalPence ? Math.round((valuePence / row.totalPence) * 100) : 0,
+          totalSharePercentage: totalPence ? Math.round((valuePence / totalPence) * 100) : 0,
+          totalPercentage: totalPence ? Math.round((row.totalPence / totalPence) * 100) : 0,
+          isLabelCarrier: row.portions.at(-1)?.key === owner.key
+        };
+      }),
+      itemStyle: {
+        color: ownerColours[owner.key] || '#d4863c',
+        borderRadius: 2
+      }
+    }))
+  };
+
+  return `<div class="category-owner-chart" role="img" aria-label="Planned spending by category and owner">
+    <div id="${chartId}" class="echarts-dashboard-chart" data-echarts-chart data-chart-type="planned-spending-owner" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>
+    <table class="sr-only">
+      <caption>Planned spending by category and owner</caption>
+      <thead><tr><th>Category</th><th>Total</th>${legendOwners.map((owner) => `<th>${escapeHtml(owner.label)}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${chartRows
+          .map(
+            (row) => `<tr>
+              <td>${escapeHtml(row.label)}</td>
+              <td>${formatCurrency(row.totalPence)}</td>
+              ${legendOwners
+                .map((owner) => `<td>${formatCurrency(row.portions.find((portion) => portion.key === owner.key)?.amountPence || 0)}</td>`)
+                .join('')}
+            </tr>`
+          )
+          .join('')}
+      </tbody>
+    </table>
+  </div>`;
 }
 
-function chartOwnerPills(groupName, owners) {
-  return `<div class="period-pills view-toggle-pills" data-view-toggle-group="${escapeHtml(groupName)}">
-    ${owners
-      .map(
-        (owner) => `<button type="button" class="period-pill${owner.active ? ' active' : ''}" data-view-toggle="${escapeHtml(groupName)}" data-view-value="${escapeHtml(owner.value)}" aria-pressed="${owner.active ? 'true' : 'false'}">${escapeHtml(owner.label)}</button>`
-      )
-      .join('')}
-  </div>`;
+function plannedSpendingOwnerChartRows(rows, members) {
+  const grouped = new Map();
+
+  for (const row of rows) {
+    if (row.isActive === false || row.status === 'Ended' || row.countedInPlan === false) continue;
+    const amountPence = Number(row.plannedMonthlyPence || 0);
+    if (amountPence <= 0) continue;
+
+    const key = row.categoryKey || spendingCategoryKey(row.categoryId, row.categoryName);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        label: row.categoryName || row.name || 'Uncategorised',
+        totalPence: 0,
+        portions: new Map()
+      });
+    }
+
+    const category = grouped.get(key);
+    category.totalPence += amountPence;
+    for (const portion of spendingOwnerPortions(row, amountPence, members)) {
+      category.portions.set(portion.key, {
+        ...portion,
+        amountPence: Number(category.portions.get(portion.key)?.amountPence || 0) + portion.amountPence
+      });
+    }
+  }
+
+  return [...grouped.values()]
+    .map((row) => ({
+      ...row,
+      portions: [...row.portions.values()].filter((portion) => portion.amountPence > 0)
+    }))
+    .sort((a, b) => b.totalPence - a.totalPence);
+}
+
+function spendingOwnerPortions(row, amountPence, members) {
+  const firstMember = members.find((member) => member.person_key === 'person_a');
+  const secondMember = members.find((member) => member.person_key === 'person_b');
+
+  if (row.ownerType === 'person_a') {
+    return [{ key: 'person-a', label: firstMember?.display_name || ownerLabel('person_a', members), amountPence }];
+  }
+  if (row.ownerType === 'person_b') {
+    return [{ key: 'person-b', label: secondMember?.display_name || ownerLabel('person_b', members), amountPence }];
+  }
+
+  if (firstMember && secondMember) {
+    const personAPercentage = row.splitType === 'manual_percentage' ? Number(row.personAPercentage || 50) : 50;
+    const personAPence = Math.round((amountPence * personAPercentage) / 100);
+    const personBPence = amountPence - personAPence;
+    return [
+      { key: 'person-a', label: firstMember.display_name || ownerLabel('person_a', members), amountPence: personAPence },
+      { key: 'person-b', label: secondMember.display_name || ownerLabel('person_b', members), amountPence: personBPence }
+    ].filter((portion) => portion.amountPence > 0);
+  }
+
+  return [{ key: 'shared', label: 'Shared household', amountPence }];
+}
+
+function spendingChartLegendOwners(chartRows) {
+  const owners = new Map();
+  for (const row of chartRows) {
+    for (const portion of row.portions) {
+      owners.set(portion.key, { key: portion.key, label: portion.label });
+    }
+  }
+  const order = ['person-a', 'person-b', 'shared'];
+  return [...owners.values()].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 }
 
 function plannedSavingsTable(goals, plannedSavingsItems, members, savingsAccounts = []) {

@@ -188,6 +188,8 @@ function chartOptionForElement(element, config, { compact = false, reducedMotion
       return dashboardSpendingPressureChartOption(config, { reducedMotion });
     case 'dashboard-savings-allocation':
       return dashboardSavingsAllocationChartOption(config, { reducedMotion });
+    case 'planned-spending-owner':
+      return plannedSpendingOwnerChartOption(config, { reducedMotion });
     default:
       return { ...config, animation: !reducedMotion };
   }
@@ -332,6 +334,48 @@ function dashboardSavingsAllocationChartOption(config, { reducedMotion = false }
           : { show: false }
       };
     })
+  };
+}
+
+function plannedSpendingOwnerChartOption(config, { reducedMotion = false } = {}) {
+  const series = config.series || [];
+  return {
+    ...config,
+    animation: !reducedMotion,
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      renderMode: 'richText',
+      formatter(params) {
+        const entries = Array.isArray(params) ? params : [params];
+        const first = entries[0]?.data || {};
+        const lines = [
+          first.name || entries[0]?.name || 'Category',
+          `Total planned spending: ${formatCurrencyFromPence(Number(first.categoryTotalPence || 0))}`,
+          `${Number(first.totalPercentage || 0)}% of planned spending`
+        ];
+        for (const entry of entries) {
+          const data = entry.data || {};
+          if (Number(data.valuePence || 0) <= 0) continue;
+          lines.push(`${entry.seriesName}: ${formatCurrencyFromPence(Number(data.valuePence || 0))} (${Number(data.categorySharePercentage || 0)}% of category)`);
+        }
+        return lines.join('\n');
+      }
+    },
+    series: series.map((seriesItem) => ({
+      ...seriesItem,
+      label: {
+        show: true,
+        position: 'right',
+        color: '#5e6b63',
+        fontWeight: 800,
+        formatter(params) {
+          const data = params.data || {};
+          if (!data.isLabelCarrier) return '';
+          return `${formatCurrencyFromPence(Number(data.categoryTotalPence || 0))} · ${Number(data.totalPercentage || 0)}%`;
+        }
+      }
+    }))
   };
 }
 
