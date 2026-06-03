@@ -70,14 +70,15 @@ export function plannedSpendingCategorySeries({ expenseItems = [], defaultBudget
       totals.set(label, (totals.get(label) || 0) + amount);
     }
 
-    if (owner !== 'household') continue;
     const monthRows = month
       ? monthBudgets.filter((budget) => budget.budget_month === month)
       : monthBudgets;
     for (const budget of effectiveCategoryBudgets(defaultBudgets, monthRows, month || monthRows[0]?.budget_month || '')) {
       if (committedCategoryKeys.has(spendingCategoryKey(budget.category_id, budget.category_name))) continue;
+      const amount = sharedFlexibleAmountForOwner(Number(budget.amount_pence || 0), owner);
+      if (amount <= 0) continue;
       const label = budget.category_name || 'Uncategorised';
-      totals.set(label, (totals.get(label) || 0) + Number(budget.amount_pence || 0));
+      totals.set(label, (totals.get(label) || 0) + amount);
     }
   }
 
@@ -213,6 +214,13 @@ function amountForOwner(amount, item, owner) {
   const split = calculateSharedSplit(amount, item);
   if (owner === 'person_a') return split.personA;
   if (owner === 'person_b') return split.personB;
+  return amount;
+}
+
+function sharedFlexibleAmountForOwner(amount, owner) {
+  if (owner === 'household') return amount;
+  if (owner === 'person_a') return Math.round(amount / 2);
+  if (owner === 'person_b') return amount - Math.round(amount / 2);
   return amount;
 }
 

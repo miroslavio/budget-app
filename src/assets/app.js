@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireRowToggles();
   wireSortableTables();
   wireMobileCardSorts();
+  wireTableSearches();
   wireCountUps();
   wireECharts();
   wireChartTooltips();
@@ -159,9 +160,7 @@ function wireECharts(root = document) {
     const chart = window.echarts.init(element, null, { renderer: 'svg' });
     const render = () => {
       const compact = Boolean(compactMedia?.matches);
-      const option = element.dataset.chartType === 'income-allocation'
-        ? incomeAllocationChartOption(config, { compact, reducedMotion: prefersReducedMotion })
-        : { ...config, animation: !prefersReducedMotion };
+      const option = chartOptionForElement(element, config, { compact, reducedMotion: prefersReducedMotion });
       chart.setOption(option, true);
       chart.resize();
     };
@@ -179,6 +178,19 @@ function wireECharts(root = document) {
       window.addEventListener('resize', () => chart.resize());
     }
   });
+}
+
+function chartOptionForElement(element, config, { compact = false, reducedMotion = false } = {}) {
+  switch (element.dataset.chartType) {
+    case 'income-allocation':
+      return incomeAllocationChartOption(config, { compact, reducedMotion });
+    case 'dashboard-spending-pressure':
+      return dashboardSpendingPressureChartOption(config, { reducedMotion });
+    case 'dashboard-savings-allocation':
+      return dashboardSavingsAllocationChartOption(config, { reducedMotion });
+    default:
+      return { ...config, animation: !reducedMotion };
+  }
 }
 
 function incomeAllocationChartOption(config, { compact = false, reducedMotion = false } = {}) {
@@ -244,6 +256,83 @@ function incomeAllocationChartOption(config, { compact = false, reducedMotion = 
   }
 
   return option;
+}
+
+function dashboardSpendingPressureChartOption(config, { reducedMotion = false } = {}) {
+  return {
+    ...config,
+    animation: !reducedMotion,
+    tooltip: {
+      trigger: 'item',
+      renderMode: 'richText',
+      formatter(params) {
+        const data = params.data || {};
+        return [
+          data.name || params.name || 'Planned spending',
+          formatCurrencyFromPence(Number(data.valuePence || 0)),
+          `${Number(data.percentage || 0)}% of planned spending`
+        ].join('\n');
+      }
+    },
+    series: (config.series || []).map((series) => ({
+      ...series,
+      label: {
+        show: true,
+        position: 'right',
+        color: '#5e6b63',
+        fontWeight: 800,
+        formatter(params) {
+          const data = params.data || {};
+          return `${formatCurrencyFromPence(Number(data.valuePence || 0))} · ${Number(data.percentage || 0)}%`;
+        }
+      }
+    }))
+  };
+}
+
+function dashboardSavingsAllocationChartOption(config, { reducedMotion = false } = {}) {
+  const series = config.series || [];
+  return {
+    ...config,
+    animation: !reducedMotion,
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      renderMode: 'richText',
+      formatter(params) {
+        const entries = Array.isArray(params) ? params : [params];
+        const first = entries[0]?.data || {};
+        const fromIncome = entries.find((entry) => entry.seriesName === 'From income')?.data?.valuePence || 0;
+        const employer = entries.find((entry) => entry.seriesName === 'Employer contribution')?.data?.valuePence || 0;
+        const lines = [
+          first.name || entries[0]?.name || 'Savings pot',
+          `Total contribution: ${formatCurrencyFromPence(Number(first.totalPence || Number(fromIncome) + Number(employer)))}`,
+          `From income: ${formatCurrencyFromPence(Number(fromIncome))}`
+        ];
+        if (Number(employer) > 0) {
+          lines.push(`Employer contribution: ${formatCurrencyFromPence(Number(employer))}`);
+        }
+        return lines.join('\n');
+      }
+    },
+    series: series.map((seriesItem, index) => {
+      const isLastSeries = index === series.length - 1;
+      return {
+        ...seriesItem,
+        label: isLastSeries
+          ? {
+              show: true,
+              position: 'right',
+              color: '#5e6b63',
+              fontWeight: 800,
+              formatter(params) {
+                return formatCurrencyFromPence(Number(params.data?.totalPence || 0));
+              }
+            }
+          : { show: false }
+      };
+    })
+  };
 }
 
 function wireCountUps(root = document) {
@@ -357,6 +446,68 @@ function wireMobileCardSorts(root = document) {
   });
 }
 
+function wireTableSearches(root = document) {
+  const responsiveWrappers = [...root.querySelectorAll('.desktop-table-wrapper')].filter((wrapper) => wrapper instanceof HTMLElement);
+  responsiveWrappers.forEach((wrapper, index) => {
+    const table = wrapper.querySelector('table.data-table');
+    if (!(table instanceof HTMLTableElement) || wrapper.dataset.tableSearchBound === 'true') return;
+    wrapper.dataset.tableSearchBound = 'true';
+    const mobileRegion = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.classList.contains('mobile-card-region')
+      ? wrapper.nextElementSibling
+      : null;
+    const control = buildTableSearchControl(`responsive-table-search-${index}`, table);
+    wrapper.parentElement?.insertBefore(control, wrapper);
+    const input = control.querySelector('input');
+    if (input instanceof HTMLInputElement) {
+      input.addEventListener('input', () => filterTableAndCards(table, mobileRegion, input.value));
+    }
+  });
+
+  root.querySelectorAll('table.data-table').forEach((table, index) => {
+    if (!(table instanceof HTMLTableElement)) return;
+    if (table.closest('.desktop-table-wrapper')) return;
+    if (table.dataset.tableSearchBound === 'true') return;
+    table.dataset.tableSearchBound = 'true';
+    const control = buildTableSearchControl(`standalone-table-search-${index}`, table);
+    table.parentElement?.insertBefore(control, table);
+    const input = control.querySelector('input');
+    if (input instanceof HTMLInputElement) {
+      input.addEventListener('input', () => filterTableAndCards(table, null, input.value));
+    }
+  });
+}
+
+function buildTableSearchControl(id, table) {
+  const control = document.createElement('div');
+  control.className = 'table-search-control';
+  const caption = table.closest('.card')?.querySelector('h2, h3')?.textContent?.trim();
+  const label = caption ? `Search ${caption}` : 'Search table';
+  control.innerHTML = `<label for="${id}" class="sr-only">${escapeHtmlText(label)}</label><input id="${id}" type="search" placeholder="${escapeHtmlText(label)}" autocomplete="off">`;
+  return control;
+}
+
+function filterTableAndCards(table, mobileRegion, query) {
+  const normalisedQuery = normaliseSearchText(query);
+  collectSortableRowGroups(table.tBodies?.[0]).forEach((group) => {
+    const visible = !normalisedQuery || normaliseSearchText(group.map((row) => row.textContent || '').join(' ')).includes(normalisedQuery);
+    group.forEach((row) => {
+      row.hidden = !visible;
+    });
+  });
+
+  if (mobileRegion instanceof HTMLElement) {
+    mobileRegion.querySelectorAll('[data-mobile-sort-card]').forEach((card) => {
+      if (!(card instanceof HTMLElement)) return;
+      const visible = !normalisedQuery || normaliseSearchText(card.textContent || '').includes(normalisedQuery);
+      card.hidden = !visible;
+    });
+  }
+}
+
+function normaliseSearchText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function compareMobileCardValues(a, b, key, direction) {
   const sortDirection = direction === 'desc' ? 'desc' : 'asc';
   const first = readMobileCardSortValue(a, key);
@@ -396,6 +547,7 @@ function sortTableByColumn(table, tbody, headers, columnIndex, direction) {
 }
 
 function collectSortableRowGroups(tbody) {
+  if (!(tbody instanceof HTMLTableSectionElement)) return [];
   const rows = [...tbody.rows];
   const groups = [];
   for (let index = 0; index < rows.length; index += 1) {
@@ -709,7 +861,7 @@ function wireIncomeEstimateForms(root = document) {
     const estimatedSummary = summaryRoot?.querySelector('[data-income-summary-view="estimated_from_gross"]');
     const emptyState = summaryRoot?.querySelector('[data-income-estimate-empty]');
     const results = summaryRoot?.querySelector('[data-income-estimate-results]');
-    const errorBox = summaryRoot?.querySelector('[data-income-estimate-error]');
+    const errorBox = form.querySelector('[data-income-estimate-error]') || summaryRoot?.querySelector('[data-income-estimate-error]');
 
     const updateSummaryMode = () => {
       const isEstimated = modeField instanceof HTMLSelectElement && modeField.value === 'estimated_from_gross';

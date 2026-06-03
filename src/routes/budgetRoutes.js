@@ -331,26 +331,51 @@ function planTextStat(label, text, note = '') {
 }
 
 function budgetPlanTable(rows) {
+  const desktopTable = `<table class="data-table">
+    <thead><tr><th>Section</th><th>Monthly planned</th><th>Annual costs included</th><th>Owner or split summary</th><th class="actions-col">Action</th></tr></thead>
+    <tbody>${rows
+      .map((row) => `<tr>
+        <td>
+          <div class="cell-stack">
+            <strong>${escapeHtml(row.section)}</strong>
+            <small class="budget-plan-row-tone ${escapeHtml(row.sectionKind || 'neutral')}">${escapeHtml(sectionKindLabel(row.sectionKind))}</small>
+          </div>
+        </td>
+        <td><span class="budget-plan-value ${escapeHtml(row.sectionKind || 'neutral')}">${formatCurrency(row.monthlyPlannedPence)}</span></td>
+        <td>${escapeHtml(row.yearlyItemsIncluded)}</td>
+        <td>${escapeHtml(row.ownerSummary)}</td>
+        <td class="actions-col"><a class="button" href="${escapeHtml(row.actionHref)}">${escapeHtml(row.actionLabel)}</a></td>
+      </tr>`)
+      .join('')}</tbody>
+  </table>`;
+
   return `<section class="card">
     <h2>Current plan</h2>
-    <table class="data-table">
-      <thead><tr><th>Section</th><th>Monthly planned</th><th>Annual costs included</th><th>Owner or split summary</th><th class="actions-col">Action</th></tr></thead>
-      <tbody>${rows
-        .map((row) => `<tr>
-          <td>
-            <div class="cell-stack">
-              <strong>${escapeHtml(row.section)}</strong>
-              <small class="budget-plan-row-tone ${escapeHtml(row.sectionKind || 'neutral')}">${escapeHtml(sectionKindLabel(row.sectionKind))}</small>
-            </div>
-          </td>
-          <td><span class="budget-plan-value ${escapeHtml(row.sectionKind || 'neutral')}">${formatCurrency(row.monthlyPlannedPence)}</span></td>
-          <td>${escapeHtml(row.yearlyItemsIncluded)}</td>
-          <td>${escapeHtml(row.ownerSummary)}</td>
-          <td class="actions-col"><a class="button" href="${row.actionHref}">${escapeHtml(row.actionLabel)}</a></td>
-        </tr>`)
-        .join('')}</tbody>
-    </table>
+    ${responsiveFinanceTable(desktopTable, `<div class="mobile-finance-card-list">${rows.map((row) => budgetPlanOverviewMobileCard(row)).join('')}</div>`)}
   </section>`;
+}
+
+function budgetPlanOverviewMobileCard(row) {
+  const sectionKind = row.sectionKind || 'neutral';
+  return `<article class="mobile-finance-card" data-mobile-sort-card>
+    <div class="mobile-card-head">
+      <div>
+        <h3>${escapeHtml(row.section)}</h3>
+        <p class="budget-plan-row-tone ${escapeHtml(sectionKind)}">${escapeHtml(sectionKindLabel(sectionKind))}</p>
+      </div>
+    </div>
+    <div class="mobile-card-amount">
+      <strong class="budget-plan-value ${escapeHtml(sectionKind)}">${formatCurrency(row.monthlyPlannedPence)}</strong>
+      <span>Monthly planned</span>
+    </div>
+    <dl class="mobile-card-meta">
+      <div><dt>Owner or split summary</dt><dd>${escapeHtml(row.ownerSummary)}</dd></div>
+      <div><dt>Annual costs included</dt><dd>${escapeHtml(row.yearlyItemsIncluded)}</dd></div>
+    </dl>
+    <div class="mobile-card-actions">
+      <a class="button" href="${escapeHtml(row.actionHref)}">${escapeHtml(row.actionLabel)}</a>
+    </div>
+  </article>`;
 }
 
 function sectionKindLabel(sectionKind) {
@@ -1021,8 +1046,7 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
       </div>
       <div class="modal-stepper-track"><div class="modal-stepper-bar" data-step-progress-bar></div></div>
     </div>
-    <div class="modal-form-grid">
-      <div class="modal-form-main">
+    <div class="modal-form-main modal-form-main--full">
         <section class="form-section" data-form-step data-step-title="Basic details">
           <h3>Basic details</h3>
           <div class="grid two compact">
@@ -1079,53 +1103,70 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
           </label>
         </section>
 
-        <section class="form-section" data-form-step data-step-title="Pension and deductions" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
+        <section class="form-section" data-form-step data-step-title="Pension" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
           <h3>Pension</h3>
-          <div class="grid two compact">
+          <p class="hint">Use this for pension deductions from your pay. Employer contributions can be linked to a pension pot in Savings, but they do not reduce household take-home income.</p>
+          <div class="pension-form-stack">
             <label>Do you contribute to a pension?
               <select name="has_pension" data-controls data-modal-field="hasPension" data-income-summary-trigger>
                 <option value="no">No</option>
                 <option value="yes">Yes</option>
               </select>
             </label>
-            <label data-controlled-by="has_pension" data-show-when="yes" hidden>Pension contribution
-              <select name="pension_contribution_type" data-controls data-modal-field="pensionContributionType" data-income-summary-trigger>
-                <option value="none">Choose contribution type</option>
-                <option value="fixed_amount">Fixed amount</option>
-                <option value="percentage">Percentage of gross salary</option>
-              </select>
-            </label>
-          </div>
-          <div class="grid two compact" data-controlled-by="has_pension" data-show-when="yes" hidden>
-            <label>Contribution amount <input name="pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="pensionContributionValue" data-income-summary-trigger></label>
-            <label>How is your pension taken?
-              <select name="pension_contribution_tax_treatment" data-modal-field="pensionContributionTaxTreatment" data-income-summary-trigger>
-                <option value="pre_tax">Before tax</option>
-                <option value="post_tax">After tax</option>
-                <option value="unknown">Not sure</option>
-              </select>
-            </label>
-          </div>
-          <div class="nested-form-section" data-controlled-by="has_pension" data-show-when="yes" hidden>
-            <h4>Track this pension in Savings</h4>
-            <p class="hint">Link this pension to a savings pot if you want your personal pension deduction and any employer contribution to feed Savings, Goals, and long-term projections.</p>
-            <label>Pension pot in Savings
-              <select name="pension_tracking_mode" data-controls data-modal-field="pensionTrackingMode">
-                <option value="none">Do not track in Savings</option>
-                ${pensionAccounts.length ? '<option value="link_existing">Link to an existing pension pot</option>' : ''}
-                <option value="create_new">Create a pension pot in Savings</option>
-              </select>
-            </label>
-            <label data-controlled-by="pension_tracking_mode" data-show-when="link_existing" hidden>Existing pension pot
-              <select name="linked_savings_account_id" data-modal-field="linkedSavingsAccountId">
-                <option value="">Choose a pension pot</option>
-                ${pensionAccountOptions(pensionAccounts, members)}
-              </select>
-            </label>
-            <label data-controlled-by="pension_tracking_mode" data-show-when="create_new" hidden>Pension pot name
-              <input name="new_pension_account_name" maxlength="120" placeholder="e.g. Workplace pension" data-modal-field="newPensionAccountName">
-            </label>
-            <div data-controlled-by="pension_tracking_mode" data-show-when="link_existing|create_new" hidden>
+            <div class="pension-form-card" data-controlled-by="has_pension" data-show-when="yes" hidden>
+              <h4>Pension scheme</h4>
+              <div class="grid two compact">
+                <label>Pension type
+                  <select name="pension_scheme_type" data-controls data-modal-field="pensionSchemeType">
+                    <option value="salary_sacrifice">Salary sacrifice</option>
+                    <option value="defined_contribution">Defined contribution</option>
+                    <option value="defined_benefit">Defined benefit</option>
+                  </select>
+                </label>
+                <label>Pension contribution
+                  <select name="pension_contribution_type" data-controls data-modal-field="pensionContributionType" data-income-summary-trigger>
+                    <option value="none">Choose contribution type</option>
+                    <option value="percentage">Percentage of gross salary</option>
+                    <option value="fixed_amount">Fixed annual amount</option>
+                  </select>
+                </label>
+              </div>
+              <div class="grid two compact">
+                <label>Contribution amount <input name="pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="pensionContributionValue" data-income-summary-trigger></label>
+                <label>How is your pension taken?
+                  <select name="pension_contribution_tax_treatment" data-modal-field="pensionContributionTaxTreatment" data-income-summary-trigger>
+                    <option value="pre_tax">Salary sacrifice / before tax</option>
+                    <option value="post_tax">After tax</option>
+                    <option value="unknown">Not sure</option>
+                  </select>
+                </label>
+              </div>
+              <p class="hint" data-controlled-by="pension_scheme_type" data-show-when="salary_sacrifice">Salary sacrifice is treated as a pre-tax deduction for this budgeting estimate, reducing taxable and National Insurance-able pay.</p>
+              <p class="hint" data-controlled-by="pension_scheme_type" data-show-when="defined_benefit" hidden>For defined benefit pensions, enter the employee contribution deducted from pay. The app tracks the pay impact, not the actuarial value of the pension promise.</p>
+            </div>
+            <div class="pension-form-card" data-controlled-by="has_pension" data-show-when="yes" hidden>
+              <h4>Link to Savings</h4>
+              <p class="hint">Use this if you want the employee deduction and any employer contribution to feed a pension pot, linked goals, and long-term projections.</p>
+              <label>Pension pot in Savings
+                <select name="pension_tracking_mode" data-controls data-modal-field="pensionTrackingMode">
+                  <option value="none">Do not track in Savings</option>
+                  ${pensionAccounts.length ? '<option value="link_existing">Link to an existing pension pot</option>' : ''}
+                  <option value="create_new">Create a pension pot in Savings</option>
+                </select>
+              </label>
+              <label data-controlled-by="pension_tracking_mode" data-show-when="link_existing" hidden>Existing pension pot
+                <select name="linked_savings_account_id" data-modal-field="linkedSavingsAccountId">
+                  <option value="">Choose a pension pot</option>
+                  ${pensionAccountOptions(pensionAccounts, members)}
+                </select>
+              </label>
+              <label data-controlled-by="pension_tracking_mode" data-show-when="create_new" hidden>Pension pot name
+                <input name="new_pension_account_name" maxlength="120" placeholder="e.g. Workplace pension" data-modal-field="newPensionAccountName">
+              </label>
+            </div>
+            <div class="pension-form-card" data-controlled-by="pension_tracking_mode" data-show-when="link_existing|create_new" hidden>
+              <h4>Employer contribution</h4>
+              <p class="hint">Employer contributions increase the linked pension pot projection but do not reduce household income.</p>
               <div class="grid two compact">
                 <label>Does your employer contribute?
                   <select name="has_employer_pension_contribution" data-controls data-modal-field="hasEmployerPensionContribution">
@@ -1136,15 +1177,15 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
                 <label data-controlled-by="has_employer_pension_contribution" data-show-when="yes" hidden>Employer contribution
                   <select name="employer_pension_contribution_type" data-controls data-modal-field="employerPensionContributionType">
                     <option value="none">Choose contribution type</option>
-                    <option value="fixed_amount">Fixed amount</option>
                     <option value="percentage">Percentage of gross salary</option>
+                    <option value="fixed_amount">Fixed annual amount</option>
                   </select>
                 </label>
               </div>
               <div class="grid two compact" data-controlled-by="has_employer_pension_contribution" data-show-when="yes" hidden>
                 <label>Employer contribution amount <input name="employer_pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="employerPensionContributionValue"></label>
                 <div class="hint-block">
-                  <p class="hint">Employer contributions do not reduce take-home pay, but they will increase the linked pension pot in Savings projections and linked goals.</p>
+                  <p class="hint">For matching, choose percentage and enter the employer percentage, for example 9.</p>
                 </div>
               </div>
             </div>
@@ -1168,51 +1209,8 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
           </div>
           <label>Notes <textarea name="notes" rows="3" data-modal-field="notes"></textarea></label>
         </section>
-      </div>
-
-      <aside class="modal-summary-panel income-summary-panel" data-income-summary>
-        <div class="modal-summary-card" data-income-summary-view="manual_net">
-          <h3>Planned income summary</h3>
-          <p class="hint">Enter a net amount to see the monthly value used in your budget plan.</p>
-          <dl class="summary-list">
-            <div><dt>Entered net income</dt><dd data-summary-manual-amount>£0.00</dd></div>
-            <div><dt>Frequency</dt><dd data-summary-manual-frequency>Monthly</dd></div>
-            <div><dt>Monthly amount used in budget plan</dt><dd data-summary-manual-monthly>£0.00</dd></div>
-          </dl>
-          <p class="hint">No tax calculation applied.</p>
-        </div>
-        <div class="modal-summary-card" data-income-summary-view="estimated_from_gross" hidden>
-          <h3>Estimated take-home pay</h3>
-          <p class="hint" data-income-estimate-empty>Estimate not calculated yet. Enter salary details and calculate the estimate.</p>
-          <div data-income-estimate-results hidden>
-            <dl class="summary-list">
-              <div><dt>Gross annual salary</dt><dd data-estimate-gross>£0.00</dd></div>
-              <div><dt>Income Tax</dt><dd data-estimate-income-tax>£0.00</dd></div>
-              <div><dt>National Insurance</dt><dd data-estimate-ni>£0.00</dd></div>
-              <div><dt>Student loan repayment</dt><dd data-estimate-student-loan>£0.00</dd></div>
-              <div data-estimate-postgraduate-row hidden><dt>Postgraduate loan repayment</dt><dd data-estimate-postgraduate>£0.00</dd></div>
-              <div data-estimate-pension-row hidden><dt>Pension contribution</dt><dd data-estimate-pension>£0.00</dd></div>
-              <div data-estimate-other-row hidden><dt>Other deductions</dt><dd data-estimate-other>£0.00</dd></div>
-            </dl>
-            <h4>Estimated take-home pay</h4>
-            <dl class="summary-list">
-              <div><dt>Estimated annual net income</dt><dd data-estimate-net-annual>£0.00</dd></div>
-              <div><dt>Estimated monthly net income</dt><dd data-estimate-net-monthly>£0.00</dd></div>
-              <div><dt>Monthly amount used in budget plan</dt><dd data-estimate-budget-monthly>£0.00</dd></div>
-            </dl>
-            <h4>Assumptions</h4>
-            <dl class="summary-list">
-              <div><dt>Tax year</dt><dd data-estimate-tax-year>—</dd></div>
-              <div><dt>Student loan plan</dt><dd data-estimate-student-loan-plan>—</dd></div>
-              <div><dt>Postgraduate loan</dt><dd data-estimate-postgraduate-status>—</dd></div>
-              <div><dt>Pension treatment</dt><dd data-estimate-pension-treatment>—</dd></div>
-              <div><dt>Calculation type</dt><dd>Budgeting estimate</dd></div>
-            </dl>
-          </div>
-          <div class="flash error" data-income-estimate-error hidden></div>
-        </div>
-      </aside>
     </div>
+    <div class="flash error" data-income-estimate-error hidden></div>
     <div class="modal-footer modal-footer-split">
       <div class="modal-footer-start">
         <button type="button" class="secondary" data-close-modal>Cancel</button>
@@ -1220,7 +1218,6 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
       <div class="modal-footer-actions">
         <button type="button" class="secondary" data-step-back hidden>Back</button>
         <button type="button" data-step-next data-hide-on-final-step>Next</button>
-        <button type="button" class="secondary" data-calculate-income-estimate data-show-on-final-step hidden>Calculate estimate</button>
         <button name="action" value="save" data-show-on-final-step hidden>Save income</button>
       </div>
     </div>
@@ -1691,6 +1688,7 @@ function incomeEditAttributes(item) {
     item.estimate_pension_contribution_type === 'fixed_amount'
       ? moneyInputValue(item.estimate_pension_contribution_value || 0)
       : escapeHtml(item.estimate_pension_contribution_value || '');
+  const pensionSchemeType = item.estimate_pension_scheme_type || inferPensionSchemeType(item);
 
   return [
     `data-fill-id="${escapeHtml(item.id)}"`,
@@ -1706,6 +1704,7 @@ function incomeEditAttributes(item) {
     `data-fill-student-loan-plan="${escapeHtml(studentLoanPlans[0] || 'none')}"`,
     `data-fill-has-postgraduate-loan="${item.estimate_has_postgraduate_loan ? '1' : '0'}"`,
     `data-fill-has-pension="${item.estimate_pension_contribution_type && item.estimate_pension_contribution_type !== 'none' ? 'yes' : 'no'}"`,
+    `data-fill-pension-scheme-type="${escapeHtml(pensionSchemeType)}"`,
     `data-fill-pension-contribution-type="${escapeHtml(item.estimate_pension_contribution_type || 'none')}"`,
     `data-fill-pension-contribution-value="${pensionContributionValue}"`,
     `data-fill-pension-contribution-tax-treatment="${escapeHtml(item.estimate_pension_contribution_tax_treatment || 'pre_tax')}"`,
@@ -1721,6 +1720,12 @@ function incomeEditAttributes(item) {
     `data-fill-end-date="${escapeHtml(item.end_date || '')}"`,
     `data-fill-notes="${escapeHtml(item.notes || '')}"`
   ].join(' ');
+}
+
+function inferPensionSchemeType(item) {
+  if (!item.estimate_pension_contribution_type || item.estimate_pension_contribution_type === 'none') return 'salary_sacrifice';
+  if (item.estimate_pension_contribution_tax_treatment === 'post_tax') return 'defined_contribution';
+  return 'salary_sacrifice';
 }
 
 function expenseEditAttributes(item) {
@@ -1812,6 +1817,7 @@ function createIncome(ctx, db) {
         grossAnnualSalaryPence: estimate.grossAnnualSalaryPence,
         payFrequency: frequency,
         taxYear: estimate.taxYear,
+        pensionSchemeType: estimate.pensionSchemeType,
         pensionContributionType: estimate.pensionContributionType,
         pensionContributionValue: estimate.pensionContributionValue,
         pensionContributionTaxTreatment: estimate.pensionContributionTaxTreatment,
@@ -2011,6 +2017,9 @@ function buildEstimate(ctx) {
   const hasStudentLoan = String(ctx.body.has_student_loan || 'no') === 'yes';
   const pensionTreatmentRaw = ctx.body.pension_contribution_tax_treatment || 'pre_tax';
   const hasPension = String(ctx.body.has_pension || 'no') === 'yes';
+  const pensionSchemeType = hasPension
+    ? requireChoice(ctx.body.pension_scheme_type || 'salary_sacrifice', ['salary_sacrifice', 'defined_contribution', 'defined_benefit'], 'Pension type')
+    : 'salary_sacrifice';
   const pensionTypeRaw = hasPension ? (ctx.body.pension_contribution_type || 'none') : 'none';
   if (hasStudentLoan && !ctx.body.student_loan_plan) {
     throw new Error('Student loan repayment plan is required.');
@@ -2031,6 +2040,7 @@ function buildEstimate(ctx) {
   return estimateTakeHomePay({
     grossAnnualSalaryPence,
     taxYear: requireString(ctx.body.tax_year, 'Tax year', 20),
+    pensionSchemeType,
     pensionContributionType: pensionType,
     pensionContributionValue,
     pensionContributionTaxTreatment: requireChoice(pensionTreatmentRaw === 'unknown' ? 'pre_tax' : pensionTreatmentRaw, ['pre_tax', 'post_tax'], 'How your pension is taken'),

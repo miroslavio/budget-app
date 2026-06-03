@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS income_estimates (
   gross_annual_salary_pence INTEGER NOT NULL,
   pay_frequency TEXT NOT NULL CHECK (pay_frequency IN ('monthly', 'yearly')),
   tax_year TEXT NOT NULL,
+  pension_scheme_type TEXT NOT NULL DEFAULT 'salary_sacrifice' CHECK (pension_scheme_type IN ('salary_sacrifice', 'defined_contribution', 'defined_benefit')),
   pension_contribution_type TEXT NOT NULL CHECK (pension_contribution_type IN ('none', 'fixed_amount', 'percentage')),
   pension_contribution_value REAL NOT NULL DEFAULT 0,
   pension_contribution_tax_treatment TEXT NOT NULL CHECK (pension_contribution_tax_treatment IN ('pre_tax', 'post_tax')),

@@ -85,6 +85,13 @@ export function runMigrations(db) {
       db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
       continue;
     }
+    if (
+      migration === '015_add_income_estimate_pension_scheme_type.sql' &&
+      tableHasColumn(db, 'income_estimates', 'pension_scheme_type')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {

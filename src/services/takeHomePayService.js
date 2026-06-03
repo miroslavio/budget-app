@@ -44,6 +44,7 @@ export function estimateTakeHomePay(input) {
   return {
     taxYear: input.taxYear,
     grossAnnualSalaryPence,
+    pensionSchemeType: input.pensionSchemeType || 'salary_sacrifice',
     pensionContributionType: input.pensionContributionType || 'none',
     pensionContributionValue: Number(input.pensionContributionValue || 0),
     pensionContributionTaxTreatment: input.pensionContributionTaxTreatment || 'pre_tax',

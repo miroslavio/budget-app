@@ -634,6 +634,20 @@ h2 {
   align-items: stretch;
 }
 
+.dashboard-owner-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.dashboard-owner-scope > span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
 .dashboard-actuals-grid {
   margin-top: 1rem;
 }
@@ -776,6 +790,98 @@ h2 {
 .bar-svg:focus-visible {
   outline: 2px solid rgba(23, 33, 27, 0.38);
   outline-offset: 3px;
+}
+
+.ranked-chart-list {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.ranked-chart-row {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.ranked-chart-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.ranked-chart-meta strong {
+  font-size: 0.98rem;
+}
+
+.ranked-chart-meta span {
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ranked-chart-caption {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.ranked-bar-svg {
+  display: block;
+  width: 100%;
+  height: 0.58rem;
+  overflow: visible;
+}
+
+.ranked-bar-track {
+  fill: rgba(56, 45, 31, 0.08);
+}
+
+.ranked-bar-fill.spending {
+  fill: rgb(212, 134, 60);
+}
+
+.ranked-bar-fill.savings {
+  fill: rgb(31, 111, 91);
+}
+
+.ranked-bar-fill.top-up {
+  fill: rgb(73, 94, 176);
+}
+
+.ranked-bar-svg:focus-visible {
+  outline: 2px solid rgba(23, 33, 27, 0.38);
+  outline-offset: 3px;
+}
+
+.mini-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.mini-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mini-legend .legend-swatch {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 2px;
+}
+
+.mini-legend .legend-swatch.savings {
+  background: rgb(31, 111, 91);
+}
+
+.mini-legend .legend-swatch.top-up {
+  background: rgb(73, 94, 176);
 }
 
 @keyframes dashboardGrow {
@@ -1453,6 +1559,28 @@ dialog.confirm-modal {
   display: grid;
   gap: 1rem;
   min-width: 0;
+}
+
+.modal-form-main--full {
+  width: 100%;
+}
+
+.pension-form-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.pension-form-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.pension-form-card h4 {
+  margin: 0;
 }
 
 .modal-summary-panel {
@@ -2140,6 +2268,14 @@ progress {
   overflow: hidden;
 }
 
+.echarts-dashboard-chart {
+  width: 100%;
+  max-width: 100%;
+  height: 280px;
+  min-height: 240px;
+  overflow: hidden;
+}
+
 .shortfall-warning {
   display: flex;
   flex-wrap: wrap;
@@ -2330,6 +2466,27 @@ progress {
 
 .mobile-card-region {
   display: none;
+}
+
+.table-search-control {
+  margin: 0 0 0.85rem;
+}
+
+.table-search-control input {
+  width: min(100%, 28rem);
+  min-height: 2.7rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+}
+
+.table-search-control input:focus-visible {
+  outline: 2px solid rgba(31, 111, 91, 0.28);
+  outline-offset: 3px;
 }
 
 .desktop-table-wrapper {
@@ -2616,6 +2773,10 @@ progress {
     height: 400px;
   }
 
+  .echarts-dashboard-chart {
+    height: 300px;
+  }
+
   .setup-step {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -2667,8 +2828,52 @@ progress {
     display: block;
   }
 
+  .table-search-control input {
+    width: 100%;
+  }
+
   .card {
     overflow-x: hidden;
+  }
+
+  .mobile-finance-card {
+    gap: 0.6rem;
+    padding: 0.95rem;
+  }
+
+  .mobile-card-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mobile-card-head p,
+  .mobile-card-amount span {
+    display: none;
+  }
+
+  .mobile-card-meta {
+    display: block;
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .mobile-card-meta div {
+    display: none;
+  }
+
+  .mobile-card-meta div:first-child {
+    display: block;
+  }
+
+  .mobile-card-meta dt {
+    display: none;
+  }
+
+  .mobile-card-meta dd {
+    margin: 0;
+  }
+
+  .mobile-card-amount strong {
+    font-size: clamp(1.35rem, 7vw, 1.75rem);
   }
 
   .mobile-card-meta div {

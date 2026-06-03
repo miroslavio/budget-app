@@ -280,8 +280,8 @@ function transactionMobileCard(ctx, transaction, members, month) {
       <span>Actual movement</span>
     </div>
     <dl class="mobile-card-meta">
-      <div><dt>Category</dt><dd>${escapeHtml(transaction.category_name || 'Uncategorised')}</dd></div>
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(transaction.owner_type, members))}</dd></div>
+      <div><dt>Category</dt><dd>${escapeHtml(transaction.category_name || 'Uncategorised')}</dd></div>
     </dl>
     <div class="mobile-card-actions">
       <div class="table-actions">

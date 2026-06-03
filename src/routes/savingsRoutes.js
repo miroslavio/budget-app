@@ -873,8 +873,8 @@ function savingsAccountMobileCard(account, members, actions = '') {
       <span>Current balance</span>
     </div>
     <dl class="mobile-card-meta">
-      <div><dt>Type</dt><dd>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</dd></div>
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(account.owner_type, members))}</dd></div>
+      <div><dt>Type</dt><dd>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</dd></div>
       <div><dt>Monthly additions</dt><dd>${monthlyAdditionsCell(account)}</dd></div>
     </dl>
     ${actions ? `<div class="mobile-card-actions">${actions}</div>` : ''}

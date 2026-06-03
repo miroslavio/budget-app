@@ -15,7 +15,11 @@ import { buildFlexibleSpendingByMonth, plannedSpendingCategorySeries } from '../
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
 import { addMonths, currentMonth, monthLabel, monthRange, todayIso } from '../utils/dates.js';
 import { escapeHtml, formatCurrency, movementStat, page, stat, ownerLabel, varianceLabel } from '../views/html.js';
-import { incomeAllocationSankeyChart } from '../views/charts.js';
+import {
+  dashboardSavingsAllocationChart,
+  dashboardSpendingPressureChart,
+  incomeAllocationSankeyChart
+} from '../views/charts.js';
 import { renderSetupChecklist } from '../views/setupChecklist.js';
 import { html } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
@@ -28,6 +32,9 @@ export function registerDashboardRoutes(router, db) {
     const selectedFlowOwner = ctx.query.get('flow_owner') || 'household';
     const household = findHouseholdById(db, ctx.user.household_id);
     const members = listHouseholdMembers(db, ctx.user.household_id);
+    const requestedFlowOwners = dashboardFlowOwners(members, selectedFlowOwner);
+    const activeFlowOwner = requestedFlowOwners.some((owner) => owner.active) ? selectedFlowOwner : 'household';
+    const flowOwners = dashboardFlowOwners(members, activeFlowOwner);
     const items = listActiveBudgetItems(db, household.id);
     const savingsAccounts = listSavingsAccounts(db, household.id, { activeOnly: true });
     const goalLinks = listSavingsGoalAccountLinks(db, household.id);
@@ -53,7 +60,8 @@ export function registerDashboardRoutes(router, db) {
       expenseItems: items,
       defaultBudgets: categoryBudgetDefaults,
       monthBudgets: categoryBudgetOverrides,
-      months: report.months
+      months: report.months,
+      owner: activeFlowOwner
     });
     const hasPlannedData =
       planned.plannedIncomePence > 0 ||
@@ -100,8 +108,9 @@ export function registerDashboardRoutes(router, db) {
         categoryBudgetOverrides
       }),
       period,
+      periodMonths: report.months,
       selectedMonth,
-      selectedFlowOwner
+      selectedFlowOwner: activeFlowOwner
     });
 
     html(
@@ -117,13 +126,17 @@ export function registerDashboardRoutes(router, db) {
           </div>
           <div class="dashboard-toolbar-controls">
             <nav class="period-pills" aria-label="Dashboard period">
-              ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth)}
-              ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth)}
-              ${periodPill('/dashboard', 'last_3_months', 'Last 3 months', period.key, selectedMonth)}
-              ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth)}
-              ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth)}
+              ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth, activeFlowOwner)}
+              ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth, activeFlowOwner)}
+              ${periodPill('/dashboard', 'last_3_months', 'Last 3 months', period.key, selectedMonth, activeFlowOwner)}
+              ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth, activeFlowOwner)}
+              ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth, activeFlowOwner)}
             </nav>
-            ${period.key === 'specific_month' ? dashboardSpecificMonthControls(selectedMonth) : ''}
+            ${period.key === 'specific_month' ? dashboardSpecificMonthControls(selectedMonth, activeFlowOwner) : ''}
+            <div class="dashboard-owner-scope">
+              <span>View</span>
+              ${dashboardFlowOwnerPills(flowOwners, period, selectedMonth)}
+            </div>
           </div>
         </section>
 
@@ -168,6 +181,7 @@ function dashboardStateContent({
   plannedExpenseSeries,
   forecastData,
   period,
+  periodMonths,
   selectedMonth,
   selectedFlowOwner
 }) {
@@ -195,6 +209,7 @@ function dashboardStateContent({
         hasActualData: false,
         selectedFlowOwner,
         period,
+        periodMonths,
         selectedMonth
       })}
       ${optionalActualsPrompt()}
@@ -214,6 +229,7 @@ function dashboardStateContent({
       hasActualData: true,
       selectedFlowOwner,
       period,
+      periodMonths,
       selectedMonth
     })}
     <section class="card">
@@ -248,27 +264,28 @@ function planningDashboardContent({
   hasActualData,
   selectedFlowOwner,
   period,
+  periodMonths = [],
   selectedMonth
 }) {
   const yearlyCostItems = yearlyItems(items);
-  const spendingPressure = spendingPressureRows(plannedExpenseSeries);
-  const savingsAllocation = savingsAllocationRows(savingsAccounts, planned);
   const requestedOwners = dashboardFlowOwners(members, selectedFlowOwner);
   const activeFlowOwner = requestedOwners.some((owner) => owner.active) ? selectedFlowOwner : 'household';
-  const flowOwners = dashboardFlowOwners(members, activeFlowOwner);
   const flowPlanned = plannedForFlowOwner(planned, activeFlowOwner, members);
+  const ownerFlexibleSpendingPence = plannedSpendingForOwner(plannedFlexibleSpendingPence, activeFlowOwner, members);
+  const spendingPressure = spendingPressureRows(plannedExpenseSeries, flowPlanned.plannedExpensePence);
+  const savingsAllocation = savingsAllocationRows(savingsAccounts, flowPlanned, activeFlowOwner, members, periodMonths.length || 1);
   const retirementAllocationPence = retirementAllocationForOwner(savingsAccounts, activeFlowOwner, members);
   const moneyFlow = moneyFlowSegments(flowPlanned, retirementAllocationPence);
 
-  return `${plannedSummaryCards(planned, plannedFlexibleSpendingPence)}
-    ${householdMoneyFlowCard(flowPlanned, moneyFlow, flowOwners, period, selectedMonth)}
+  return `${plannedSummaryCards(flowPlanned, ownerFlexibleSpendingPence)}
+    ${householdMoneyFlowCard(flowPlanned, moneyFlow)}
     <section class="grid two dashboard-analysis-grid">
       ${spendingPressureCard(spendingPressure)}
       ${savingsAllocationCard(savingsAllocation)}
     </section>
     <section class="grid two dashboard-analysis-grid">
       ${insightsCard({
-        planned,
+        planned: flowPlanned,
         spendingPressure,
         yearlyCostItems,
         forecastData,
@@ -309,7 +326,7 @@ function moneyFlowSegments(planned, retirementAllocationPence = 0) {
   ];
 }
 
-function householdMoneyFlowCard(planned, segments, owners, period, selectedMonth) {
+function householdMoneyFlowCard(planned, segments) {
   const spending = Number(segments.find((segment) => segment.key === 'spending')?.amountPence || 0);
   const savings = Number(segments.find((segment) => segment.key === 'savings')?.amountPence || 0);
   const retirement = Number(segments.find((segment) => segment.key === 'retirement')?.amountPence || 0);
@@ -320,7 +337,6 @@ function householdMoneyFlowCard(planned, segments, owners, period, selectedMonth
       <div>
         <h2>Household money flow</h2>
       </div>
-      ${dashboardFlowOwnerPills(owners, period, selectedMonth)}
     </div>
     ${incomeAllocationSankeyChart({
       plannedIncomePence: planned.plannedIncomePence,
@@ -333,51 +349,50 @@ function householdMoneyFlowCard(planned, segments, owners, period, selectedMonth
   </section>`;
 }
 
-function spendingPressureRows(series = []) {
+function spendingPressureRows(series = [], totalPlannedSpendingPence = 0) {
+  const total = Math.max(
+    Number(totalPlannedSpendingPence || 0),
+    series.reduce((sum, row) => sum + Number(row.value || 0), 0),
+    1
+  );
   return [...series]
     .filter((row) => Number(row.value || 0) > 0)
     .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
     .slice(0, 6)
     .map((row) => ({
       label: row.label,
-      valuePence: Number(row.value || 0)
+      valuePence: Number(row.value || 0),
+      percentage: Math.round((Number(row.value || 0) / total) * 100)
     }));
 }
 
 function spendingPressureCard(rows) {
   if (!rows.length) return '';
-  const maxValue = Math.max(...rows.map((row) => row.valuePence), 1);
   return `<section class="card">
     <h2>Spending pressure</h2>
-    <div class="bar-list">
-      ${rows
-        .map((row) => `<div class="bar-row">
-          <div class="bar-row-label">
-            <strong>${escapeHtml(row.label)}</strong>
-            <span>${formatCurrency(row.valuePence)}</span>
-          </div>
-          ${dashboardBarSvg({
-            valuePence: row.valuePence,
-            maxValuePence: maxValue,
-            tone: 'spending',
-            label: `${row.label}: ${formatCurrency(row.valuePence)}`,
-            tooltip: `${row.label}\nExpected planned spending: ${formatCurrency(row.valuePence)}`
-          })}
-        </div>`)
-        .join('')}
-    </div>
+    ${dashboardSpendingPressureChart(rows)}
   </section>`;
 }
 
-function savingsAllocationRows(accounts, planned) {
+function savingsAllocationRows(accounts, planned, owner = 'household', members = [], periodMonthCount = 1) {
+  const periodMultiplier = Math.max(1, Number(periodMonthCount || 1));
   const rows = accounts
     .filter((account) => Number(account.is_active) === 1)
-    .map((account) => ({
-      label: account.name,
-      valuePence: Number(account.monthly_contribution_pence || 0),
-      topUpPence: Number(account.account_type === 'pension' ? account.employer_monthly_contribution_pence || 0 : 0),
-      typeLabel: savingsAccountTypeLabel(account.account_type)
-    }))
+    .map((account) => {
+      const valuePence = accountContributionForOwner(Number(account.monthly_contribution_pence || 0), account, owner, members) * periodMultiplier;
+      const topUpPence = accountContributionForOwner(
+        Number(account.account_type === 'pension' ? account.employer_monthly_contribution_pence || 0 : 0),
+        account,
+        owner,
+        members
+      ) * periodMultiplier;
+      return {
+        label: account.name,
+        valuePence,
+        topUpPence,
+        typeLabel: savingsAccountTypeLabel(account.account_type)
+      };
+    })
     .filter((row) => row.valuePence > 0 || row.topUpPence > 0)
     .sort((a, b) => (b.valuePence + b.topUpPence) - (a.valuePence + a.topUpPence));
 
@@ -390,59 +405,10 @@ function savingsAllocationRows(accounts, planned) {
 
 function savingsAllocationCard(rows) {
   if (!rows.length) return '';
-  const maxValue = Math.max(...rows.map((row) => row.valuePence + row.topUpPence), 1);
   return `<section class="card">
     <h2>Savings allocation</h2>
-    <div class="bar-list">
-      ${rows
-        .map((row) => {
-          const total = row.valuePence + row.topUpPence;
-          const incomeTooltip = `${row.label}\nFrom household income: ${formatCurrency(row.valuePence)}\nTotal to pot: ${formatCurrency(total)}`;
-          const topUpTooltip = `${row.label}\nEmployer contributions: ${formatCurrency(row.topUpPence)}\nTotal to pot: ${formatCurrency(total)}`;
-          return `<div class="bar-row">
-            <div class="bar-row-label">
-              <strong>${escapeHtml(row.label)}</strong>
-              <span>${formatCurrency(total)}</span>
-            </div>
-            <div class="bar-split">
-              ${row.valuePence > 0 ? `<div class="bar-split-row">
-                <span>From income</span>
-                ${dashboardBarSvg({
-                  valuePence: row.valuePence,
-                  maxValuePence: maxValue,
-                  tone: 'savings',
-                  label: `${row.label} from income: ${formatCurrency(row.valuePence)}`,
-                  tooltip: incomeTooltip
-                })}
-              </div>` : ''}
-              ${row.topUpPence > 0 ? `<div class="bar-split-row">
-                <span>Employer contribution</span>
-                ${dashboardBarSvg({
-                  valuePence: row.topUpPence,
-                  maxValuePence: maxValue,
-                  tone: 'top-up',
-                  label: `${row.label} employer contribution: ${formatCurrency(row.topUpPence)}`,
-                  tooltip: topUpTooltip
-                })}
-              </div>` : ''}
-            </div>
-            <small class="plan-stat-note">${escapeHtml(row.typeLabel)}${row.topUpPence ? ` · Employer ${formatCurrency(row.topUpPence)}` : ''}</small>
-          </div>`;
-        })
-        .join('')}
-    </div>
+    ${dashboardSavingsAllocationChart(rows)}
   </section>`;
-}
-
-function dashboardBarSvg({ valuePence, maxValuePence, tone, label, tooltip }) {
-  const safeMax = Math.max(1, Number(maxValuePence || 1));
-  const safeValue = Math.max(0, Number(valuePence || 0));
-  const width = Math.min(100, Math.max(0, (safeValue / safeMax) * 100)).toFixed(2);
-  const safeTone = ['spending', 'savings', 'top-up'].includes(tone) ? tone : 'savings';
-  return `<svg class="bar-svg ${escapeHtml(safeTone)}" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" tabindex="0" aria-label="${escapeHtml(label)}" data-chart-tooltip="${escapeHtml(tooltip)}">
-    <rect class="bar-svg-track" x="0" y="0" width="100" height="10" rx="5"></rect>
-    <rect class="bar-svg-fill ${escapeHtml(safeTone)}" x="0" y="0" width="${width}" height="10" rx="5"></rect>
-  </svg>`;
 }
 
 function insightsCard({ planned, spendingPressure, yearlyCostItems, forecastData, hasActualData }) {
@@ -799,29 +765,31 @@ function resolveDashboardPeriod(periodKey, selectedMonth) {
   }
 }
 
-function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth) {
+function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth, selectedFlowOwner = 'household') {
   const params = new URLSearchParams({
     period: periodKey,
-    month: selectedMonth
+    month: selectedMonth,
+    flow_owner: selectedFlowOwner
   });
   const active = selectedPeriod === periodKey;
   return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
 }
 
-function dashboardSpecificMonthControls(month) {
+function dashboardSpecificMonthControls(month, selectedFlowOwner = 'household') {
   const inputId = 'dashboard-month-input';
   return `<form method="get" action="/dashboard" class="budget-plan-month-form" data-submit-on-change>
     <input type="hidden" name="period" value="specific_month">
+    <input type="hidden" name="flow_owner" value="${escapeHtml(selectedFlowOwner)}">
     <input id="${inputId}" class="budget-plan-month-input" type="month" name="month" value="${escapeHtml(month)}" aria-label="Pick month">
   </form>
   <div class="budget-plan-month-controls" role="group" aria-label="Dashboard month">
-    <a class="period-pill budget-plan-month-step" href="/dashboard?period=specific_month&month=${encodeURIComponent(previousMonth(month))}" aria-label="Previous month">
+    <a class="period-pill budget-plan-month-step" href="/dashboard?period=specific_month&month=${encodeURIComponent(previousMonth(month))}&flow_owner=${encodeURIComponent(selectedFlowOwner)}" aria-label="Previous month">
       <span aria-hidden="true">&lsaquo;</span>
     </a>
     <button type="button" class="period-pill budget-plan-current-month-button" data-open-month-picker="${inputId}" aria-label="Pick month" title="Pick month">
       ${escapeHtml(monthLabel(month))}
     </button>
-    <a class="period-pill budget-plan-month-step" href="/dashboard?period=specific_month&month=${encodeURIComponent(nextMonth(month))}" aria-label="Next month">
+    <a class="period-pill budget-plan-month-step" href="/dashboard?period=specific_month&month=${encodeURIComponent(nextMonth(month))}&flow_owner=${encodeURIComponent(selectedFlowOwner)}" aria-label="Next month">
       <span aria-hidden="true">&rsaquo;</span>
     </a>
     <button type="button" class="period-pill budget-plan-month-step" data-open-month-picker="${inputId}" aria-label="Open month picker" title="Open month picker">
@@ -883,6 +851,11 @@ function plannedForFlowOwner(planned, owner, members = []) {
   };
 }
 
+function plannedSpendingForOwner(amountPence, owner, members = []) {
+  if (owner === 'household') return Number(amountPence || 0);
+  return sharedOwnerShare(Number(amountPence || 0), owner, members);
+}
+
 function retirementAllocationForOwner(accounts, owner, members = []) {
   const activePensions = accounts.filter(
     (account) => Number(account.is_active) === 1 && account.account_type === 'pension'
@@ -896,6 +869,14 @@ function retirementAllocationForOwner(accounts, owner, members = []) {
     if (account.owner_type === 'shared') return sum + sharedOwnerShare(contribution, owner, members);
     return sum;
   }, 0);
+}
+
+function accountContributionForOwner(amountPence, account, owner, members = []) {
+  const amount = Number(amountPence || 0);
+  if (owner === 'household') return amount;
+  if (account.owner_type === owner) return amount;
+  if (account.owner_type === 'shared') return sharedOwnerShare(amount, owner, members);
+  return 0;
 }
 
 function sharedOwnerShare(amountPence, owner, members = []) {

@@ -351,6 +351,165 @@ export function incomeAllocationSankeyChart({
   </div>`;
 }
 
+export function dashboardSpendingPressureChart(rows = [], { emptyMessage = 'No planned spending yet.' } = {}) {
+  const chartRows = rows.filter((row) => Number(row.valuePence || 0) > 0);
+  if (!chartRows.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const chartId = `dashboard-spending-pressure-${Math.random().toString(36).slice(2)}`;
+  const orderedRows = [...chartRows].reverse();
+  const chartConfig = {
+    textStyle: {
+      fontFamily: 'inherit',
+      color: '#17211b'
+    },
+    grid: {
+      left: 6,
+      right: 112,
+      top: 10,
+      bottom: 18,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      min: 0,
+      axisLabel: {
+        formatter: '£{value}'
+      },
+      splitLine: {
+        lineStyle: { color: 'rgba(56, 45, 31, 0.09)' }
+      }
+    },
+    yAxis: {
+      type: 'category',
+      data: orderedRows.map((row) => row.label),
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: {
+        color: '#17211b',
+        fontWeight: 700
+      }
+    },
+    series: [
+      {
+        name: 'Planned spending',
+        type: 'bar',
+        barWidth: 12,
+        data: orderedRows.map((row) => ({
+          name: row.label,
+          value: Number((Number(row.valuePence || 0) / 100).toFixed(2)),
+          valuePence: Number(row.valuePence || 0),
+          percentage: Number(row.percentage || 0)
+        })),
+        itemStyle: {
+          color: '#d4863c',
+          borderRadius: 2
+        }
+      }
+    ]
+  };
+
+  return `<div id="${chartId}" class="echarts-dashboard-chart" role="img" aria-label="Spending pressure chart" data-echarts-chart data-chart-type="dashboard-spending-pressure" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>`;
+}
+
+export function dashboardSavingsAllocationChart(rows = [], { emptyMessage = 'No planned savings allocation yet.' } = {}) {
+  const chartRows = rows.filter((row) => Number(row.valuePence || 0) > 0 || Number(row.topUpPence || 0) > 0);
+  if (!chartRows.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const chartId = `dashboard-savings-allocation-${Math.random().toString(36).slice(2)}`;
+  const orderedRows = [...chartRows].reverse();
+  const rowData = orderedRows.map((row) => ({
+    name: row.label,
+    incomePence: Number(row.valuePence || 0),
+    topUpPence: Number(row.topUpPence || 0),
+    totalPence: Number(row.valuePence || 0) + Number(row.topUpPence || 0)
+  }));
+  const hasTopUps = rowData.some((row) => row.topUpPence > 0);
+  const chartConfig = {
+    textStyle: {
+      fontFamily: 'inherit',
+      color: '#17211b'
+    },
+    legend: {
+      bottom: 0,
+      left: 0,
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: {
+        color: '#5e6b63',
+        fontWeight: 700
+      },
+      data: hasTopUps ? ['From income', 'Employer contribution'] : ['From income']
+    },
+    grid: {
+      left: 6,
+      right: 112,
+      top: 10,
+      bottom: hasTopUps ? 42 : 24,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      min: 0,
+      axisLabel: {
+        formatter: '£{value}'
+      },
+      splitLine: {
+        lineStyle: { color: 'rgba(56, 45, 31, 0.09)' }
+      }
+    },
+    yAxis: {
+      type: 'category',
+      data: rowData.map((row) => row.name),
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: {
+        color: '#17211b',
+        fontWeight: 700
+      }
+    },
+    series: [
+      {
+        name: 'From income',
+        type: 'bar',
+        stack: 'total',
+        barWidth: 12,
+        data: rowData.map((row) => ({
+          name: row.name,
+          value: Number((row.incomePence / 100).toFixed(2)),
+          valuePence: row.incomePence,
+          totalPence: row.totalPence,
+          topUpPence: row.topUpPence
+        })),
+        itemStyle: {
+          color: '#1f6f5b',
+          borderRadius: hasTopUps ? [2, 0, 0, 2] : 2
+        }
+      },
+      ...(hasTopUps ? [
+        {
+          name: 'Employer contribution',
+          type: 'bar',
+          stack: 'total',
+          barWidth: 12,
+          data: rowData.map((row) => ({
+            name: row.name,
+            value: Number((row.topUpPence / 100).toFixed(2)),
+            valuePence: row.topUpPence,
+            totalPence: row.totalPence,
+            incomePence: row.incomePence
+          })),
+          itemStyle: {
+            color: '#4b5fb5',
+            borderRadius: [0, 2, 2, 0]
+          }
+        }
+      ] : [])
+    ]
+  };
+
+  return `<div id="${chartId}" class="echarts-dashboard-chart" role="img" aria-label="Savings allocation chart" data-echarts-chart data-chart-type="dashboard-savings-allocation" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>`;
+}
+
 function allocationNode(name, valuePence, incomePence, color, { showPercentage = true } = {}) {
   return {
     name,
