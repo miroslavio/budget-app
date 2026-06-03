@@ -1,0 +1,19 @@
+{
+  "name": "uk-household-budget-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Simple manual-first UK household budgeting app for up to two people.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/app.js",
+    "test": "node --no-warnings=ExperimentalWarning --test src/tests/*.test.js"
+  },
+  "dependencies": {
+    "echarts": "^6.1.0",
+    "express": "^5.2.1",
+    "multer": "^2.1.1"
+  }
+}
