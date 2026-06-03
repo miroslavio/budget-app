@@ -274,7 +274,7 @@ function planningDashboardContent({
   const ownerFlexibleSpendingPence = plannedSpendingForOwner(plannedFlexibleSpendingPence, activeFlowOwner, members);
   const spendingPressure = spendingPressureRows(plannedExpenseSeries, flowPlanned.plannedExpensePence);
   const savingsAllocation = savingsAllocationRows(savingsAccounts, flowPlanned, activeFlowOwner, members, periodMonths.length || 1);
-  const retirementAllocationPence = retirementAllocationForOwner(savingsAccounts, activeFlowOwner, members);
+  const retirementAllocationPence = retirementAllocationForOwner(savingsAccounts, activeFlowOwner, members, periodMonths.length || 1);
   const moneyFlow = moneyFlowSegments(flowPlanned, retirementAllocationPence);
 
   return `${plannedSummaryCards(flowPlanned, ownerFlexibleSpendingPence)}
@@ -856,19 +856,20 @@ function plannedSpendingForOwner(amountPence, owner, members = []) {
   return sharedOwnerShare(Number(amountPence || 0), owner, members);
 }
 
-function retirementAllocationForOwner(accounts, owner, members = []) {
+function retirementAllocationForOwner(accounts, owner, members = [], periodMonthCount = 1) {
+  const periodMultiplier = Math.max(1, Number(periodMonthCount || 1));
   const activePensions = accounts.filter(
     (account) => Number(account.is_active) === 1 && account.account_type === 'pension'
   );
   if (owner === 'household') {
-    return activePensions.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0);
+    return activePensions.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0) * periodMultiplier;
   }
   return activePensions.reduce((sum, account) => {
     const contribution = Number(account.monthly_contribution_pence || 0);
     if (account.owner_type === owner) return sum + contribution;
     if (account.owner_type === 'shared') return sum + sharedOwnerShare(contribution, owner, members);
     return sum;
-  }, 0);
+  }, 0) * periodMultiplier;
 }
 
 function accountContributionForOwner(amountPence, account, owner, members = []) {
