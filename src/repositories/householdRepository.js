@@ -10,6 +10,10 @@ export function findHouseholdById(db, id) {
   return db.prepare('SELECT * FROM households WHERE id = ?').get(id);
 }
 
+export function findFirstHousehold(db) {
+  return db.prepare('SELECT * FROM households ORDER BY id LIMIT 1').get();
+}
+
 export function findHouseholdByInviteCode(db, inviteCode) {
   return db.prepare('SELECT * FROM households WHERE invite_code = ?').get(inviteCode);
 }

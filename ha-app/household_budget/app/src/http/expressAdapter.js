@@ -52,7 +52,7 @@ function wrapHandler(db, handler) {
 function buildContext(db, req, res) {
   const host = req.get('host') || 'localhost';
   const url = new URL(req.url || '/', `${req.protocol}://${host}`);
-  const { user, csrfToken, sessionId } = loadSession(db, req, res);
+  const { user, csrfToken, sessionId, authError } = loadSession(db, req, res);
 
   return {
     req,
@@ -65,6 +65,7 @@ function buildContext(db, req, res) {
     user,
     csrfToken,
     sessionId,
+    authError,
     secure: Boolean(req.secure || req.get('x-forwarded-proto') === 'https')
   };
 }

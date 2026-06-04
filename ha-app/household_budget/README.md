@@ -4,6 +4,8 @@ Household Budget is a planning-first UK household budgeting app for expected inc
 
 This package runs the Node.js, Express, and SQLite app as a Home Assistant app on Home Assistant OS, including Raspberry Pi 4 systems running `aarch64`.
 
+Access is controlled by Home Assistant Ingress. Household Budget does not show a separate email/password login inside Home Assistant. The first two Home Assistant users who open the app are linked as household members for ownership and split calculations.
+
 ## Web UI
 
 - Web UI: Home Assistant Ingress

@@ -1,6 +1,6 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
 
-const ASSET_VERSION = '2026-06-04-ha-ingress';
+const ASSET_VERSION = '2026-06-04-ha-auth';
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -48,7 +48,7 @@ export function page(ctx, { title, body, wide = false }) {
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="${loggedIn ? '/dashboard' : '/login'}">
+    <a class="brand" href="/dashboard">
       <span class="brand-mark" aria-hidden="true">${brandIcon()}</span>
       <span>Household Budget</span>
     </a>
@@ -87,15 +87,6 @@ function nav(ctx) {
           return `<a class="${isActive ? 'active' : ''}" ${isActive ? 'aria-current="page"' : ''} href="${href}">${label}</a>`;
         }).join('\n        ')}
       </div>
-      <form method="post" action="/logout" class="nav-form">
-        ${csrfField(ctx)}
-        <button class="logout-button" type="submit" title="Log out" aria-label="Log out">
-          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20">
-            <path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M14 7l5 5-5 5M19 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
-      </form>
     </div>
   </nav>`;
 }

@@ -159,9 +159,9 @@ npm test
 
 ## First use
 
-1. Open `/register`
-2. Create the first account and household
-3. Use the invite code in `Settings > Household & members` if you want to add a second person
+1. Open the app from Home Assistant Ingress, or run it locally during development
+2. The first Home Assistant user to open the app is linked as the first household member
+3. A second Home Assistant user can be linked automatically as the second household member
 4. Build the plan in `Budget Plan`
 5. Optionally add actuals later
 
@@ -171,6 +171,7 @@ npm test
 - Set `DATABASE_PATH=/path/to/budget.sqlite` to store the SQLite database somewhere else, for example `/data/budget.sqlite` inside the Home Assistant app
 - Migrations run automatically on startup
 - The app is manual-first and does not use Open Banking or bank feeds
+- Home Assistant Ingress controls access in packaged installs; the app does not have a separate email/password login
 - Forecast cashflow uses only accounts/pots marked as available for household cashflow
 - Long-term pots such as pensions and LISAs can still be tracked in savings projections without being treated as spendable household cash
 

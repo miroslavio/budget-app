@@ -13,6 +13,10 @@ export function findUserByEmail(db, email) {
   return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 }
 
+export function findUserByHouseholdAndPersonKey(db, householdId, personKey) {
+  return db.prepare('SELECT * FROM users WHERE household_id = ? AND person_key = ?').get(householdId, personKey);
+}
+
 export function findUserById(db, id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
@@ -23,4 +27,9 @@ export function countHouseholdUsers(db, householdId) {
 
 export function listHouseholdMembers(db, householdId) {
   return db.prepare('SELECT id, email, display_name, person_key, created_at FROM users WHERE household_id = ? ORDER BY person_key').all(householdId);
+}
+
+export function updateUserHomeAssistantIdentity(db, userId, { email, displayName }) {
+  db.prepare('UPDATE users SET email = ?, display_name = ? WHERE id = ?').run(email, displayName, userId);
+  return findUserById(db, userId);
 }

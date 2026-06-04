@@ -31,16 +31,16 @@ export function registerSettingsRoutes(router, db) {
             <form method="post" action="/settings/household" class="stack">
               ${csrfField(ctx)}
               <label>Household name <input name="name" value="${escapeHtml(household.name)}" maxlength="120" required></label>
-              <p class="hint">Household invite code: <strong>${escapeHtml(household.invite_code)}</strong></p>
+              <p class="hint">Access is controlled by Home Assistant. The first two Home Assistant users who open the app are linked as household members.</p>
               <button>Save settings</button>
             </form>
           </div>
           <div class="card">
             <h2>Members</h2>
             <table class="data-table">
-              <thead><tr><th>Name</th><th>Email</th></tr></thead>
+              <thead><tr><th>Name</th><th>Household role</th></tr></thead>
               <tbody>${members
-                .map((member) => `<tr><td>${escapeHtml(member.display_name)}</td><td>${escapeHtml(member.email)}</td></tr>`)
+                .map((member) => `<tr><td>${escapeHtml(member.display_name)}</td><td>${escapeHtml(member.person_key === 'person_a' ? 'First member' : 'Second member')}</td></tr>`)
                 .join('')}</tbody>
             </table>
           </div>
@@ -144,20 +144,20 @@ export function registerSettingsRoutes(router, db) {
         <section class="card danger-zone">
           <h2>Danger zone</h2>
           <div class="grid two compact">
-            <form method="post" action="/settings/reset-data" class="stack" data-confirm="Reset all household financial data? This keeps member logins but removes budget items, actuals, imports, savings, categories, and forecast assumptions.">
+            <form method="post" action="/settings/reset-data" class="stack" data-confirm="Reset all household financial data? This keeps Home Assistant-linked members but removes budget items, actuals, imports, savings, categories, and forecast assumptions.">
               ${csrfField(ctx)}
               <div>
                 <h3>Reset household data</h3>
-                <p class="hint">Keeps the household and member logins, but clears Budget Plan, Actuals, imports, savings, custom categories, and the forecast adjustment.</p>
+                <p class="hint">Keeps the household and Home Assistant-linked members, but clears Budget Plan, Actuals, imports, savings, custom categories, and the forecast adjustment.</p>
               </div>
               <label>Type RESET to confirm <input name="confirmation" autocomplete="off" required></label>
               <button class="danger-button">Reset data</button>
             </form>
-            <form method="post" action="/settings/delete-household" class="stack" data-confirm="Delete this household and all member accounts? This cannot be undone.">
+            <form method="post" action="/settings/delete-household" class="stack" data-confirm="Delete this household and all linked members? This cannot be undone.">
               ${csrfField(ctx)}
               <div>
-                <h3>Delete household and accounts</h3>
-                <p class="hint">Deletes the household, all member accounts, sessions, and all financial data. Use this when you want to register again as a first-time user.</p>
+                <h3>Delete household</h3>
+                <p class="hint">Deletes the household, Home Assistant-linked members, sessions, and all financial data. Reopen the app from Home Assistant to create a fresh household.</p>
               </div>
               <label>Type ${escapeHtml(household.name)} to confirm <input name="confirmation" autocomplete="off" required></label>
               <button class="danger-button">Delete household</button>
@@ -248,7 +248,7 @@ export function registerSettingsRoutes(router, db) {
       deleteHouseholdAndUsers(db, householdId);
       if (sessionId) deleteSession(db, sessionId);
       clearSessionCookie(ctx.res, ctx.secure);
-      redirectWithSuccess(ctx.res, '/register', 'Household deleted. Create a new account to start again.');
+      redirectWithSuccess(ctx.res, '/dashboard', 'Household deleted. Reopen the app to start again.');
     } catch (error) {
       redirectWithError(ctx.res, '/settings/danger-zone', error);
     }
