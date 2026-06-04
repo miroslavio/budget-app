@@ -22,7 +22,21 @@ app.disable('x-powered-by');
 app.set('trust proxy', true);
 
 app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'");
+  const ingressPath = normaliseIngressPath(req.get('x-ingress-path'));
+  res.locals.ingressPath = ingressPath;
+
+  if (ingressPath && req.url.startsWith(`${ingressPath}/`)) {
+    req.url = req.url.slice(ingressPath.length) || '/';
+  } else if (ingressPath && req.url === ingressPath) {
+    req.url = '/';
+  }
+
+  next();
+});
+
+app.use((req, res, next) => {
+  const frameAncestors = res.locals.ingressPath ? "'self'" : "'none'";
+  res.setHeader('Content-Security-Policy', `default-src 'self'; style-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors ${frameAncestors}`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });
@@ -81,3 +95,9 @@ server.on('close', () => {
 });
 
 export { app, server };
+
+function normaliseIngressPath(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '/') return '';
+  return `/${raw.replace(/^\/+|\/+$/g, '')}`;
+}

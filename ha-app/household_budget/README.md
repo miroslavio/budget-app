@@ -4,11 +4,25 @@ Household Budget is a planning-first UK household budgeting app for expected inc
 
 This package runs the Node.js, Express, and SQLite app as a Home Assistant app on Home Assistant OS, including Raspberry Pi 4 systems running `aarch64`.
 
-## Exposed Port
+## Web UI
 
-- Web UI: `3000/tcp`
-- Home Assistant web UI: `http://[HOST]:[PORT:3000]`
+- Web UI: Home Assistant Ingress
+- Internal app port: `3000`
 - Health check: `/health`
+
+The app does not expose port `3000` on the local network by default. Home Assistant proxies the web UI through Ingress, so access goes through Home Assistant authentication and remote access.
+
+For development-only direct LAN access, add a port mapping in `config.yaml` locally:
+
+```yaml
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: "Household Budget development web interface"
+webui: "http://[HOST]:[PORT:3000]"
+```
+
+Do not enable this by default for production installs.
 
 ## Data Storage
 
@@ -66,7 +80,7 @@ This copies the production app source without `node_modules`, local SQLite data,
 8. The app should appear under local apps.
 9. Install it.
 10. Start it.
-11. Open the web UI.
+11. Open the web UI through Home Assistant Ingress.
 
 Older Home Assistant versions may still label this area as Add-ons rather than Apps.
 
@@ -110,8 +124,9 @@ If startup fails, check for SQLite file permission errors, invalid `config.yaml`
 
 - Confirm `slug` contains only lowercase letters, numbers, and underscores.
 - Confirm `arch` includes your device architecture. Raspberry Pi 4 usually uses `aarch64`.
-- Confirm `ports` maps `3000/tcp`.
-- Confirm `webui` is exactly `http://[HOST]:[PORT:3000]`.
+- Confirm `ingress: true`.
+- Confirm `ingress_port: 3000`.
+- Confirm direct `ports` are not enabled unless you are intentionally using a development-only local port.
 - Confirm YAML indentation uses spaces, not tabs.
 - Confirm the app folder contains `config.yaml`, `Dockerfile`, `run.sh`, `README.md`, and `app/`.
 

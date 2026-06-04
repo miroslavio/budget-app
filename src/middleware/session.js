@@ -35,6 +35,7 @@ export function startSession(db, res, userId, secure = false) {
       httpOnly: true,
       sameSite: 'Lax',
       secure,
+      path: cookiePath(res),
       expires: new Date(sessionExpiry())
     })
   );
@@ -47,6 +48,7 @@ export function clearSessionCookie(res, secure = false) {
       httpOnly: true,
       sameSite: 'Lax',
       secure,
+      path: cookiePath(res),
       maxAge: 0
     })
   );
@@ -57,4 +59,9 @@ export function requireAuth(ctx) {
     return false;
   }
   return true;
+}
+
+function cookiePath(res) {
+  const ingressPath = String(res?.locals?.ingressPath || '').trim();
+  return ingressPath || '/';
 }

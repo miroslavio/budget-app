@@ -51,7 +51,7 @@ function wrapHandler(db, handler) {
 
 function buildContext(db, req, res) {
   const host = req.get('host') || 'localhost';
-  const url = new URL(req.originalUrl || req.url || '/', `${req.protocol}://${host}`);
+  const url = new URL(req.url || '/', `${req.protocol}://${host}`);
   const { user, csrfToken, sessionId } = loadSession(db, req, res);
 
   return {

@@ -1,6 +1,6 @@
 name: "Household Budget"
 description: "Planning-first UK household budgeting app"
-version: "0.1.0"
+version: "0.1.1"
 slug: "household_budget"
 init: false
 arch:
@@ -9,11 +9,10 @@ arch:
   - armv7
 startup: services
 boot: auto
-ports:
-  3000/tcp: 3000
-ports_description:
-  3000/tcp: "Household Budget web interface"
-webui: "http://[HOST]:[PORT:3000]"
+ingress: true
+ingress_port: 3000
+panel_icon: mdi:cash-register
+panel_title: Household Budget
 options:
   database_path: "/data/budget.sqlite"
 schema:

@@ -938,7 +938,7 @@ function wireIncomeEstimateForms(root = document) {
       const formData = new FormData(form);
       try {
         calculateButton?.setAttribute('aria-busy', 'true');
-        const response = await fetch('/income/estimate', {
+        const response = await fetch(appUrl('/income/estimate'), {
           method: 'POST',
           body: new URLSearchParams([...formData.entries()].map(([key, value]) => [key, String(value)])),
           headers: {
@@ -1427,6 +1427,13 @@ function formatCurrencyFromPence(pence) {
 
 function formatNegativeCurrencyFromPence(pence) {
   return `-${formatCurrencyFromPence(Math.abs(Number(pence || 0)))}`;
+}
+
+function appUrl(path) {
+  const base = String(window.__APP_BASE_PATH__ || document.body?.dataset?.appBasePath || '').replace(/\/+$/, '');
+  const target = String(path || '/');
+  if (!base || !target.startsWith('/')) return target;
+  return `${base}${target}`;
 }
 
 function capitalise(value) {
