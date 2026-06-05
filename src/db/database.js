@@ -92,6 +92,40 @@ export function runMigrations(db) {
       db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
       continue;
     }
+    if (
+      migration === '016_add_category_budget_names.sql' &&
+      tableHasColumn(db, 'category_budgets', 'name') &&
+      tableHasColumn(db, 'category_budget_defaults', 'name')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
+    if (
+      migration === '017_refine_pension_models.sql' &&
+      tableHasColumn(db, 'income_estimates', 'pension_contribution_method') &&
+      tableHasColumn(db, 'savings_accounts', 'annual_pension_entitlement_pence')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
+    if (migration === '017_refine_pension_models.sql') {
+      db.exec(fs.readFileSync(path.join(migrationsDirectory, migration), 'utf8'));
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
+    if (
+      migration === '018_add_variable_estimate_ownership.sql' &&
+      tableHasColumn(db, 'category_budgets', 'owner_type') &&
+      tableHasColumn(db, 'category_budget_defaults', 'owner_type')
+    ) {
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
+    if (migration === '018_add_variable_estimate_ownership.sql') {
+      db.exec(fs.readFileSync(path.join(migrationsDirectory, migration), 'utf8'));
+      db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(migration);
+      continue;
+    }
 
     db.exec('BEGIN');
     try {

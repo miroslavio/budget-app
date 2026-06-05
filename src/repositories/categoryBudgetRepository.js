@@ -24,28 +24,22 @@ export function findCategoryBudgetDefaultById(db, householdId, id) {
 
 export function saveCategoryBudget(db, budget) {
   const existing = budget.id ? findCategoryBudgetById(db, budget.householdId, budget.id) : null;
-  const duplicate = db
-    .prepare(
-      `SELECT id
-       FROM category_budgets
-       WHERE household_id = ? AND category_id = ? AND budget_month = ? ${budget.id ? 'AND id != ?' : ''}`
-    )
-    .get(
-      budget.householdId,
-      budget.categoryId,
-      budget.budgetMonth,
-      ...(budget.id ? [budget.id] : [])
-    );
 
   if (existing) {
-    if (duplicate) throw new Error('A budget for that category and month already exists.');
     db.prepare(
       `UPDATE category_budgets
-       SET category_id = ?, budget_month = ?, amount_pence = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+       SET category_id = ?, name = ?, budget_month = ?, owner_type = ?, split_type = ?,
+           person_a_percentage = ?, person_b_percentage = ?, amount_pence = ?, notes = ?,
+           updated_at = CURRENT_TIMESTAMP
        WHERE household_id = ? AND id = ?`
     ).run(
       budget.categoryId,
+      budget.name || null,
       budget.budgetMonth,
+      budget.ownerType || 'shared',
+      budget.splitType || 'equal',
+      budget.personAPercentage ?? 50,
+      budget.personBPercentage ?? 50,
       budget.amountPence,
       budget.notes || null,
       budget.householdId,
@@ -54,30 +48,22 @@ export function saveCategoryBudget(db, budget) {
     return findCategoryBudgetById(db, budget.householdId, budget.id);
   }
 
-  if (duplicate) {
-    db.prepare(
-      `UPDATE category_budgets
-       SET amount_pence = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE household_id = ? AND id = ?`
-    ).run(
-      budget.amountPence,
-      budget.notes || null,
-      budget.householdId,
-      duplicate.id
-    );
-    return findCategoryBudgetById(db, budget.householdId, duplicate.id);
-  }
-
   const result = db
     .prepare(
       `INSERT INTO category_budgets (
-        household_id, category_id, budget_month, amount_pence, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?)`
+        household_id, category_id, name, budget_month, owner_type, split_type,
+        person_a_percentage, person_b_percentage, amount_pence, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       budget.householdId,
       budget.categoryId,
+      budget.name || null,
       budget.budgetMonth,
+      budget.ownerType || 'shared',
+      budget.splitType || 'equal',
+      budget.personAPercentage ?? 50,
+      budget.personBPercentage ?? 50,
       budget.amountPence,
       budget.notes || null,
       budget.createdBy || null
@@ -119,26 +105,21 @@ export function listCategoryBudgets(db, householdId, filters = {}) {
 export function saveCategoryBudgetDefault(db, budget) {
   const isActive = budget.isActive === undefined ? 1 : budget.isActive ? 1 : 0;
   const existing = budget.id ? findCategoryBudgetDefaultById(db, budget.householdId, budget.id) : null;
-  const duplicate = db
-    .prepare(
-      `SELECT id
-       FROM category_budget_defaults
-       WHERE household_id = ? AND category_id = ? ${budget.id ? 'AND id != ?' : ''}`
-    )
-    .get(
-      budget.householdId,
-      budget.categoryId,
-      ...(budget.id ? [budget.id] : [])
-    );
 
   if (existing) {
-    if (duplicate) throw new Error('A default budget for that category already exists.');
     db.prepare(
       `UPDATE category_budget_defaults
-       SET category_id = ?, amount_pence = ?, is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+       SET category_id = ?, name = ?, owner_type = ?, split_type = ?,
+           person_a_percentage = ?, person_b_percentage = ?, amount_pence = ?,
+           is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
        WHERE household_id = ? AND id = ?`
     ).run(
       budget.categoryId,
+      budget.name || null,
+      budget.ownerType || 'shared',
+      budget.splitType || 'equal',
+      budget.personAPercentage ?? 50,
+      budget.personBPercentage ?? 50,
       budget.amountPence,
       isActive,
       budget.notes || null,
@@ -148,30 +129,21 @@ export function saveCategoryBudgetDefault(db, budget) {
     return findCategoryBudgetDefaultById(db, budget.householdId, budget.id);
   }
 
-  if (duplicate) {
-    db.prepare(
-      `UPDATE category_budget_defaults
-       SET amount_pence = ?, is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE household_id = ? AND id = ?`
-    ).run(
-      budget.amountPence,
-      isActive,
-      budget.notes || null,
-      budget.householdId,
-      duplicate.id
-    );
-    return findCategoryBudgetDefaultById(db, budget.householdId, duplicate.id);
-  }
-
   const result = db
     .prepare(
       `INSERT INTO category_budget_defaults (
-        household_id, category_id, amount_pence, is_active, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?)`
+        household_id, category_id, name, owner_type, split_type, person_a_percentage,
+        person_b_percentage, amount_pence, is_active, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       budget.householdId,
       budget.categoryId,
+      budget.name || null,
+      budget.ownerType || 'shared',
+      budget.splitType || 'equal',
+      budget.personAPercentage ?? 50,
+      budget.personBPercentage ?? 50,
       budget.amountPence,
       isActive,
       budget.notes || null,

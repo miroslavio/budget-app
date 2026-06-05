@@ -1,6 +1,6 @@
 name: "Household Budget"
 description: "Planning-first UK household budgeting app"
-version: "0.1.2"
+version: "0.1.11"
 slug: "household_budget"
 init: false
 arch:
@@ -15,5 +15,7 @@ panel_icon: mdi:cash-register
 panel_title: Household Budget
 options:
   database_path: "/data/budget.sqlite"
+  theme: "system"
 schema:
   database_path: "str"
+  theme: "list(system|light|dark)"

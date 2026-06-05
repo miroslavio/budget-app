@@ -3,31 +3,42 @@ export function effectiveCategoryBudgets(defaultBudgets, monthBudgets, month) {
 
   for (const budget of defaultBudgets) {
     if (Number(budget.is_active ?? 1) !== 1) continue;
-    rows.set(String(budget.category_id), {
-      id: budget.id,
-      category_id: budget.category_id,
-      category_name: budget.category_name || 'Uncategorised',
-      budget_month: month,
-      amount_pence: Number(budget.amount_pence || 0),
-      is_active: Number(budget.is_active ?? 1),
-      notes: budget.notes || '',
-      budget_scope: 'default_monthly'
-    });
+    rows.set(categoryBudgetEffectiveKey(budget), categoryBudgetRow(budget, month, 'default_monthly'));
   }
 
   for (const budget of monthBudgets) {
-    rows.set(String(budget.category_id), {
-      id: budget.id,
-      category_id: budget.category_id,
-      category_name: budget.category_name || 'Uncategorised',
-      budget_month: budget.budget_month || month,
-      amount_pence: Number(budget.amount_pence || 0),
-      notes: budget.notes || '',
-      budget_scope: 'month_override'
-    });
+    rows.set(categoryBudgetEffectiveKey(budget), categoryBudgetRow(budget, budget.budget_month || month, 'month_override'));
   }
 
-  return [...rows.values()].sort((a, b) => a.category_name.localeCompare(b.category_name));
+  return [...rows.values()].sort((a, b) => a.category_name.localeCompare(b.category_name) || a.name.localeCompare(b.name));
+}
+
+function categoryBudgetRow(budget, month, budgetScope) {
+  return {
+      id: budget.id,
+      category_id: budget.category_id,
+      name: budget.name || budget.category_name || 'Uncategorised',
+      category_name: budget.category_name || 'Uncategorised',
+      budget_month: month,
+      owner_type: budget.owner_type || 'shared',
+      split_type: budget.split_type || 'equal',
+      person_a_percentage: Number(budget.person_a_percentage ?? 50),
+      person_b_percentage: Number(budget.person_b_percentage ?? 50),
+      amount_pence: Number(budget.amount_pence || 0),
+      is_active: Number(budget.is_active ?? 1),
+      notes: budget.notes || '',
+      budget_scope: budgetScope
+  };
+}
+
+function categoryBudgetEffectiveKey(budget) {
+  return [
+    budget.category_id || 'uncategorised',
+    budget.owner_type || 'shared',
+    budget.split_type || 'equal',
+    Number(budget.person_a_percentage ?? 50),
+    budget.name || budget.category_name || 'Uncategorised'
+  ].join(':');
 }
 
 export function categoryBudgetComparison(budgets, transactions) {

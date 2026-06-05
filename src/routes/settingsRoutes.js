@@ -3,8 +3,9 @@ import { createCategory, deleteCategory, listCategories, updateCategory } from '
 import { resetHouseholdData, deleteHouseholdAndUsers } from '../repositories/dataManagementRepository.js';
 import { deleteSession } from '../repositories/sessionRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
+import { readAppSettings, updateAppSettings } from '../services/appSettingsService.js';
 import { requireString } from '../utils/validation.js';
-import { actionIconButton, csrfField, escapeHtml, page } from '../views/html.js';
+import { actionIconButton, csrfField, escapeHtml, page, selected } from '../views/html.js';
 import { clearSessionCookie } from '../middleware/session.js';
 import { html, redirect } from '../http/response.js';
 import { ensureAuthenticated, redirectWithError, redirectWithSuccess } from './helpers.js';
@@ -132,6 +133,34 @@ export function registerSettingsRoutes(router, db) {
     );
   });
 
+  router.get('/settings/appearance', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    const settings = readAppSettings();
+    html(
+      ctx.res,
+      page(ctx, {
+        title: 'Settings · Appearance',
+        wide: true,
+        body: `${settingsPageIntro('appearance')}
+        <section class="card">
+          <h2>Appearance</h2>
+          <form method="post" action="/settings/appearance" class="stack">
+            ${csrfField(ctx)}
+            <label>Theme
+              <select name="theme">
+                <option value="system" ${selected(settings.theme, 'system')}>Use system setting</option>
+                <option value="light" ${selected(settings.theme, 'light')}>Light</option>
+                <option value="dark" ${selected(settings.theme, 'dark')}>Dark</option>
+              </select>
+            </label>
+            <p class="hint">In Home Assistant, this in-app setting applies when the app configuration theme is set to system. If the add-on configuration is forced to light or dark, that takes priority.</p>
+            <button>Save appearance</button>
+          </form>
+        </section>`
+      })
+    );
+  });
+
   router.get('/settings/danger-zone', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
     const household = findHouseholdById(db, ctx.user.household_id);
@@ -223,6 +252,18 @@ export function registerSettingsRoutes(router, db) {
     }
   });
 
+  router.post('/settings/appearance', (ctx) => {
+    if (!ensureAuthenticated(ctx)) return;
+    try {
+      const theme = String(ctx.body.theme || 'system');
+      if (!['system', 'light', 'dark'].includes(theme)) throw new Error('Choose a valid theme.');
+      updateAppSettings({ theme });
+      redirectWithSuccess(ctx.res, '/settings/appearance', 'Appearance saved.');
+    } catch (error) {
+      redirectWithError(ctx.res, '/settings/appearance', error);
+    }
+  });
+
   router.post('/settings/reset-data', (ctx) => {
     if (!ensureAuthenticated(ctx)) return;
     try {
@@ -264,6 +305,7 @@ function settingsPageIntro(activeKey) {
   <nav class="period-pills section-nav" aria-label="Settings sections">
     ${settingsSectionLink('/settings/household', 'Household & members', activeKey === 'household')}
     ${settingsSectionLink('/settings/categories', 'Expense categories', activeKey === 'categories')}
+    ${settingsSectionLink('/settings/appearance', 'Appearance', activeKey === 'appearance')}
     ${settingsSectionLink('/settings/danger-zone', 'Danger zone', activeKey === 'danger-zone')}
   </nav>`;
 }

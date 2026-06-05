@@ -5,8 +5,9 @@ function toggleConditionalSections(root = document) {
       const currentValue = controller.type === 'checkbox' ? (controller.checked ? 'checked' : 'unchecked') : controller.value;
       const targets = root.querySelectorAll(`[data-controlled-by="${controller.name}"]`);
       targets.forEach((target) => {
-        const expected = String(target.dataset.showWhen || '').split('|');
-        const visible = expected.includes(currentValue);
+        const showWhen = String(target.dataset.showWhen || '').split('|').filter(Boolean);
+        const hideWhen = String(target.dataset.hideWhen || '').split('|').filter(Boolean);
+        const visible = showWhen.length ? showWhen.includes(currentValue) : !hideWhen.includes(currentValue);
         target.hidden = !visible;
         target.querySelectorAll('input, select, textarea').forEach((field) => {
           if (field.dataset.requiredWhenVisible === 'true') {
@@ -181,18 +182,133 @@ function wireECharts(root = document) {
 }
 
 function chartOptionForElement(element, config, { compact = false, reducedMotion = false } = {}) {
+  const themedConfig = applyChartTheme(config);
   switch (element.dataset.chartType) {
     case 'income-allocation':
-      return incomeAllocationChartOption(config, { compact, reducedMotion });
+      return incomeAllocationChartOption(themedConfig, { compact, reducedMotion });
     case 'dashboard-spending-pressure':
-      return dashboardSpendingPressureChartOption(config, { reducedMotion });
+      return dashboardSpendingPressureChartOption(themedConfig, { compact, reducedMotion });
     case 'dashboard-savings-allocation':
-      return dashboardSavingsAllocationChartOption(config, { reducedMotion });
+      return dashboardSavingsAllocationChartOption(themedConfig, { compact, reducedMotion });
     case 'planned-spending-owner':
-      return plannedSpendingOwnerChartOption(config, { reducedMotion });
+      return plannedSpendingOwnerChartOption(themedConfig, { compact, reducedMotion });
     default:
-      return { ...config, animation: !reducedMotion };
+      return { ...themedConfig, animation: !reducedMotion };
   }
+}
+
+function applyChartTheme(config = {}) {
+  const colours = chartThemeColours();
+  return {
+    ...config,
+    backgroundColor: 'transparent',
+    textStyle: {
+      ...(config.textStyle || {}),
+      color: colours.ink
+    },
+    tooltip: {
+      ...(config.tooltip || {}),
+      backgroundColor: colours.panel,
+      borderColor: colours.line,
+      textStyle: { color: colours.ink },
+    },
+    legend: config.legend
+      ? {
+          ...config.legend,
+          textStyle: {
+            ...(config.legend.textStyle || {}),
+            color: colours.muted
+          }
+        }
+      : config.legend,
+    xAxis: themeAxis(config.xAxis, colours),
+    yAxis: themeAxis(config.yAxis, colours),
+    series: Array.isArray(config.series)
+      ? config.series.map((series) => ({
+          ...series,
+          label: series.label ? { ...series.label, color: colours.ink } : series.label,
+          lineStyle: series.lineStyle ? { ...series.lineStyle } : series.lineStyle
+        }))
+      : config.series
+  };
+}
+
+function themeAxis(axis, colours) {
+  if (!axis) return axis;
+  if (Array.isArray(axis)) return axis.map((entry) => themeAxis(entry, colours));
+  return {
+    ...axis,
+    axisLabel: {
+      ...(axis.axisLabel || {}),
+      color: colours.muted,
+      hideOverlap: true,
+      margin: axis.axisLabel?.margin ?? 8
+    },
+    axisLine: {
+      ...(axis.axisLine || {}),
+      lineStyle: {
+        ...(axis.axisLine?.lineStyle || {}),
+        color: colours.line
+      }
+    },
+    splitLine: {
+      ...(axis.splitLine || {}),
+      lineStyle: {
+        ...(axis.splitLine?.lineStyle || {}),
+        color: colours.grid
+      }
+    }
+  };
+}
+
+function compactCurrencyAxis(axis) {
+  if (!axis) return axis;
+  if (Array.isArray(axis)) return axis.map((entry) => compactCurrencyAxis(entry));
+  return {
+    ...axis,
+    axisLabel: {
+      ...(axis.axisLabel || {}),
+      formatter(value) {
+        return formatCompactCurrencyTick(Number(value || 0));
+      }
+    }
+  };
+}
+
+function compactBarChartOption(option, compact) {
+  if (!compact) return option;
+  return {
+    ...option,
+    grid: {
+      ...(option.grid || {}),
+      left: 4,
+      right: 10,
+      containLabel: true
+    },
+    xAxis: compactCurrencyAxis(option.xAxis)
+  };
+}
+
+function formatCompactCurrencyTick(value) {
+  const absolute = Math.abs(value);
+  if (absolute >= 1000) {
+    const amount = value / 1000;
+    const formatted = Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(1);
+    return `£${formatted}k`;
+  }
+  return `£${Math.round(value)}`;
+}
+
+function chartThemeColours() {
+  const styles = getComputedStyle(document.documentElement);
+  const css = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    ink: css('--ink', '#17211b'),
+    muted: css('--muted', '#657064'),
+    line: css('--line', '#dfd4c2'),
+    panel: css('--panel', '#fffaf0'),
+    grid: css('--chart-grid', 'rgba(56, 45, 31, 0.09)')
+  };
 }
 
 function incomeAllocationChartOption(config, { compact = false, reducedMotion = false } = {}) {
@@ -200,6 +316,7 @@ function incomeAllocationChartOption(config, { compact = false, reducedMotion = 
     ...config,
     animation: !reducedMotion,
     tooltip: {
+      ...(config.tooltip || {}),
       trigger: 'item',
       renderMode: 'richText',
       formatter(params) {
@@ -219,23 +336,16 @@ function incomeAllocationChartOption(config, { compact = false, reducedMotion = 
   if (compact) {
     option.series = (option.series || []).map((series) => ({
       ...series,
-      nodeGap: 12,
+      nodeGap: 18,
       nodeWidth: 14,
-      left: 8,
-      right: 8,
-      top: 10,
-      bottom: 10,
+      left: 4,
+      right: 4,
+      top: 8,
+      bottom: 8,
       orient: 'vertical',
       label: {
         ...(series.label || {}),
-        formatter(params) {
-          return params.data?.displayLabel || params.name || '';
-        },
-        fontSize: 12,
-        lineHeight: 15,
-        position: 'inside',
-        overflow: 'break',
-        width: 118
+        show: false
       }
     }));
   } else {
@@ -260,11 +370,13 @@ function incomeAllocationChartOption(config, { compact = false, reducedMotion = 
   return option;
 }
 
-function dashboardSpendingPressureChartOption(config, { reducedMotion = false } = {}) {
-  return {
+function dashboardSpendingPressureChartOption(config, { compact = false, reducedMotion = false } = {}) {
+  const colours = chartThemeColours();
+  const option = {
     ...config,
     animation: !reducedMotion,
     tooltip: {
+      ...(config.tooltip || {}),
       trigger: 'item',
       renderMode: 'richText',
       formatter(params) {
@@ -280,8 +392,8 @@ function dashboardSpendingPressureChartOption(config, { reducedMotion = false } 
       ...series,
       label: {
         show: true,
-        position: 'right',
-        color: '#5e6b63',
+        position: compact ? 'insideRight' : 'right',
+        color: colours.muted,
         fontWeight: 800,
         formatter(params) {
           const data = params.data || {};
@@ -290,14 +402,17 @@ function dashboardSpendingPressureChartOption(config, { reducedMotion = false } 
       }
     }))
   };
+  return compactBarChartOption(option, compact);
 }
 
-function dashboardSavingsAllocationChartOption(config, { reducedMotion = false } = {}) {
+function dashboardSavingsAllocationChartOption(config, { compact = false, reducedMotion = false } = {}) {
   const series = config.series || [];
-  return {
+  const colours = chartThemeColours();
+  const option = {
     ...config,
     animation: !reducedMotion,
     tooltip: {
+      ...(config.tooltip || {}),
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       renderMode: 'richText',
@@ -324,8 +439,8 @@ function dashboardSavingsAllocationChartOption(config, { reducedMotion = false }
         label: isLastSeries
           ? {
               show: true,
-              position: 'right',
-              color: '#5e6b63',
+              position: compact ? 'insideRight' : 'right',
+              color: colours.muted,
               fontWeight: 800,
               formatter(params) {
                 return formatCurrencyFromPence(Number(params.data?.totalPence || 0));
@@ -335,14 +450,17 @@ function dashboardSavingsAllocationChartOption(config, { reducedMotion = false }
       };
     })
   };
+  return compactBarChartOption(option, compact);
 }
 
-function plannedSpendingOwnerChartOption(config, { reducedMotion = false } = {}) {
+function plannedSpendingOwnerChartOption(config, { compact = false, reducedMotion = false } = {}) {
   const series = config.series || [];
-  return {
+  const colours = chartThemeColours();
+  const option = {
     ...config,
     animation: !reducedMotion,
     tooltip: {
+      ...(config.tooltip || {}),
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       renderMode: 'richText',
@@ -366,8 +484,8 @@ function plannedSpendingOwnerChartOption(config, { reducedMotion = false } = {})
       ...seriesItem,
       label: {
         show: true,
-        position: 'right',
-        color: '#5e6b63',
+        position: compact ? 'insideRight' : 'right',
+        color: colours.muted,
         fontWeight: 800,
         formatter(params) {
           const data = params.data || {};
@@ -377,6 +495,7 @@ function plannedSpendingOwnerChartOption(config, { reducedMotion = false } = {})
       }
     }))
   };
+  return compactBarChartOption(option, compact);
 }
 
 function wireCountUps(root = document) {
@@ -1105,7 +1224,7 @@ function wireSavingsProjectionForms(root = document) {
 
       const currentBalancePence = parseMoneyValue(currentBalanceField);
       const monthlyContributionPence = parseMoneyValue(monthlyContributionField);
-      const employerContributionPence = accountType === 'pension' ? parseMoneyValue(employerContributionField) : 0;
+      const employerContributionPence = isPensionAccountType(accountType) && accountType !== 'defined_benefit_pension' ? parseMoneyValue(employerContributionField) : 0;
       const includeLisaBonus = accountType === 'lifetime_isa' && includeLisaBonusField instanceof HTMLInputElement && includeLisaBonusField.checked;
       const projection = projectSavingsPreview({
         accountType,
@@ -1188,6 +1307,10 @@ function wireSavingsProjectionForms(root = document) {
 
     update();
   });
+}
+
+function isPensionAccountType(accountType) {
+  return ['pension', 'defined_contribution_pension', 'sipp_pension', 'defined_benefit_pension'].includes(accountType);
 }
 
 function wireSteppedForms(root = document) {
@@ -1326,7 +1449,7 @@ function resolveSavingsRateType(accountType, overrideValue) {
   if (accountType === 'other') {
     return overrideValue === 'growth' ? 'growth' : 'interest';
   }
-  return ['stocks_and_shares_isa', 'lifetime_isa', 'pension'].includes(accountType) ? 'growth' : 'interest';
+  return ['stocks_and_shares_isa', 'lifetime_isa', 'pension', 'defined_contribution_pension', 'sipp_pension', 'defined_benefit_pension'].includes(accountType) ? 'growth' : 'interest';
 }
 
 function defaultSavingsAccess(accountType) {
@@ -1342,6 +1465,9 @@ function defaultSavingsAccess(accountType) {
       return { accessType: 'penalty_withdrawal', availableForHouseholdCashflow: false };
     case 'lifetime_isa':
     case 'pension':
+    case 'defined_contribution_pension':
+    case 'sipp_pension':
+    case 'defined_benefit_pension':
       return { accessType: 'locked_until_age', availableForHouseholdCashflow: false };
     default:
       return { accessType: 'instant_access', availableForHouseholdCashflow: false };
@@ -1556,13 +1682,14 @@ function wireSplitSliders(root = document) {
     const secondaryOutput = container.querySelector('[data-split-secondary-output]');
     const primaryAmount = container.querySelector('[data-split-primary-amount]');
     const secondaryAmount = container.querySelector('[data-split-secondary-amount]');
-    const amountInput = slider.form?.querySelector('[data-split-amount-source]');
+    const amountInputs = [...(slider.form?.querySelectorAll('[data-split-amount-source]') || [])];
 
     const sync = () => {
       let primary = Number(slider.value || '50');
       if (!Number.isFinite(primary)) primary = 50;
       primary = Math.min(100, Math.max(0, Math.round(primary * 100) / 100));
       const secondary = Math.round((100 - primary) * 100) / 100;
+      const amountInput = amountInputs.find((input) => input instanceof HTMLInputElement && input.offsetParent !== null) || amountInputs[0];
       const totalAmount = amountInput instanceof HTMLInputElement ? Number.parseFloat(String(amountInput.value || '0').replace(/,/g, '.')) || 0 : 0;
       const primaryAmountValue = totalAmount * (primary / 100);
       const secondaryAmountValue = totalAmount * (secondary / 100);
@@ -1580,10 +1707,11 @@ function wireSplitSliders(root = document) {
       slider.dataset.splitBound = 'true';
       slider.addEventListener('input', sync);
       slider.addEventListener('change', sync);
-      if (amountInput instanceof HTMLInputElement) {
-        amountInput.addEventListener('input', sync);
-        amountInput.addEventListener('change', sync);
-      }
+      amountInputs.forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        input.addEventListener('input', sync);
+        input.addEventListener('change', sync);
+      });
     }
 
     sync();

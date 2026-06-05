@@ -10,6 +10,7 @@ import {
   buildSavingsProjection,
   defaultAccessSettingsForAccount,
   defaultProjectedRateTypeForAccount,
+  isPensionAccountType,
   projectedRateLabelForAccount,
   savingsAccountSummary,
   savingsAccountTypeLabel,
@@ -238,9 +239,10 @@ function saveSavingsAccountAction(ctx, db) {
     const projectedAnnualRate = resolveProjectedAnnualRate(ctx.body);
     const accountType = requireChoice(
       ctx.body.account_type,
-      ['current_account', 'easy_access_savings', 'fixed_savings', 'cash_isa', 'stocks_and_shares_isa', 'lifetime_isa', 'pension', 'other'],
+      ['current_account', 'easy_access_savings', 'fixed_savings', 'cash_isa', 'stocks_and_shares_isa', 'lifetime_isa', 'pension', 'defined_contribution_pension', 'sipp_pension', 'defined_benefit_pension', 'other'],
       'Account type'
     );
+    const isDefinedBenefit = accountType === 'defined_benefit_pension';
     const accessDefaults = defaultAccessSettingsForAccount(accountType);
 
     const payload = {
@@ -250,8 +252,8 @@ function saveSavingsAccountAction(ctx, db) {
       providerName: optionalString(ctx.body.provider_name, 120),
       accountType,
       ownerType: requireChoice(ctx.body.owner_type, ['person_a', 'person_b', 'shared'], 'Owner'),
-      currentBalancePence: optionalMoney(ctx.body.current_balance, 'Current balance'),
-      monthlyContributionPence: optionalMoney(ctx.body.monthly_contribution, 'Monthly contribution'),
+      currentBalancePence: isDefinedBenefit ? optionalMoney(ctx.body.estimated_transfer_value, 'Estimated transfer value') : optionalMoney(ctx.body.current_balance, 'Current balance'),
+      monthlyContributionPence: isDefinedBenefit ? 0 : optionalMoney(ctx.body.monthly_contribution, 'Monthly contribution'),
       employerMonthlyContributionPence: 0,
       availableForHouseholdCashflow: ctx.body.available_for_household_cashflow !== undefined
         ? checkboxValue(ctx.body.available_for_household_cashflow)
@@ -267,11 +269,14 @@ function saveSavingsAccountAction(ctx, db) {
       projectedAnnualRate,
       projectedRateType: resolveProjectedRateType(ctx.body.account_type, ctx.body.projected_rate_type_override || ctx.body.projected_rate_type),
       includeLisaBonus: false,
+      annualChargePercentage: optionalPercentage(ctx.body.annual_charge_percentage, 'Annual charge'),
+      annualPensionEntitlementPence: isDefinedBenefit ? optionalMoney(ctx.body.annual_pension_entitlement, 'Annual pension entitlement') : 0,
+      lumpSumEntitlementPence: isDefinedBenefit ? optionalMoney(ctx.body.lump_sum_entitlement, 'Lump sum entitlement') : 0,
       isActive: checkboxValue(ctx.body.is_active),
       notes: optionalString(ctx.body.notes)
     };
 
-    if (payload.accountType === 'pension') {
+    if (isPensionAccountType(payload.accountType) && !isDefinedBenefit) {
       payload.employerMonthlyContributionPence = optionalMoney(ctx.body.employer_monthly_contribution, 'Employer monthly contribution');
     }
 
@@ -560,10 +565,18 @@ function accountForm(ctx, members, returnTo) {
     </section>
     <section class="form-section" data-form-step data-step-title="Contributions and access">
       <h3>Contributions and access</h3>
-      <label>Current balance <input name="current_balance" ${moneyInputAttrs()} data-modal-field="currentBalance"></label>
-      <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
-      <p class="inline-hint">This is the amount you personally plan to add each month. It is the figure counted in the household budget.</p>
-      <div data-controlled-by="account_type" data-show-when="pension">
+      <div data-controlled-by="account_type" data-show-when="defined_benefit_pension" hidden>
+        <label>Annual pension entitlement <input name="annual_pension_entitlement" ${moneyInputAttrs()} data-modal-field="annualPensionEntitlement"></label>
+        <label>Lump sum entitlement <input name="lump_sum_entitlement" ${moneyInputAttrs()} data-modal-field="lumpSumEntitlement"></label>
+        <label>Estimated transfer value <input name="estimated_transfer_value" ${moneyInputAttrs()} data-modal-field="estimatedTransferValue"></label>
+        <p class="inline-hint">Defined benefit pensions are future income entitlements. They are not treated as normal balance-growth pots unless you enter an estimated transfer value.</p>
+      </div>
+      <div data-controlled-by="account_type" data-hide-when="defined_benefit_pension">
+        <label>Current balance <input name="current_balance" ${moneyInputAttrs()} data-modal-field="currentBalance"></label>
+        <label>Monthly contribution <input name="monthly_contribution" ${moneyInputAttrs()} data-modal-field="monthlyContribution"></label>
+        <p class="inline-hint">This is the amount you personally plan to add each month. It is the figure counted in the household budget.</p>
+      </div>
+      <div data-controlled-by="account_type" data-show-when="pension|defined_contribution_pension|sipp_pension">
         <label>Employer monthly contribution <input name="employer_monthly_contribution" ${moneyInputAttrs()} data-modal-field="employerMonthlyContribution"></label>
         <p class="inline-hint">For pensions, add the employer top-up separately. It affects the projection, but not your household spending budget.</p>
       </div>
@@ -585,7 +598,7 @@ function accountForm(ctx, members, returnTo) {
       <label>Access notes <textarea name="access_notes" rows="2" data-modal-field="accessNotes"></textarea></label>
       <p class="inline-hint">Turn on household cashflow access only if this balance could realistically be used to cover normal household spending.</p>
     </section>
-    <section class="form-section" data-form-step data-step-title="Projection assumptions">
+    <section class="form-section" data-form-step data-step-title="Projection assumptions" data-controlled-by="account_type" data-hide-when="defined_benefit_pension">
       <h3>Projection assumptions</h3>
       <div class="form-section nested-form-section" data-controlled-by="account_type" data-show-when="lifetime_isa">
         <h3>Lifetime ISA bonus</h3>
@@ -617,6 +630,10 @@ function accountForm(ctx, members, returnTo) {
         </label>
       </div>
       <p class="inline-hint" data-savings-rate-helper>Use a cautious planning assumption. Actual investment returns can be higher or lower.</p>
+      <div data-controlled-by="account_type" data-show-when="stocks_and_shares_isa|lifetime_isa|pension|defined_contribution_pension|sipp_pension">
+        <label>Annual charge <input name="annual_charge_percentage" ${decimalInputAttrs({ min: '0', max: '100', decimals: 2, step: '0.01' })} data-modal-field="annualChargePercentage"></label>
+        <p class="inline-hint">Optional. Enter platform or fund charges as a yearly percentage, for example 0.43.</p>
+      </div>
       <label class="checkbox-line">
         <input type="checkbox" name="is_active" value="1" checked data-modal-field="isActive">
         <span>Include this pot in projections</span>
@@ -681,7 +698,7 @@ function accountsSnapshotTable(accounts, members) {
         <td>${escapeHtml(account.name)}</td>
         <td>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</td>
         <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
-        <td>${formatCurrency(account.current_balance_pence)}</td>
+        <td>${accountBalanceCell(account)}</td>
         <td>${monthlyAdditionsCell(account)}</td>
       </tr>`)
       .join('')}</tbody>
@@ -716,7 +733,7 @@ function savingsAccountsTable(ctx, accounts, members) {
           </td>
           <td>${escapeHtml(savingsAccountTypeLabel(account.account_type))}</td>
           <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
-          <td>${formatCurrency(account.current_balance_pence)}</td>
+          <td>${accountBalanceCell(account)}</td>
           <td>${monthlyAdditionsCell(account)}</td>
           <td class="actions-col">${savingsAccountActions(ctx, account)}</td>
         </tr>`;
@@ -800,6 +817,7 @@ function savingsAccountActions(ctx, account) {
       data-fill-account-type="${escapeHtml(account.account_type)}"
       data-fill-owner-type="${escapeHtml(account.owner_type)}"
       data-fill-current-balance="${escapeHtml((Number(account.current_balance_pence || 0) / 100).toFixed(2))}"
+      data-fill-estimated-transfer-value="${escapeHtml((Number(account.current_balance_pence || 0) / 100).toFixed(2))}"
       data-fill-monthly-contribution="${escapeHtml((Number(account.monthly_contribution_pence || 0) / 100).toFixed(2))}"
       data-fill-employer-monthly-contribution="${escapeHtml((Number(account.employer_monthly_contribution_pence || 0) / 100).toFixed(2))}"
       data-fill-available-for-household-cashflow="${Number(account.available_for_household_cashflow) === 1 ? 'true' : 'false'}"
@@ -810,6 +828,9 @@ function savingsAccountActions(ctx, account) {
       data-fill-projected-annual-rate="${escapeHtml(String(Number(account.projected_annual_rate || 0)))}"
       data-fill-projected-rate-type="${escapeHtml(account.projected_rate_type)}"
       data-fill-include-lisa-bonus="${Number(account.include_lisa_bonus) === 1 ? 'true' : 'false'}"
+      data-fill-annual-charge-percentage="${escapeHtml(String(Number(account.annual_charge_percentage || 0) || ''))}"
+      data-fill-annual-pension-entitlement="${escapeHtml((Number(account.annual_pension_entitlement_pence || 0) / 100).toFixed(2))}"
+      data-fill-lump-sum-entitlement="${escapeHtml((Number(account.lump_sum_entitlement_pence || 0) / 100).toFixed(2))}"
       data-fill-is-active="${Number(account.is_active) === 1 ? 'true' : 'false'}"
       data-fill-notes="${escapeHtml(account.notes || '')}"`
     })}
@@ -869,8 +890,8 @@ function savingsAccountMobileCard(account, members, actions = '') {
       <span class="mobile-card-status ${mobileStatusClass(status)}">${escapeHtml(status)}</span>
     </div>
     <div class="mobile-card-amount">
-      <strong>${formatCurrency(account.current_balance_pence)}</strong>
-      <span>Current balance</span>
+      <strong>${account.account_type === 'defined_benefit_pension' ? formatCurrency(account.annual_pension_entitlement_pence || 0) : formatCurrency(account.current_balance_pence)}</strong>
+      <span>${account.account_type === 'defined_benefit_pension' ? 'Annual entitlement' : 'Current balance'}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(account.owner_type, members))}</dd></div>
@@ -977,7 +998,7 @@ function monthlyAdditionsCell(account) {
   const includeLisaBonus = Number(account.include_lisa_bonus) === 1;
   const extras = [];
 
-  if (account.account_type === 'pension' && employerContributionPence > 0) {
+  if (isPensionAccountType(account.account_type) && account.account_type !== 'defined_benefit_pension' && employerContributionPence > 0) {
     extras.push(`Employer ${formatCurrency(employerContributionPence)}/month`);
   }
 
@@ -989,6 +1010,22 @@ function monthlyAdditionsCell(account) {
     <strong>${formatCurrency(personalContributionPence)}</strong>
     ${extras.map((text) => `<small class="hint">${escapeHtml(text)}</small>`).join('')}
   </div>`;
+}
+
+function accountBalanceCell(account) {
+  if (account.account_type !== 'defined_benefit_pension') {
+    return formatCurrency(account.current_balance_pence);
+  }
+  const rows = [
+    `<strong>${formatCurrency(account.annual_pension_entitlement_pence || 0)}/year</strong>`
+  ];
+  if (Number(account.lump_sum_entitlement_pence || 0) > 0) {
+    rows.push(`<small class="hint">Lump sum ${formatCurrency(account.lump_sum_entitlement_pence)}</small>`);
+  }
+  if (Number(account.current_balance_pence || 0) > 0) {
+    rows.push(`<small class="hint">Transfer value ${formatCurrency(account.current_balance_pence)}</small>`);
+  }
+  return `<div class="cell-stack">${rows.join('')}</div>`;
 }
 
 function resolveProjectedAnnualRate(body) {
@@ -1042,4 +1079,10 @@ function optionalInteger(value, fieldName, { min = null, max = null } = {}) {
   if (min !== null && number < min) throw new Error(`${fieldName} must be at least ${min}.`);
   if (max !== null && number > max) throw new Error(`${fieldName} must be no more than ${max}.`);
   return number;
+}
+
+function optionalPercentage(value, fieldName) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return 0;
+  return requireDecimal(trimmed, fieldName, { min: 0, max: 100 });
 }

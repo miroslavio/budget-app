@@ -3,14 +3,14 @@ export function createIncomeEstimate(db, estimate) {
     .prepare(
       `INSERT INTO income_estimates (
         household_id, budget_item_id, gross_annual_salary_pence, pay_frequency, tax_year,
-        pension_scheme_type, pension_contribution_type, pension_contribution_value, pension_contribution_tax_treatment,
+        pension_scheme_type, pension_contribution_method, pension_contribution_type, pension_contribution_value, pension_contribution_tax_treatment,
         other_pre_tax_deductions_pence, other_post_tax_deductions_pence, student_loan_plans_json,
         has_postgraduate_loan, estimated_income_tax_pence, estimated_national_insurance_pence,
         estimated_student_loan_repayment_pence, estimated_postgraduate_loan_repayment_pence,
         pension_contribution_pence, estimated_other_deductions_pence,
         estimated_net_monthly_income_pence, estimated_net_annual_income_pence,
         linked_savings_account_id, employer_pension_contribution_type, employer_pension_contribution_value
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       estimate.householdId,
@@ -18,7 +18,8 @@ export function createIncomeEstimate(db, estimate) {
       estimate.grossAnnualSalaryPence,
       estimate.payFrequency,
       estimate.taxYear,
-      estimate.pensionSchemeType || 'salary_sacrifice',
+      estimate.pensionSchemeType || 'defined_contribution',
+      estimate.pensionContributionMethod || 'salary_sacrifice',
       estimate.pensionContributionType,
       estimate.pensionContributionValue,
       estimate.pensionContributionTaxTreatment,
@@ -53,7 +54,7 @@ export function updateIncomeEstimate(db, estimate) {
   db.prepare(
     `UPDATE income_estimates
      SET gross_annual_salary_pence = ?, pay_frequency = ?, tax_year = ?,
-         pension_scheme_type = ?, pension_contribution_type = ?, pension_contribution_value = ?, pension_contribution_tax_treatment = ?,
+         pension_scheme_type = ?, pension_contribution_method = ?, pension_contribution_type = ?, pension_contribution_value = ?, pension_contribution_tax_treatment = ?,
          other_pre_tax_deductions_pence = ?, other_post_tax_deductions_pence = ?, student_loan_plans_json = ?,
          has_postgraduate_loan = ?, estimated_income_tax_pence = ?, estimated_national_insurance_pence = ?,
          estimated_student_loan_repayment_pence = ?, estimated_postgraduate_loan_repayment_pence = ?,
@@ -65,7 +66,8 @@ export function updateIncomeEstimate(db, estimate) {
     estimate.grossAnnualSalaryPence,
     estimate.payFrequency,
     estimate.taxYear,
-    estimate.pensionSchemeType || 'salary_sacrifice',
+    estimate.pensionSchemeType || 'defined_contribution',
+    estimate.pensionContributionMethod || 'salary_sacrifice',
     estimate.pensionContributionType,
     estimate.pensionContributionValue,
     estimate.pensionContributionTaxTreatment,

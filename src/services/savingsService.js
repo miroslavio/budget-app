@@ -1,5 +1,5 @@
 import { currentMonth, todayIso } from '../utils/dates.js';
-import { savingsAccountsAsBudgetItems } from './savingsAccountService.js';
+import { isPensionAccountType, savingsAccountsAsBudgetItems } from './savingsAccountService.js';
 import { buildSavingsProjection } from './savingsAccountService.js';
 
 export function savingsGoalProgress(goal, today = todayIso()) {
@@ -28,14 +28,16 @@ export function savingsGoalMetrics(goal, { linkedAccounts = [], today = todayIso
   const targetDate = goal.target_date || null;
   const linkedMode = trackingMode === 'linked_pots';
   const activeLinkedAccounts = linkedAccounts.filter((account) => Number(account.is_active) === 1);
+  const balanceLinkedAccounts = linkedAccounts.filter((account) => account.account_type !== 'defined_benefit_pension');
+  const activeContributionAccounts = activeLinkedAccounts.filter((account) => account.account_type !== 'defined_benefit_pension');
   const currentSavedPence = linkedMode
-    ? linkedAccounts.reduce((sum, account) => sum + Number(account.current_balance_pence || 0), 0)
+    ? balanceLinkedAccounts.reduce((sum, account) => sum + Number(account.current_balance_pence || 0), 0)
     : Number(goal.current_saved_amount_pence || 0);
   const monthlyPersonalContributionPence = linkedMode
-    ? activeLinkedAccounts.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0)
+    ? activeContributionAccounts.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0)
     : Number(goal.monthly_contribution_pence || 0);
   const monthlyEmployerTopUpsPence = linkedMode
-    ? activeLinkedAccounts.reduce((sum, account) => sum + monthlyAccountTopUpsPence(account), 0)
+    ? activeContributionAccounts.reduce((sum, account) => sum + monthlyAccountTopUpsPence(account), 0)
     : 0;
   const remainingPence = Math.max(0, targetAmountPence - currentSavedPence);
   const progressPercentage = targetAmountPence <= 0 ? 0 : Math.min(100, Math.round((currentSavedPence / targetAmountPence) * 100));
@@ -151,7 +153,7 @@ function resolveGoalTrackingMode(goal, linkedAccounts = goal.linkedAccounts || [
 }
 
 function monthlyAccountTopUpsPence(account) {
-  const employerContributionPence = account.account_type === 'pension' ? Number(account.employer_monthly_contribution_pence || 0) : 0;
+  const employerContributionPence = isPensionAccountType(account.account_type) ? Number(account.employer_monthly_contribution_pence || 0) : 0;
   const lisaBonusPence = account.account_type === 'lifetime_isa' && Number(account.include_lisa_bonus) === 1
     ? Math.round(Math.min(Number(account.monthly_contribution_pence || 0) * 12, 400_000) * 0.25 / 12)
     : 0;
@@ -159,12 +161,13 @@ function monthlyAccountTopUpsPence(account) {
 }
 
 function linkedProjectionAtTargetDate(accounts, startMonth, targetDate) {
+  const projectableAccounts = accounts.filter((account) => account.account_type !== 'defined_benefit_pension');
   const projectionMonths = monthsUntilTargetMonth(startMonth, targetDate);
   if (projectionMonths <= 0) {
-    return accounts.reduce((sum, account) => sum + Number(account.current_balance_pence || 0), 0);
+    return projectableAccounts.reduce((sum, account) => sum + Number(account.current_balance_pence || 0), 0);
   }
 
-  const projectionAccounts = accounts.map((account) => {
+  const projectionAccounts = projectableAccounts.map((account) => {
     if (Number(account.is_active) === 1) return account;
     return {
       ...account,
@@ -176,7 +179,7 @@ function linkedProjectionAtTargetDate(accounts, startMonth, targetDate) {
     };
   });
   const projection = buildSavingsProjection(projectionAccounts, { startMonth, months: projectionMonths });
-  return projection.months.at(-1)?.closingBalancePence ?? accounts.reduce((sum, account) => sum + Number(account.current_balance_pence || 0), 0);
+  return projection.months.at(-1)?.closingBalancePence ?? projectableAccounts.reduce((sum, account) => sum + Number(account.current_balance_pence || 0), 0);
 }
 
 function monthsUntilTargetMonth(startMonth, targetDate) {

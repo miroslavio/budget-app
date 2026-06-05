@@ -7,17 +7,24 @@ import { roundPence } from '../utils/money.js';
 export function estimateTakeHomePay(input) {
   const rules = loadTaxRules(input.taxYear);
   const grossAnnualSalaryPence = Math.max(0, Number(input.grossAnnualSalaryPence || 0));
+  const contributionMethod = input.pensionContributionMethod || methodFromLegacyTreatment(input.pensionContributionTaxTreatment);
+  const manualTaxTreatment = input.pensionContributionTaxTreatment || null;
   const pensionContributionPence = calculatePensionContribution(grossAnnualSalaryPence, input);
   const otherPreTaxDeductionsPence = Math.max(0, Number(input.otherPreTaxDeductionsPence || 0));
   const otherPostTaxDeductionsPence = Math.max(0, Number(input.otherPostTaxDeductionsPence || 0));
-  const pensionIsPreTax = input.pensionContributionTaxTreatment === 'pre_tax';
+  const pensionReducesIncomeTax = manualTaxTreatment
+    ? manualTaxTreatment === 'pre_tax'
+    : ['salary_sacrifice', 'net_pay'].includes(contributionMethod);
+  const pensionReducesNationalInsurance = manualTaxTreatment
+    ? contributionMethod === 'salary_sacrifice' && manualTaxTreatment === 'pre_tax'
+    : contributionMethod === 'salary_sacrifice';
 
-  const preTaxReductionPence = (pensionIsPreTax ? pensionContributionPence : 0) + otherPreTaxDeductionsPence;
-  const postTaxReductionPence = (pensionIsPreTax ? 0 : pensionContributionPence) + otherPostTaxDeductionsPence;
+  const taxableReductionPence = (pensionReducesIncomeTax ? pensionContributionPence : 0) + otherPreTaxDeductionsPence;
+  const niReductionPence = (pensionReducesNationalInsurance ? pensionContributionPence : 0) + otherPreTaxDeductionsPence;
 
-  const taxablePayPence = Math.max(0, grossAnnualSalaryPence - preTaxReductionPence);
-  const niablePayPence = Math.max(0, grossAnnualSalaryPence - preTaxReductionPence);
-  const loanablePayPence = Math.max(0, grossAnnualSalaryPence - preTaxReductionPence);
+  const taxablePayPence = Math.max(0, grossAnnualSalaryPence - taxableReductionPence);
+  const niablePayPence = Math.max(0, grossAnnualSalaryPence - niReductionPence);
+  const loanablePayPence = Math.max(0, grossAnnualSalaryPence - taxableReductionPence);
 
   const tax = calculateIncomeTax(taxablePayPence, rules.incomeTax);
   const ni = calculateEmployeeNationalInsurance(niablePayPence, rules.nationalInsurance);
@@ -44,10 +51,11 @@ export function estimateTakeHomePay(input) {
   return {
     taxYear: input.taxYear,
     grossAnnualSalaryPence,
-    pensionSchemeType: input.pensionSchemeType || 'salary_sacrifice',
+    pensionSchemeType: input.pensionSchemeType || 'defined_contribution',
+    pensionContributionMethod: contributionMethod,
     pensionContributionType: input.pensionContributionType || 'none',
     pensionContributionValue: Number(input.pensionContributionValue || 0),
-    pensionContributionTaxTreatment: input.pensionContributionTaxTreatment || 'pre_tax',
+    pensionContributionTaxTreatment: manualTaxTreatment || derivedTaxTreatment(contributionMethod),
     pensionContributionPence,
     otherPreTaxDeductionsPence,
     otherPostTaxDeductionsPence,
@@ -72,7 +80,16 @@ function calculatePensionContribution(grossAnnualSalaryPence, input) {
   const type = input.pensionContributionType || 'none';
   const value = Number(input.pensionContributionValue || 0);
   if (type === 'none' || value <= 0) return 0;
-  if (type === 'fixed_amount') return roundPence(value);
+  if (type === 'fixed_amount' || type === 'fixed_annual') return roundPence(value);
+  if (type === 'fixed_monthly') return roundPence(value * 12);
   if (type === 'percentage') return roundPence(grossAnnualSalaryPence * (value / 100));
   throw new Error('Pension contribution type is invalid.');
+}
+
+function methodFromLegacyTreatment(taxTreatment) {
+  return taxTreatment === 'post_tax' ? 'relief_at_source' : 'salary_sacrifice';
+}
+
+function derivedTaxTreatment(method) {
+  return ['salary_sacrifice', 'net_pay'].includes(method) ? 'pre_tax' : 'post_tax';
 }

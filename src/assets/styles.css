@@ -1,6 +1,21 @@
 :root {
+  --font-sans: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --bg: #f4efe6;
   --panel: #fffaf0;
+  --panel-soft: rgba(255, 250, 240, 0.94);
+  --panel-translucent: rgba(255, 250, 240, 0.72);
+  --input-bg: #ffffff;
+  --form-section-bg: rgba(255, 255, 255, 0.35);
+  --form-card-bg: rgba(255, 255, 255, 0.44);
+  --track: rgba(56, 45, 31, 0.08);
+  --chart-grid: rgba(56, 45, 31, 0.09);
+  --brand-bg: rgba(31, 111, 91, 0.1);
+  --brand-border: rgba(31, 111, 91, 0.16);
+  --modal-footer-shadow: 0 -14px 24px rgba(255, 250, 240, 0.92);
+  --focus-ring: rgba(23, 33, 27, 0.38);
+  --body-background:
+    radial-gradient(circle at top left, rgba(31, 111, 91, 0.18), transparent 34rem),
+    linear-gradient(135deg, #f8f0df 0%, #f3eadc 42%, #edf1e6 100%);
   --ink: #17211b;
   --muted: #657064;
   --line: #dfd4c2;
@@ -9,6 +24,7 @@
   --warn: #9d4f1d;
   --good: #1f6f5b;
   --bad: #a7342d;
+  --danger: var(--bad);
   --shadow: 0 18px 45px rgba(56, 45, 31, 0.12);
 
   --blue: #2f6fed;
@@ -30,6 +46,94 @@
   --chart-8: var(--berry);
 }
 
+html[data-theme='dark'] {
+  --bg: #111711;
+  --panel: #1b211c;
+  --panel-soft: rgba(27, 33, 28, 0.94);
+  --panel-translucent: rgba(27, 33, 28, 0.78);
+  --input-bg: #111611;
+  --form-section-bg: rgba(255, 255, 255, 0.035);
+  --form-card-bg: rgba(255, 255, 255, 0.055);
+  --track: rgba(234, 224, 207, 0.1);
+  --chart-grid: rgba(234, 224, 207, 0.11);
+  --brand-bg: rgba(72, 177, 145, 0.13);
+  --brand-border: rgba(72, 177, 145, 0.24);
+  --modal-footer-shadow: 0 -14px 24px rgba(27, 33, 28, 0.94);
+  --focus-ring: rgba(217, 238, 225, 0.38);
+  --body-background:
+    radial-gradient(circle at top left, rgba(70, 155, 123, 0.18), transparent 34rem),
+    linear-gradient(135deg, #141b15 0%, #191812 46%, #111816 100%);
+  --ink: #f2eee5;
+  --muted: #b8c1b6;
+  --line: #3a4036;
+  --accent: #3f9f82;
+  --accent-strong: #9ccfbd;
+  --warn: #f0a45c;
+  --good: #69c2a5;
+  --bad: #f0786f;
+  --danger: var(--bad);
+  --shadow: 0 18px 45px rgba(0, 0, 0, 0.38);
+
+  --blue: #7897d8;
+  --orange: #e59a45;
+  --green: #68b888;
+  --yellow: #e8c85d;
+  --red: #f07970;
+  --teal: #6bb8ba;
+  --violet: #9b8ed6;
+  --berry: #df83bc;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme='system'] {
+    --bg: #111711;
+    --panel: #1b211c;
+    --panel-soft: rgba(27, 33, 28, 0.94);
+    --panel-translucent: rgba(27, 33, 28, 0.78);
+    --input-bg: #111611;
+    --form-section-bg: rgba(255, 255, 255, 0.035);
+    --form-card-bg: rgba(255, 255, 255, 0.055);
+    --track: rgba(234, 224, 207, 0.1);
+    --chart-grid: rgba(234, 224, 207, 0.11);
+    --brand-bg: rgba(72, 177, 145, 0.13);
+    --brand-border: rgba(72, 177, 145, 0.24);
+    --modal-footer-shadow: 0 -14px 24px rgba(27, 33, 28, 0.94);
+    --focus-ring: rgba(217, 238, 225, 0.38);
+    --body-background:
+      radial-gradient(circle at top left, rgba(70, 155, 123, 0.18), transparent 34rem),
+      linear-gradient(135deg, #141b15 0%, #191812 46%, #111816 100%);
+    --ink: #f2eee5;
+    --muted: #b8c1b6;
+    --line: #3a4036;
+    --accent: #3f9f82;
+    --accent-strong: #9ccfbd;
+    --warn: #f0a45c;
+    --good: #69c2a5;
+    --bad: #f0786f;
+    --danger: var(--bad);
+    --shadow: 0 18px 45px rgba(0, 0, 0, 0.38);
+
+    --blue: #7897d8;
+    --orange: #e59a45;
+    --green: #68b888;
+    --yellow: #e8c85d;
+    --red: #f07970;
+    --teal: #6bb8ba;
+    --violet: #9b8ed6;
+    --berry: #df83bc;
+  }
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme='system'] {
+    color-scheme: dark;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -41,11 +145,11 @@
 body {
   margin: 0;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(31, 111, 91, 0.18), transparent 34rem),
-    linear-gradient(135deg, #f8f0df 0%, #f3eadc 42%, #edf1e6 100%);
+  background: var(--body-background);
   color: var(--ink);
-  font-family: "Aptos", "Gill Sans", "Trebuchet MS", sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   min-height: 100vh;
 }
 
@@ -61,7 +165,7 @@ a {
   flex-wrap: nowrap;
   padding: 0.85rem clamp(1rem, 4vw, 3rem);
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 250, 240, 0.88);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -90,9 +194,9 @@ a {
   width: 2rem;
   height: 2rem;
   border-radius: 0.85rem;
-  background: rgba(31, 111, 91, 0.1);
+  background: var(--brand-bg);
   color: var(--accent-strong);
-  border: 1px solid rgba(31, 111, 91, 0.16);
+  border: 1px solid var(--brand-border);
   flex: 0 0 auto;
 }
 
@@ -263,7 +367,7 @@ button.secondary {
 .auth-card,
 .card,
 .hero {
-  background: rgba(255, 250, 240, 0.94);
+  background: var(--panel-soft);
   border: 1px solid var(--line);
   border-radius: 28px;
   box-shadow: var(--shadow);
@@ -356,7 +460,7 @@ button.secondary {
   padding: 0.58rem 0.85rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 250, 240, 0.72);
+  background: var(--panel-translucent);
   color: var(--muted);
   text-decoration: none;
   font-weight: 700;
@@ -370,8 +474,8 @@ button.secondary {
 .period-pill:hover,
 .period-pill:focus-visible {
   color: var(--ink);
-  border-color: rgba(23, 33, 27, 0.16);
-  background: rgba(255, 250, 240, 0.94);
+  border-color: color-mix(in srgb, var(--ink) 16%, transparent);
+  background: var(--panel-soft);
   box-shadow: 0 10px 20px rgba(56, 45, 31, 0.08);
 }
 
@@ -699,12 +803,12 @@ h2 {
   border: 0;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(56, 45, 31, 0.08);
+  background: var(--track);
 }
 
 .bar-progress::-webkit-progress-bar {
   border-radius: 999px;
-  background: rgba(56, 45, 31, 0.08);
+  background: var(--track);
 }
 
 .bar-progress::-webkit-progress-value {
@@ -759,7 +863,7 @@ h2 {
 }
 
 .bar-progress:focus-visible {
-  outline: 2px solid rgba(23, 33, 27, 0.38);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -772,23 +876,23 @@ h2 {
 }
 
 .bar-svg-track {
-  fill: rgba(56, 45, 31, 0.08);
+  fill: var(--track);
 }
 
 .bar-svg-fill.spending {
-  fill: rgb(212, 134, 60);
+  fill: var(--orange);
 }
 
 .bar-svg-fill.savings {
-  fill: rgb(31, 111, 91);
+  fill: var(--accent);
 }
 
 .bar-svg-fill.top-up {
-  fill: rgb(73, 94, 176);
+  fill: var(--violet);
 }
 
 .bar-svg:focus-visible {
-  outline: 2px solid rgba(23, 33, 27, 0.38);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -833,23 +937,23 @@ h2 {
 }
 
 .ranked-bar-track {
-  fill: rgba(56, 45, 31, 0.08);
+  fill: var(--track);
 }
 
 .ranked-bar-fill.spending {
-  fill: rgb(212, 134, 60);
+  fill: var(--orange);
 }
 
 .ranked-bar-fill.savings {
-  fill: rgb(31, 111, 91);
+  fill: var(--accent);
 }
 
 .ranked-bar-fill.top-up {
-  fill: rgb(73, 94, 176);
+  fill: var(--violet);
 }
 
 .ranked-bar-svg:focus-visible {
-  outline: 2px solid rgba(23, 33, 27, 0.38);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -886,11 +990,11 @@ h2 {
 }
 
 .mini-legend .legend-swatch.savings {
-  background: rgb(31, 111, 91);
+  background: var(--accent);
 }
 
 .mini-legend .legend-swatch.top-up {
-  background: rgb(73, 94, 176);
+  background: var(--violet);
 }
 
 @keyframes dashboardGrow {
@@ -1280,7 +1384,7 @@ th.actions-col {
   padding: 0;
   border-radius: 0.8rem;
   border: 1px solid var(--line);
-  background: rgba(255, 250, 240, 0.96);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
   color: var(--ink);
   transition:
     transform 120ms ease,
@@ -1408,7 +1512,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 0.82rem 0.85rem;
-  background: white;
+  background: var(--input-bg);
   color: var(--ink);
   font: inherit;
 }
@@ -1448,14 +1552,14 @@ dialog.confirm-modal {
 
 .modal-panel {
   background: var(--panel);
-  border: 1px solid rgba(56, 45, 31, 0.14);
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
   border-radius: 24px;
   box-shadow: none;
   padding: clamp(1.1rem, 3vw, 1.7rem);
   max-height: min(88vh, 900px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable both-edges;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-clip: padding-box;
 }
 
@@ -1484,6 +1588,25 @@ dialog.confirm-modal {
   border-color: rgba(191, 92, 54, 0.24);
 }
 
+.inline-alert {
+  border: 1px solid rgba(191, 92, 54, 0.24);
+  border-radius: var(--radius-md);
+  background: rgba(191, 92, 54, 0.08);
+  color: var(--ink);
+  font-weight: 700;
+  padding: 0.9rem 1rem;
+}
+
+.inline-alert a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.inline-alert.danger {
+  color: var(--danger);
+}
+
 .bullet-list {
   margin: 0;
   padding-left: 1.1rem;
@@ -1499,6 +1622,7 @@ dialog.confirm-modal {
   align-items: start;
   gap: 1rem;
   margin-bottom: 1rem;
+  flex: 0 0 auto;
 }
 
 .modal-heading h2 {
@@ -1507,8 +1631,14 @@ dialog.confirm-modal {
 }
 
 .modal-form {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  scrollbar-gutter: stable;
 }
 
 .modal-stepper {
@@ -1518,7 +1648,7 @@ dialog.confirm-modal {
   top: 0;
   z-index: 2;
   padding: 0.2rem 0 0.55rem;
-  background: linear-gradient(to bottom, var(--panel) 78%, rgba(255, 250, 240, 0));
+  background: linear-gradient(to bottom, var(--panel) 78%, color-mix(in srgb, var(--panel) 0%, transparent));
 }
 
 .modal-stepper-meta {
@@ -1545,7 +1675,7 @@ dialog.confirm-modal {
   width: 100%;
   height: 0.45rem;
   border-radius: 999px;
-  background: rgba(56, 45, 31, 0.08);
+  background: var(--track);
   overflow: hidden;
 }
 
@@ -1585,7 +1715,7 @@ dialog.confirm-modal {
   padding: 1rem;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.42);
+  background: var(--form-card-bg);
 }
 
 .pension-form-card h4 {
@@ -1604,7 +1734,7 @@ dialog.confirm-modal {
   padding: 1.1rem;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.48);
+  background: var(--form-card-bg);
 }
 
 .modal-summary-card h3,
@@ -1644,14 +1774,16 @@ dialog.confirm-modal {
 
 .modal-footer {
   position: sticky;
-  bottom: 0;
+  bottom: -1px;
+  z-index: 4;
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  padding-top: 0.9rem;
-  margin-top: 0.35rem;
-  border-top: 1px solid rgba(56, 45, 31, 0.1);
-  background: linear-gradient(to bottom, rgba(255, 250, 240, 0.72), var(--panel) 35%);
+  padding: 0.9rem 0 0.15rem;
+  margin-top: 0.1rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: var(--panel);
+  box-shadow: var(--modal-footer-shadow);
 }
 
 .modal-footer-split {
@@ -1673,7 +1805,7 @@ dialog.confirm-modal {
   padding: 1.1rem;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--form-section-bg);
 }
 
 .form-section h3 {
@@ -1796,7 +1928,7 @@ legend {
 }
 
 .split-slider-input:focus-visible {
-  outline: 2px solid rgba(31, 111, 91, 0.3);
+  outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
   outline-offset: 4px;
 }
 
@@ -2277,6 +2409,58 @@ progress {
   overflow: hidden;
 }
 
+.sankey-mobile-legend {
+  display: none;
+}
+
+.sankey-mobile-legend-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.sankey-mobile-legend-row strong {
+  color: var(--ink);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sankey-mobile-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+  background: var(--muted);
+}
+
+.sankey-mobile-legend-row.income .sankey-mobile-swatch {
+  background: var(--accent);
+}
+
+.sankey-mobile-legend-row.requires .sankey-mobile-swatch {
+  background: var(--muted);
+}
+
+.sankey-mobile-legend-row.spending .sankey-mobile-swatch {
+  background: var(--orange);
+}
+
+.sankey-mobile-legend-row.savings .sankey-mobile-swatch,
+.sankey-mobile-legend-row.available .sankey-mobile-swatch {
+  background: var(--green);
+}
+
+.sankey-mobile-legend-row.retirement .sankey-mobile-swatch {
+  background: var(--blue);
+}
+
+.sankey-mobile-legend-row.shortfall .sankey-mobile-swatch {
+  background: var(--bad);
+}
+
 .echarts-dashboard-chart {
   width: 100%;
   max-width: 100%;
@@ -2672,8 +2856,8 @@ progress {
     padding: 0.85rem;
     border: 1px solid var(--line);
     border-radius: 20px;
-    background: rgba(255, 250, 240, 0.98);
-    box-shadow: 0 18px 45px rgba(56, 45, 31, 0.16);
+    background: color-mix(in srgb, var(--panel) 98%, transparent);
+    box-shadow: var(--shadow);
     flex-direction: column;
     align-items: stretch;
     gap: 0.4rem;
@@ -2702,13 +2886,13 @@ progress {
   .nav-links a:hover,
   .nav-links a.active {
     border-bottom-color: transparent;
-    background: rgba(31, 111, 91, 0.09);
+    background: var(--brand-bg);
   }
 
   .nav-form {
     width: 100%;
     padding-top: 0.25rem;
-    border-top: 1px solid rgba(223, 212, 194, 0.9);
+    border-top: 1px solid var(--line);
     display: flex;
     justify-content: flex-end;
   }
@@ -2779,7 +2963,16 @@ progress {
   }
 
   .echarts-sankey {
-    height: 400px;
+    height: 300px;
+    min-height: 260px;
+  }
+
+  .sankey-mobile-legend {
+    display: grid;
+  }
+
+  .sankey-mobile-legend-row {
+    display: grid;
   }
 
   .echarts-dashboard-chart {
@@ -2888,5 +3081,137 @@ progress {
   .mobile-card-meta div {
     grid-template-columns: 1fr;
     gap: 0.1rem;
+  }
+}
+
+html[data-theme='dark'] .nav-toggle:hover,
+html[data-theme='dark'] .nav-toggle:focus-visible,
+html[data-theme='dark'] .site-nav.is-open .nav-toggle,
+html[data-theme='dark'] .plan-check-marker,
+html[data-theme='dark'] .setup-status,
+html[data-theme='dark'] .income-plan-table tfoot th,
+html[data-theme='dark'] .income-plan-table tfoot td {
+  background: var(--track);
+}
+
+html[data-theme='dark'] .nav-panel {
+  background: color-mix(in srgb, var(--panel) 98%, transparent);
+  border-color: var(--line);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+}
+
+html[data-theme='dark'] .nav-links a {
+  color: var(--muted);
+}
+
+html[data-theme='dark'] .nav-links a:hover,
+html[data-theme='dark'] .nav-links a.active {
+  color: var(--ink);
+}
+
+html[data-theme='dark'] .setup-step,
+html[data-theme='dark'] .inline-detail-grid,
+html[data-theme='dark'] .table-search-control input,
+html[data-theme='dark'] .mobile-card-summary,
+html[data-theme='dark'] .mobile-finance-card {
+  background: var(--form-card-bg);
+}
+
+html[data-theme='dark'] .mobile-finance-card.paused,
+html[data-theme='dark'] .mobile-finance-card.ended,
+html[data-theme='dark'] .mobile-finance-card.warning {
+  background: color-mix(in srgb, var(--track) 65%, transparent);
+}
+
+html[data-theme='dark'] .chart-tooltip {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--panel) 98%, transparent);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.38);
+}
+
+html[data-theme='dark'] .action-icon-button.edit,
+html[data-theme='dark'] .action-icon-button.view {
+  background: var(--track);
+  border-color: color-mix(in srgb, var(--line) 76%, transparent);
+}
+
+html[data-theme='dark'] .action-icon-button.edit:hover,
+html[data-theme='dark'] .action-icon-button.edit:focus-visible,
+html[data-theme='dark'] .action-icon-button.view:hover,
+html[data-theme='dark'] .action-icon-button.view:focus-visible {
+  background: color-mix(in srgb, var(--track) 85%, var(--ink) 15%);
+  border-color: var(--line);
+}
+
+html[data-theme='dark'] .savings-bar-start,
+html[data-theme='dark'] .legend-swatch.savings-bar-start-key {
+  fill: var(--track);
+  background: var(--track);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-theme='system'] .nav-toggle:hover,
+  html[data-theme='system'] .nav-toggle:focus-visible,
+  html[data-theme='system'] .site-nav.is-open .nav-toggle,
+  html[data-theme='system'] .plan-check-marker,
+  html[data-theme='system'] .setup-status,
+  html[data-theme='system'] .income-plan-table tfoot th,
+  html[data-theme='system'] .income-plan-table tfoot td {
+    background: var(--track);
+  }
+
+  html[data-theme='system'] .nav-panel {
+    background: color-mix(in srgb, var(--panel) 98%, transparent);
+    border-color: var(--line);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+  }
+
+  html[data-theme='system'] .nav-links a {
+    color: var(--muted);
+  }
+
+  html[data-theme='system'] .nav-links a:hover,
+  html[data-theme='system'] .nav-links a.active {
+    color: var(--ink);
+  }
+
+  html[data-theme='system'] .setup-step,
+  html[data-theme='system'] .inline-detail-grid,
+  html[data-theme='system'] .table-search-control input,
+  html[data-theme='system'] .mobile-card-summary,
+  html[data-theme='system'] .mobile-finance-card {
+    background: var(--form-card-bg);
+  }
+
+  html[data-theme='system'] .mobile-finance-card.paused,
+  html[data-theme='system'] .mobile-finance-card.ended,
+  html[data-theme='system'] .mobile-finance-card.warning {
+    background: color-mix(in srgb, var(--track) 65%, transparent);
+  }
+
+  html[data-theme='system'] .chart-tooltip {
+    border-color: var(--line);
+    background: color-mix(in srgb, var(--panel) 98%, transparent);
+    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.38);
+  }
+
+  html[data-theme='system'] .action-icon-button.edit,
+  html[data-theme='system'] .action-icon-button.view {
+    background: var(--track);
+    border-color: color-mix(in srgb, var(--line) 76%, transparent);
+  }
+
+  html[data-theme='system'] .action-icon-button.edit:hover,
+  html[data-theme='system'] .action-icon-button.edit:focus-visible,
+  html[data-theme='system'] .action-icon-button.view:hover,
+  html[data-theme='system'] .action-icon-button.view:focus-visible {
+    background: color-mix(in srgb, var(--track) 85%, var(--ink) 15%);
+    border-color: var(--line);
+  }
+
+  html[data-theme='system'] .savings-bar-start,
+  html[data-theme='system'] .legend-swatch.savings-bar-start-key {
+    fill: var(--track);
+    background: var(--track);
   }
 }

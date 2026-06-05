@@ -11,6 +11,9 @@ const ACCOUNT_TYPE_META = {
   stocks_and_shares_isa: { label: 'Stocks and Shares ISA', group: 'investments', defaultRateType: 'growth', defaultAccessType: 'penalty_withdrawal', defaultCashflowAccess: false },
   lifetime_isa: { label: 'Lifetime ISA', group: 'isa', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
   pension: { label: 'Pension', group: 'pension', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
+  defined_contribution_pension: { label: 'Defined contribution pension', group: 'pension', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
+  sipp_pension: { label: 'SIPP / personal pension', group: 'pension', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
+  defined_benefit_pension: { label: 'Defined benefit pension entitlement', group: 'pension', defaultRateType: 'growth', defaultAccessType: 'locked_until_age', defaultCashflowAccess: false },
   other: { label: 'Other pot', group: 'other', defaultRateType: 'interest', defaultAccessType: 'instant_access', defaultCashflowAccess: false }
 };
 
@@ -63,14 +66,17 @@ export function savingsAccountSummary(accounts) {
 
   for (const account of accounts) {
     const balance = Number(account.current_balance_pence || 0);
+    const isDefinedBenefit = account.account_type === 'defined_benefit_pension';
     const contribution = Number(account.monthly_contribution_pence || 0);
     const employerContribution = Number(account.employer_monthly_contribution_pence || 0);
     const group = savingsAccountGroup(account.account_type);
-    summary.totalBalancePence += balance;
-    summary.byGroup[group] += balance;
+    if (!isDefinedBenefit) {
+      summary.totalBalancePence += balance;
+      summary.byGroup[group] += balance;
+    }
     if (Number(account.is_active) === 1) {
       summary.monthlyContributionPence += contribution;
-      summary.employerContributionPence += account.account_type === 'pension' ? employerContribution : 0;
+      summary.employerContributionPence += isPensionAccountType(account.account_type) ? employerContribution : 0;
       summary.activeCount += 1;
     }
   }
@@ -79,7 +85,7 @@ export function savingsAccountSummary(accounts) {
 }
 
 export function buildSavingsProjection(accounts, { startMonth, months = 12 } = {}) {
-  const activeAccounts = accounts.filter((account) => Number(account.is_active) === 1);
+  const activeAccounts = accounts.filter((account) => Number(account.is_active) === 1 && account.account_type !== 'defined_benefit_pension');
   if (!activeAccounts.length) {
     return { months: [], accounts: [] };
   }
@@ -94,7 +100,8 @@ export function buildSavingsProjection(accounts, { startMonth, months = 12 } = {
     monthlyContributionPence: Number(account.monthly_contribution_pence || 0),
     employerMonthlyContributionPence: Number(account.employer_monthly_contribution_pence || 0),
     projectedAnnualRate: Number(account.projected_annual_rate || 0),
-    monthlyRate: annualRateToMonthlyRate(Number(account.projected_annual_rate || 0)),
+    annualChargePercentage: Number(account.annual_charge_percentage || 0),
+    monthlyRate: annualRateToMonthlyRate(Math.max(0, Number(account.projected_annual_rate || 0) - Number(account.annual_charge_percentage || 0))),
     includeLisaBonus: Number(account.include_lisa_bonus) === 1,
     openingBalancePence: Number(account.current_balance_pence || 0),
     totalContributionPence: 0,
@@ -118,7 +125,7 @@ export function buildSavingsProjection(accounts, { startMonth, months = 12 } = {
     const accountRows = accountStates.map((state) => {
       const openingBalancePence = state.openingBalancePence;
       const personalContributionPence = state.monthlyContributionPence;
-      const employerContributionPence = state.accountType === 'pension' ? state.employerMonthlyContributionPence : 0;
+      const employerContributionPence = isPensionAccountType(state.accountType) ? state.employerMonthlyContributionPence : 0;
       const bonusPence = lisaBonusForMonth(state, month);
       const contributionPence = personalContributionPence + employerContributionPence + bonusPence;
       const growthPence = Math.round((openingBalancePence + contributionPence) * state.monthlyRate);
@@ -182,6 +189,7 @@ export function buildSavingsProjection(accounts, { startMonth, months = 12 } = {
       monthlyContributionPence: state.monthlyContributionPence,
       employerMonthlyContributionPence: state.employerMonthlyContributionPence,
       projectedAnnualRate: state.projectedAnnualRate,
+      annualChargePercentage: state.annualChargePercentage,
       projectedBalancePence: state.openingBalancePence,
       totalContributionPence: state.totalContributionPence,
       totalPersonalContributionPence: state.totalPersonalContributionPence,
@@ -215,6 +223,10 @@ export function savingsAccountsAsBudgetItems(accounts) {
 
 export function savingsAccountGroup(accountType) {
   return ACCOUNT_TYPE_META[accountType]?.group || 'other';
+}
+
+export function isPensionAccountType(accountType) {
+  return ['pension', 'defined_contribution_pension', 'sipp_pension', 'defined_benefit_pension'].includes(accountType);
 }
 
 function annualRateToMonthlyRate(annualRatePercentage) {

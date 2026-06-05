@@ -25,23 +25,37 @@ test('month override budgets can be saved, updated, listed, and deleted', () => 
   const created = saveCategoryBudget(db, {
     householdId,
     categoryId,
+    name: 'Vet and food',
     budgetMonth: '2026-05',
+    ownerType: 'person_a',
     amountPence: 40000,
     notes: 'Monthly grocery target'
   });
 
   assert.equal(created.amount_pence, 40000);
+  assert.equal(created.name, 'Vet and food');
+  assert.equal(created.owner_type, 'person_a');
   assert.equal(created.notes, 'Monthly grocery target');
 
   const updated = saveCategoryBudget(db, {
+    id: created.id,
     householdId,
     categoryId,
+    name: 'Pet supplies',
     budgetMonth: '2026-05',
+    ownerType: 'shared',
+    splitType: 'manual_percentage',
+    personAPercentage: 60,
+    personBPercentage: 40,
     amountPence: 45000,
     notes: 'Updated target'
   });
 
   assert.equal(updated.id, created.id);
+  assert.equal(updated.name, 'Pet supplies');
+  assert.equal(updated.owner_type, 'shared');
+  assert.equal(updated.split_type, 'manual_percentage');
+  assert.equal(updated.person_a_percentage, 60);
   assert.equal(updated.amount_pence, 45000);
 
   const budgets = listCategoryBudgets(db, householdId, { startMonth: '2026-05', endMonth: '2026-05' });
@@ -60,22 +74,36 @@ test('default category budgets can be saved, updated, listed, and deleted', () =
   const created = saveCategoryBudgetDefault(db, {
     householdId,
     categoryId,
+    name: 'Commuting',
+    ownerType: 'person_b',
     amountPence: 12000,
     notes: 'Usual travel budget',
     isActive: true
   });
 
   assert.equal(created.amount_pence, 12000);
+  assert.equal(created.name, 'Commuting');
+  assert.equal(created.owner_type, 'person_b');
 
   const updated = saveCategoryBudgetDefault(db, {
+    id: created.id,
     householdId,
     categoryId,
+    name: 'Train and bus',
+    ownerType: 'shared',
+    splitType: 'manual_percentage',
+    personAPercentage: 70,
+    personBPercentage: 30,
     amountPence: 15000,
     notes: 'Updated travel budget',
     isActive: true
   });
 
   assert.equal(updated.id, created.id);
+  assert.equal(updated.name, 'Train and bus');
+  assert.equal(updated.owner_type, 'shared');
+  assert.equal(updated.split_type, 'manual_percentage');
+  assert.equal(updated.person_a_percentage, 70);
   assert.equal(updated.amount_pence, 15000);
   assert.equal(updated.is_active, 1);
   assert.equal(listCategoryBudgetDefaults(db, householdId).length, 1);
@@ -101,23 +129,62 @@ test('effective budgets use defaults until a month override replaces them', () =
     {
       id: 3,
       category_id: 10,
+      name: 'Groceries',
       category_name: 'Groceries',
       budget_month: '2026-06',
+      owner_type: 'shared',
+      split_type: 'equal',
+      person_a_percentage: 50,
+      person_b_percentage: 50,
       amount_pence: 50000,
+      is_active: 1,
       notes: 'June override',
       budget_scope: 'month_override'
     },
       {
         id: 2,
         category_id: 11,
+        name: 'Transport',
         category_name: 'Transport',
         budget_month: '2026-06',
+        owner_type: 'shared',
+        split_type: 'equal',
+        person_a_percentage: 50,
+        person_b_percentage: 50,
         amount_pence: 10000,
         is_active: 1,
         notes: 'Default transport',
         budget_scope: 'default_monthly'
       }
     ]);
+});
+
+test('default category budgets can have multiple owners for the same category', () => {
+  const db = openTestDatabase();
+  const householdId = createHousehold(db);
+  const categoryId = createCategory(db, 'Personal transport');
+
+  const first = saveCategoryBudgetDefault(db, {
+    householdId,
+    categoryId,
+    name: 'Bus tickets',
+    ownerType: 'person_a',
+    amountPence: 8000,
+    isActive: true
+  });
+  const second = saveCategoryBudgetDefault(db, {
+    householdId,
+    categoryId,
+    name: 'Train fares',
+    ownerType: 'person_b',
+    amountPence: 12000,
+    isActive: true
+  });
+
+  assert.notEqual(first.id, second.id);
+  const rows = listCategoryBudgetDefaults(db, householdId);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((row) => row.owner_type).sort(), ['person_a', 'person_b']);
 });
 
 test('category budget comparison and merged tracking include defaults, overrides, and actual expenses', () => {

@@ -14,5 +14,7 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3000
 ENV DATABASE_PATH=/data/budget.sqlite
+ENV APP_SETTINGS_PATH=/data/app-settings.json
+ENV APP_THEME=system
 
 CMD ["/run.sh"]

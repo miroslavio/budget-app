@@ -5,8 +5,10 @@ export function createSavingsAccount(db, account) {
         household_id, name, provider_name, account_type, owner_type,
         current_balance_pence, monthly_contribution_pence, employer_monthly_contribution_pence,
         available_for_household_cashflow, access_type, access_date, access_age, access_notes,
-        projected_annual_rate, projected_rate_type, include_lisa_bonus, is_active, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        projected_annual_rate, projected_rate_type, include_lisa_bonus,
+        annual_charge_percentage, annual_pension_entitlement_pence, lump_sum_entitlement_pence,
+        is_active, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       account.householdId,
@@ -25,6 +27,9 @@ export function createSavingsAccount(db, account) {
       account.projectedAnnualRate,
       account.projectedRateType,
       Number(account.includeLisaBonus) ? 1 : 0,
+      Number(account.annualChargePercentage || 0),
+      account.annualPensionEntitlementPence || 0,
+      account.lumpSumEntitlementPence || 0,
       Number(account.isActive) ? 1 : 0,
       account.notes || null
     );
@@ -39,6 +44,7 @@ export function updateSavingsAccount(db, account) {
          current_balance_pence = ?, monthly_contribution_pence = ?, employer_monthly_contribution_pence = ?,
          available_for_household_cashflow = ?, access_type = ?, access_date = ?, access_age = ?, access_notes = ?,
          projected_annual_rate = ?, projected_rate_type = ?, include_lisa_bonus = ?, is_active = ?,
+         annual_charge_percentage = ?, annual_pension_entitlement_pence = ?, lump_sum_entitlement_pence = ?,
          notes = ?, updated_at = CURRENT_TIMESTAMP
      WHERE household_id = ? AND id = ?`
   ).run(
@@ -58,6 +64,9 @@ export function updateSavingsAccount(db, account) {
     account.projectedRateType,
     Number(account.includeLisaBonus) ? 1 : 0,
     Number(account.isActive) ? 1 : 0,
+    Number(account.annualChargePercentage || 0),
+    account.annualPensionEntitlementPence || 0,
+    account.lumpSumEntitlementPence || 0,
     account.notes || null,
     account.householdId,
     account.id

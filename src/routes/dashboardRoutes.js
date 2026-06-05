@@ -9,7 +9,7 @@ import { listCategoryBudgets, listCategoryBudgetDefaults } from '../repositories
 import { yearlyItems } from '../services/budgetService.js';
 import { buildMonthlyForecast, deriveForecastStartingBalance, spendableHouseholdBalancePence } from '../services/forecastService.js';
 import { buildPeriodReport } from '../services/reportService.js';
-import { savingsAccountTypeLabel } from '../services/savingsAccountService.js';
+import { isPensionAccountType, savingsAccountTypeLabel } from '../services/savingsAccountService.js';
 import { savingsGoalMetrics, plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { buildFlexibleSpendingByMonth, plannedSpendingCategorySeries } from '../services/spendingBudgetService.js';
 import { taxYearForDate, taxYearRange } from '../services/taxYearService.js';
@@ -382,7 +382,7 @@ function savingsAllocationRows(accounts, planned, owner = 'household', members =
     .map((account) => {
       const valuePence = accountContributionForOwner(Number(account.monthly_contribution_pence || 0), account, owner, members) * periodMultiplier;
       const topUpPence = accountContributionForOwner(
-        Number(account.account_type === 'pension' ? account.employer_monthly_contribution_pence || 0 : 0),
+        Number(isPensionAccountType(account.account_type) && account.account_type !== 'defined_benefit_pension' ? account.employer_monthly_contribution_pence || 0 : 0),
         account,
         owner,
         members
@@ -877,7 +877,7 @@ function plannedSpendingForOwner(amountPence, owner, members = []) {
 function retirementAllocationForOwner(accounts, owner, members = [], periodMonthCount = 1) {
   const periodMultiplier = Math.max(1, Number(periodMonthCount || 1));
   const activePensions = accounts.filter(
-    (account) => Number(account.is_active) === 1 && account.account_type === 'pension'
+    (account) => Number(account.is_active) === 1 && isPensionAccountType(account.account_type) && account.account_type !== 'defined_benefit_pension'
   );
   if (owner === 'household') {
     return activePensions.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0) * periodMultiplier;

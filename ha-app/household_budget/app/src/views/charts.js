@@ -298,6 +298,18 @@ export function incomeAllocationSankeyChart({
     retirement > 0 ? sankeyLink(planRequiresLabel, 'Retirement', retirement, income) : null,
     shortfall === 0 && available > 0 ? sankeyLink(planRequiresLabel, 'Available after plan', available, income) : null
   ].filter(Boolean);
+  const mobileLegendRows = [
+    income > 0 ? { label: 'Planned income', valuePence: income, percentage: 100, tone: 'income' } : null,
+    { label: planRequiresLabel, valuePence: totalAllocation, percentage: percentOfIncome(totalAllocation, income), tone: 'requires' },
+    spending > 0 ? { label: plannedSpendingLabel, valuePence: spending, percentage: percentOfIncome(spending, income), tone: 'spending' } : null,
+    savings > 0 ? { label: 'Savings', valuePence: savings, percentage: percentOfIncome(savings, income), tone: 'savings' } : null,
+    retirement > 0 ? { label: 'Retirement', valuePence: retirement, percentage: percentOfIncome(retirement, income), tone: 'retirement' } : null,
+    shortfall > 0
+      ? { label: 'Shortfall after plan', valuePence: shortfall, percentage: percentOfIncome(shortfall, income), tone: 'shortfall' }
+      : available > 0
+        ? { label: 'Available after plan', valuePence: available, percentage: percentOfIncome(available, income), tone: 'available' }
+        : null
+  ].filter(Boolean);
 
   const chartId = `income-allocation-${Math.random().toString(36).slice(2)}`;
   const chartConfig = {
@@ -344,6 +356,13 @@ export function incomeAllocationSankeyChart({
 
   return `<div class="echarts-sankey-block">
     <div id="${chartId}" class="echarts-sankey" role="img" aria-label="Income allocation chart" data-echarts-chart data-chart-type="income-allocation" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>
+    <div class="sankey-mobile-legend" aria-label="Income allocation values">
+      ${mobileLegendRows.map((row) => `<div class="sankey-mobile-legend-row ${escapeHtml(row.tone)}">
+        <span class="sankey-mobile-swatch" aria-hidden="true"></span>
+        <span>${escapeHtml(row.label)}</span>
+        <strong>${formatCurrency(row.valuePence)}${income > 0 ? ` · ${row.percentage}%` : ''}</strong>
+      </div>`).join('')}
+    </div>
     ${shortfall > 0 ? `<div class="shortfall-warning" role="status">
       <strong>Shortfall after plan</strong>
       <span>Plan exceeds income by ${formatCurrency(shortfall)}.</span>

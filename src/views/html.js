@@ -1,6 +1,13 @@
 import { formatCurrency, formatSignedCurrency, penceToPounds } from '../utils/money.js';
+import { effectiveAppTheme } from '../services/appSettingsService.js';
 
-const ASSET_VERSION = '2026-06-04-ha-auth';
+const ASSET_VERSION = '2026-06-05-theme-nav-desktop';
+const THEME_MODES = new Set(['system', 'light', 'dark']);
+
+function appTheme() {
+  const theme = String(effectiveAppTheme()).toLowerCase();
+  return THEME_MODES.has(theme) ? theme : 'system';
+}
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -37,7 +44,7 @@ export function actionIconButton({ label, icon, variant = 'edit', type = 'button
 export function page(ctx, { title, body, wide = false }) {
   const loggedIn = Boolean(ctx.user);
   return `<!doctype html>
-<html lang="en-GB">
+<html lang="en-GB" data-theme="${escapeHtml(appTheme())}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

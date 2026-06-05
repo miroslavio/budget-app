@@ -76,8 +76,9 @@ CREATE TABLE IF NOT EXISTS income_estimates (
   gross_annual_salary_pence INTEGER NOT NULL,
   pay_frequency TEXT NOT NULL CHECK (pay_frequency IN ('monthly', 'yearly')),
   tax_year TEXT NOT NULL,
-  pension_scheme_type TEXT NOT NULL DEFAULT 'salary_sacrifice' CHECK (pension_scheme_type IN ('salary_sacrifice', 'defined_contribution', 'defined_benefit')),
-  pension_contribution_type TEXT NOT NULL CHECK (pension_contribution_type IN ('none', 'fixed_amount', 'percentage')),
+  pension_scheme_type TEXT NOT NULL DEFAULT 'defined_contribution' CHECK (pension_scheme_type IN ('defined_contribution', 'defined_benefit', 'sipp', 'other')),
+  pension_contribution_method TEXT NOT NULL DEFAULT 'salary_sacrifice' CHECK (pension_contribution_method IN ('salary_sacrifice', 'net_pay', 'relief_at_source', 'employer_only', 'not_sure')),
+  pension_contribution_type TEXT NOT NULL CHECK (pension_contribution_type IN ('none', 'fixed_monthly', 'fixed_annual', 'percentage')),
   pension_contribution_value REAL NOT NULL DEFAULT 0,
   pension_contribution_tax_treatment TEXT NOT NULL CHECK (pension_contribution_tax_treatment IN ('pre_tax', 'post_tax')),
   other_pre_tax_deductions_pence INTEGER NOT NULL DEFAULT 0,
@@ -93,7 +94,7 @@ CREATE TABLE IF NOT EXISTS income_estimates (
   estimated_net_monthly_income_pence INTEGER NOT NULL,
   estimated_net_annual_income_pence INTEGER NOT NULL,
   linked_savings_account_id INTEGER REFERENCES savings_accounts(id) ON DELETE SET NULL,
-  employer_pension_contribution_type TEXT NOT NULL CHECK (employer_pension_contribution_type IN ('none', 'fixed_amount', 'percentage')) DEFAULT 'none',
+  employer_pension_contribution_type TEXT NOT NULL CHECK (employer_pension_contribution_type IN ('none', 'fixed_monthly', 'fixed_annual', 'percentage')) DEFAULT 'none',
   employer_pension_contribution_value REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -122,13 +123,17 @@ CREATE TABLE IF NOT EXISTS category_budgets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  name TEXT,
   budget_month TEXT NOT NULL,
+  owner_type TEXT NOT NULL DEFAULT 'shared' CHECK (owner_type IN ('person_a', 'person_b', 'shared')),
+  split_type TEXT NOT NULL DEFAULT 'equal' CHECK (split_type IN ('equal', 'manual_percentage')),
+  person_a_percentage REAL NOT NULL DEFAULT 50,
+  person_b_percentage REAL NOT NULL DEFAULT 50,
   amount_pence INTEGER NOT NULL,
   notes TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (household_id, category_id, budget_month)
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_category_budgets_household_month ON category_budgets(household_id, budget_month);
@@ -137,13 +142,17 @@ CREATE TABLE IF NOT EXISTS category_budget_defaults (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  name TEXT,
+  owner_type TEXT NOT NULL DEFAULT 'shared' CHECK (owner_type IN ('person_a', 'person_b', 'shared')),
+  split_type TEXT NOT NULL DEFAULT 'equal' CHECK (split_type IN ('equal', 'manual_percentage')),
+  person_a_percentage REAL NOT NULL DEFAULT 50,
+  person_b_percentage REAL NOT NULL DEFAULT 50,
   amount_pence INTEGER NOT NULL,
   is_active INTEGER NOT NULL DEFAULT 1,
   notes TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (household_id, category_id)
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_category_budget_defaults_household ON category_budget_defaults(household_id);
@@ -178,6 +187,9 @@ CREATE TABLE IF NOT EXISTS savings_accounts (
       'stocks_and_shares_isa',
       'lifetime_isa',
       'pension',
+      'defined_contribution_pension',
+      'sipp_pension',
+      'defined_benefit_pension',
       'other'
     )
   ),
@@ -201,6 +213,9 @@ CREATE TABLE IF NOT EXISTS savings_accounts (
   projected_annual_rate REAL NOT NULL DEFAULT 0,
   projected_rate_type TEXT NOT NULL CHECK (projected_rate_type IN ('interest', 'growth')) DEFAULT 'interest',
   include_lisa_bonus INTEGER NOT NULL DEFAULT 0,
+  annual_charge_percentage REAL NOT NULL DEFAULT 0,
+  annual_pension_entitlement_pence INTEGER NOT NULL DEFAULT 0,
+  lump_sum_entitlement_pence INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

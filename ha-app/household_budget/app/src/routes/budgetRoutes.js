@@ -15,7 +15,7 @@ import { listTransactions } from '../repositories/transactionRepository.js';
 import { listSavingsGoals } from '../repositories/savingsGoalRepository.js';
 import { listHouseholdMembers } from '../repositories/userRepository.js';
 import { calculateMonthlyEquivalent, plannedMonthlySummary } from '../services/budgetService.js';
-import { savingsAccountTypeLabel } from '../services/savingsAccountService.js';
+import { isPensionAccountType, savingsAccountTypeLabel } from '../services/savingsAccountService.js';
 import { plannedSavingsBudgetItems } from '../services/savingsService.js';
 import { buildUnifiedSpendingBudgetRows, plannedSpendingSummary, spendingCategoryKey } from '../services/spendingBudgetService.js';
 import { estimateTakeHomePay } from '../services/takeHomePayService.js';
@@ -57,6 +57,13 @@ function renderBudgetPlanOverview(ctx, db) {
   const planningItems = [...activeItems, ...plannedSavingsBudgetItems({ goals, accounts: savingsAccounts })];
   const plan = plannedMonthlySummary(planningItems, month);
   const defaultBudgets = listCategoryBudgetDefaults(db, ctx.user.household_id);
+  const spendingRows = buildUnifiedSpendingBudgetRows({
+    expenseItems: activeItems.filter((item) => item.item_type === 'expense'),
+    defaultBudgets,
+    monthBudgets: [],
+    transactions: [],
+    month
+  });
   const spendingSummary = plannedSpendingSummary({
     expenseItems: activeItems,
     defaultBudgets,
@@ -67,9 +74,7 @@ function renderBudgetPlanOverview(ctx, db) {
   const plannedSavingsContributionsPence = plan.plannedSavingsPence;
   const plannedSurplusPence = plan.plannedIncomePence - plannedSpendingPence - plannedSavingsContributionsPence;
 
-  const incomeItems = plan.activeItems.filter((item) => item.item_type === 'income');
   const expenseItems = plan.activeItems.filter((item) => item.item_type === 'expense');
-  const savingsItems = plan.activeItems.filter((item) => item.item_type === 'savings');
   const completeness = planCompleteness(expenseItems, month);
   const hasPlanData =
     plan.plannedIncomePence > 0 ||
@@ -91,35 +96,14 @@ function renderBudgetPlanOverview(ctx, db) {
         plannedSavingsContributionsPence,
         plannedSurplusPence
       })}
-      ${budgetPlanTable([
-        {
-          section: 'Income',
-          sectionKind: 'inflow',
-          monthlyPlannedPence: plan.plannedIncomePence,
-          yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(incomeItems)),
-          ownerSummary: ownerSummary(incomeItems, members),
-          actionHref: '/budget-plan/income',
-          actionLabel: 'Review income'
-        },
-        {
-          section: 'Planned spending',
-          sectionKind: 'outflow',
-          monthlyPlannedPence: plannedSpendingPence,
-          yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(expenseItems)),
-          ownerSummary: spendingOwnerSummary(expenseItems, spendingSummary.effectiveBudgets, members),
-          actionHref: '/budget-plan/spending',
-          actionLabel: 'Review spending'
-        },
-        {
-          section: 'Planned savings',
-          sectionKind: 'saving',
-          monthlyPlannedPence: plannedSavingsContributionsPence,
-          yearlyItemsIncluded: yearlyItemsLabel(yearlyMonthlyEquivalentPence(savingsItems)),
-          ownerSummary: ownerSummary(savingsItems, members),
-          actionHref: '/budget-plan/planned-savings',
-          actionLabel: 'Review planned savings'
-        }
-      ])}
+      ${budgetPlanAvailabilityInsight(plannedSurplusPence)}
+      <section class="card chart-card budget-overview-spending-chart">
+        <div class="card-heading">
+          <h2>Where planned spending goes</h2>
+          <a href="/budget-plan/spending">Review all</a>
+        </div>
+        ${plannedSpendingOwnerBarChart(spendingRows.rows, members, { maxRows: 10 })}
+      </section>
       ${completeness.missingCount > 0 ? planCompletenessCard(completeness) : ''}` : budgetPlanEmptyState()}</div>`
     })
   );
@@ -203,15 +187,20 @@ function renderSpendingBudgetsPage(ctx, db) {
         <p>The categories below exist as both regular spending and variable estimates. Variable estimates in these categories are not deducted again from your plan.</p>
         <ul class="bullet-list">${rows.overlaps.map((row) => `<li>${escapeHtml(row.category_name || 'Uncategorised')}</li>`).join('')}</ul>
       </section>` : ''}
-      <section class="card">
-        <h2>Planned spending</h2>
-        ${spendingBudgetsTable(ctx, rows.rows, members, returnTo)}
-      </section>
-      <section class="card chart-card" id="planned-spending-chart">
+      <section class="card planned-spending-view-card">
         <div class="card-heading">
-          <h2>Planned spending by category</h2>
+          <h2>Planned spending</h2>
+          <div class="period-pills view-toggle-pills" data-view-toggle-group aria-label="Planned spending view">
+            <button type="button" class="period-pill active" data-view-toggle="planned-spending-view" data-view-value="items" aria-pressed="true">Items</button>
+            <button type="button" class="period-pill" data-view-toggle="planned-spending-view" data-view-value="category-breakdown" aria-pressed="false">Category breakdown</button>
+          </div>
         </div>
-        ${spendingByCategory}
+        <div data-view-panel="planned-spending-view" data-view-value="items">
+          ${spendingBudgetsTable(ctx, rows.rows, members, returnTo)}
+        </div>
+        <div id="planned-spending-chart" data-view-panel="planned-spending-view" data-view-value="category-breakdown" hidden>
+          ${spendingByCategory}
+        </div>
       </section>
       ${plannedSpendingModal(ctx, categories, members, returnTo, rows)}
       </div>`
@@ -293,6 +282,14 @@ function budgetPlanSummaryCards({
     ${planSummaryStat('Planned spending', plannedSpendingPence, `Regular ${formatCurrency(committedSpendingPence)} · Variable estimate ${formatCurrency(flexibleSpendingTargetPence)}`)}
     ${planSummaryStat('Planned savings', plannedSavingsContributionsPence, '', 'good')}
     ${movementStat('Available after plan', plannedSurplusPence)}
+  </section>`;
+}
+
+function budgetPlanAvailabilityInsight(plannedSurplusPence) {
+  if (plannedSurplusPence >= 0) return '';
+  return `<section class="inline-alert danger">
+    Your current plan is over-allocated by ${formatCurrency(Math.abs(plannedSurplusPence))}.
+    Review <a href="/budget-plan/spending">planned spending</a> or <a href="/budget-plan/planned-savings">planned savings</a>.
   </section>`;
 }
 
@@ -467,9 +464,15 @@ function ownerSummary(items, members) {
 }
 
 function spendingOwnerSummary(expenseItems, flexibleBudgets, members) {
-  const hasSharedFlexible = flexibleBudgets.some((budget) => Number(budget.amount_pence || 0) > 0);
-  if (hasSharedFlexible) return 'Shared household';
-  return ownerSummary(expenseItems, members);
+  return ownerSummary(
+    [
+      ...expenseItems,
+      ...flexibleBudgets
+        .filter((budget) => Number(budget.amount_pence || 0) > 0)
+        .map((budget) => ({ owner_type: budget.owner_type || 'shared' }))
+    ],
+    members
+  );
 }
 
 function spendingOwnerLabel(row, members) {
@@ -554,7 +557,12 @@ function spendingBudgetActions(ctx, row, returnTo) {
         data-reset-modal="true"
         data-fill-id="${escapeHtml(row.id)}"
         data-fill-spending-type="variable_estimate"
+        data-fill-name="${escapeHtml(row.name || '')}"
         data-fill-category-id="${escapeHtml(row.categoryId || '')}"
+        data-fill-owner-type="${escapeHtml(row.ownerType || 'shared')}"
+        data-fill-split-type="${escapeHtml(row.splitType || 'equal')}"
+        data-fill-person-a-percentage="${escapeHtml(row.personAPercentage ?? 50)}"
+        data-fill-person-b-percentage="${escapeHtml(row.personBPercentage ?? 50)}"
         data-fill-variable-amount="${escapeHtml((row.plannedMonthlyPence / 100).toFixed(2))}"
         data-fill-notes="${escapeHtml(row.notes || '')}"`
     })}
@@ -584,8 +592,8 @@ function plannedSpendingDisclosure() {
   return `<button type="button" data-open-modal="planned-spending-modal" data-reset-modal="true">Add planned spending</button>`;
 }
 
-function plannedSpendingOwnerBarChart(rows, members) {
-  const chartRows = plannedSpendingOwnerChartRows(rows, members);
+function plannedSpendingOwnerBarChart(rows, members, options = {}) {
+  const chartRows = limitedPlannedSpendingOwnerChartRows(plannedSpendingOwnerChartRows(rows, members), options.maxRows);
   if (!chartRows.length) {
     return '<div class="chart-empty">Add planned spending to build this chart.</div>';
   }
@@ -594,6 +602,7 @@ function plannedSpendingOwnerBarChart(rows, members) {
   const legendOwners = spendingChartLegendOwners(chartRows);
   const orderedRows = [...chartRows].reverse();
   const chartId = `planned-spending-owner-${Math.random().toString(36).slice(2)}`;
+  const chartHeight = Math.min(520, Math.max(220, 118 + chartRows.length * 40));
   const ownerColours = {
     'person-a': '#1f6f5b',
     'person-b': '#4b5fb5',
@@ -671,7 +680,7 @@ function plannedSpendingOwnerBarChart(rows, members) {
   };
 
   return `<div class="category-owner-chart" role="img" aria-label="Planned spending by category and owner">
-    <div id="${chartId}" class="echarts-dashboard-chart" data-echarts-chart data-chart-type="planned-spending-owner" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>
+    <div id="${chartId}" class="echarts-dashboard-chart planned-spending-owner-chart" style="height:${chartHeight}px" data-echarts-chart data-chart-type="planned-spending-owner" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>
     <table class="sr-only">
       <caption>Planned spending by category and owner</caption>
       <thead><tr><th>Category</th><th>Total</th>${legendOwners.map((owner) => `<th>${escapeHtml(owner.label)}</th>`).join('')}</tr></thead>
@@ -690,6 +699,36 @@ function plannedSpendingOwnerBarChart(rows, members) {
       </tbody>
     </table>
   </div>`;
+}
+
+function limitedPlannedSpendingOwnerChartRows(chartRows, maxRows = Infinity) {
+  if (!Number.isFinite(maxRows) || chartRows.length <= maxRows) return chartRows;
+  const visibleCount = Math.max(1, maxRows - 1);
+  const visibleRows = chartRows.slice(0, visibleCount);
+  const groupedRows = chartRows.slice(visibleCount);
+  const otherPortions = new Map();
+  let otherTotalPence = 0;
+
+  for (const row of groupedRows) {
+    otherTotalPence += row.totalPence;
+    for (const portion of row.portions) {
+      otherPortions.set(portion.key, {
+        ...portion,
+        label: portion.label,
+        amountPence: Number(otherPortions.get(portion.key)?.amountPence || 0) + Number(portion.amountPence || 0)
+      });
+    }
+  }
+
+  if (otherTotalPence <= 0) return visibleRows;
+  return [
+    ...visibleRows,
+    {
+      label: 'Other planned spending',
+      totalPence: otherTotalPence,
+      portions: [...otherPortions.values()].filter((portion) => portion.amountPence > 0)
+    }
+  ];
 }
 
 function plannedSpendingOwnerChartRows(rows, members) {
@@ -911,7 +950,7 @@ function mobileStatusClass(status) {
 
 function plannedSavingsContributionCell(account) {
   const notes = [];
-  if (account.account_type === 'pension' && Number(account.employer_monthly_contribution_pence || 0) > 0) {
+  if (isPensionAccountType(account.account_type) && account.account_type !== 'defined_benefit_pension' && Number(account.employer_monthly_contribution_pence || 0) > 0) {
     notes.push(`Employer ${formatCurrency(Number(account.employer_monthly_contribution_pence || 0))}/month`);
   }
   if (account.account_type === 'lifetime_isa' && Number(account.include_lisa_bonus) === 1) {
@@ -1086,7 +1125,7 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
         </select>
       </label>
       <p class="hint">Add the spending you expect as part of your usual plan. Use regular costs for predictable payments and variable estimates for things like groceries, transport, and eating out.</p>
-      <label data-controlled-by="spending_type" data-show-when="regular">Name <input name="name" maxlength="120" data-modal-field="name" data-required-when-visible="true"></label>
+      <label>Name <input name="name" maxlength="120" data-modal-field="name" data-required-when-visible="true"></label>
       <label>Category <select
         name="category_id"
         required
@@ -1099,58 +1138,58 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
         data-warning-variable-message="${escapeHtml('You already have this category in regular spending. Adding it here may count the same spending twice.')}"
       >${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
       <p class="inline-hint warning-text" data-spending-duplicate-warning hidden></p>
+      <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
+      <fieldset>
+        <legend>Shared split</legend>
+        <div data-controlled-by="owner_type" data-show-when="shared">
+          <label>Split type
+            <select name="split_type" data-controls data-modal-field="splitType">
+              <option value="equal">Equal split</option>
+              <option value="manual_percentage">Manual percentage split</option>
+            </select>
+          </label>
+          <div class="split-slider-card" data-controlled-by="split_type" data-show-when="manual_percentage" hidden>
+            <input type="hidden" name="person_b_percentage" value="50" data-modal-field="personBPercentage" data-split-secondary-input>
+            <div class="split-slider-summary">
+              <div class="split-share">
+                <span class="split-share-label">${escapeHtml(firstMemberLabel)}</span>
+                <strong data-split-primary-output>50%</strong>
+                <small class="hint" data-split-primary-amount>£0.00</small>
+              </div>
+              <div class="split-share split-share-end">
+                <span class="split-share-label">${escapeHtml(secondMemberLabel)}</span>
+                <strong data-split-secondary-output>50%</strong>
+                <small class="hint" data-split-secondary-amount>£0.00</small>
+              </div>
+            </div>
+            <input
+              name="person_a_percentage"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="50"
+              data-modal-field="personAPercentage"
+              data-split-slider
+              class="split-slider-input"
+              aria-label="Shared spending split"
+            >
+          </div>
+        </div>
+      </fieldset>
     </section>
     <div class="form-step-cluster" data-form-step data-step-title="Spending details" data-controlled-by="spending_type" data-show-when="regular">
     <section class="form-section">
       <h3>Regular spending details</h3>
       <p class="hint">Regular spending is predictable, such as mortgage, council tax, subscriptions, or insurance.</p>
-      <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
       <label>Amount <input name="regular_amount" ${moneyInputAttrs({ min: '0.01' })} data-modal-field="regularAmount" data-required-when-visible="true" data-split-amount-source></label>
       <label>Frequency <select name="frequency" data-modal-field="frequency">${frequencyOptions('monthly')}</select></label>
     </section>
-    <fieldset data-controlled-by="spending_type" data-show-when="regular">
-      <legend>Shared split</legend>
-      <div data-controlled-by="owner_type" data-show-when="shared">
-        <label>Split type
-          <select name="split_type" data-controls data-modal-field="splitType">
-            <option value="equal">Equal split</option>
-            <option value="manual_percentage">Manual percentage split</option>
-          </select>
-        </label>
-        <div class="split-slider-card" data-controlled-by="split_type" data-show-when="manual_percentage" hidden>
-          <input type="hidden" name="person_b_percentage" value="50" data-modal-field="personBPercentage" data-split-secondary-input>
-          <div class="split-slider-summary">
-            <div class="split-share">
-              <span class="split-share-label">${escapeHtml(firstMemberLabel)}</span>
-              <strong data-split-primary-output>50%</strong>
-              <small class="hint" data-split-primary-amount>£0.00</small>
-            </div>
-            <div class="split-share split-share-end">
-              <span class="split-share-label">${escapeHtml(secondMemberLabel)}</span>
-              <strong data-split-secondary-output>50%</strong>
-              <small class="hint" data-split-secondary-amount>£0.00</small>
-            </div>
-          </div>
-          <input
-            name="person_a_percentage"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value="50"
-            data-modal-field="personAPercentage"
-            data-split-slider
-            class="split-slider-input"
-            aria-label="Shared spending split"
-          >
-        </div>
-      </div>
-    </fieldset>
     </div>
     <section class="form-section" data-form-step data-step-title="Spending details" data-controlled-by="spending_type" data-show-when="variable_estimate" hidden>
       <h3>Variable estimate details</h3>
       <p class="hint">Use this for expected amounts such as groceries, transport, eating out, clothing, entertainment, or personal spending.</p>
-      <label>Planned monthly amount <input name="variable_amount" ${moneyInputAttrs({ min: '0.01' })} data-modal-field="variableAmount" data-required-when-visible="true"></label>
+      <label>Planned monthly amount <input name="variable_amount" ${moneyInputAttrs({ min: '0.01' })} data-modal-field="variableAmount" data-required-when-visible="true" data-split-amount-source></label>
     </section>
     <section class="form-section" data-form-step data-step-title="Timing and notes">
       <h3>Timing and notes</h3>
@@ -1175,7 +1214,7 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
 
 function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
   const taxYears = listTaxYears();
-  const pensionAccounts = savingsAccounts.filter((account) => account.account_type === 'pension');
+  const pensionAccounts = savingsAccounts.filter((account) => isPensionAccountType(account.account_type));
   return `<form method="post" action="/income" class="stack budget-form modal-form modal-form--income" data-income-estimate-form data-stepped-form novalidate>
     ${csrfField(ctx)}
     <input type="hidden" name="id" value="" data-modal-field="id">
@@ -1245,8 +1284,8 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
         </section>
 
         <section class="form-section" data-form-step data-step-title="Pension" data-controlled-by="income_entry_mode" data-show-when="estimated_from_gross" hidden>
-          <h3>Pension</h3>
-          <p class="hint">Use this for pension deductions from your pay. Employer contributions can be linked to a pension pot in Savings, but they do not reduce household take-home income.</p>
+          <h3>Pension contributions from this income</h3>
+          <p class="hint">Use this for employee pension deductions from this income. Employer contributions can feed pension projections, but they do not reduce household take-home income.</p>
           <div class="pension-form-stack">
             <label>Do you contribute to a pension?
               <select name="has_pension" data-controls data-modal-field="hasPension" data-income-summary-trigger>
@@ -1255,49 +1294,67 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
               </select>
             </label>
             <div class="pension-form-card" data-controlled-by="has_pension" data-show-when="yes" hidden>
-              <h4>Pension scheme</h4>
+              <h4>Pension contributions from this income</h4>
               <div class="grid two compact">
-                <label>Pension type
+                <label>Scheme type
                   <select name="pension_scheme_type" data-controls data-modal-field="pensionSchemeType">
-                    <option value="salary_sacrifice">Salary sacrifice</option>
-                    <option value="defined_contribution">Defined contribution</option>
-                    <option value="defined_benefit">Defined benefit</option>
+                    <option value="defined_contribution">Defined contribution / money purchase</option>
+                    <option value="defined_benefit">Defined benefit / career average / final salary</option>
+                    <option value="sipp">SIPP / personal pension</option>
+                    <option value="other">Other / not sure</option>
                   </select>
                 </label>
-                <label>Pension contribution
+                <label>Contribution method
+                  <select name="pension_contribution_method" data-controls data-modal-field="pensionContributionMethod" data-income-summary-trigger>
+                    <option value="salary_sacrifice">Salary sacrifice</option>
+                    <option value="net_pay">Net pay arrangement</option>
+                    <option value="relief_at_source">Relief at source / personal contribution</option>
+                    <option value="employer_only">Employer only</option>
+                    <option value="not_sure">Not sure</option>
+                  </select>
+                </label>
+              </div>
+              <p class="hint" data-controlled-by="pension_contribution_method" data-show-when="salary_sacrifice">Salary sacrifice is treated as a pre-tax deduction for this estimate and reduces taxable and National Insurance-able pay.</p>
+              <p class="hint" data-controlled-by="pension_contribution_method" data-show-when="net_pay" hidden>Net pay is treated as before Income Tax but normally after National Insurance for this estimate.</p>
+              <p class="hint" data-controlled-by="pension_contribution_method" data-show-when="relief_at_source" hidden>Relief at source is treated as paid from net pay. Provider tax relief is not counted as household income.</p>
+              <p class="hint" data-controlled-by="pension_contribution_method" data-show-when="employer_only" hidden>Employer-only contributions do not reduce household take-home pay.</p>
+              <p class="hint" data-controlled-by="pension_contribution_method" data-show-when="not_sure" hidden>This estimate treats the employee contribution as paid from net pay. Check your payslip if accuracy matters.</p>
+              <div class="grid two compact">
+                <label data-controlled-by="pension_contribution_method" data-hide-when="employer_only">Employee contribution
                   <select name="pension_contribution_type" data-controls data-modal-field="pensionContributionType" data-income-summary-trigger>
                     <option value="none">Choose contribution type</option>
                     <option value="percentage">Percentage of gross salary</option>
-                    <option value="fixed_amount">Fixed annual amount</option>
+                    <option value="fixed_monthly">Fixed monthly amount</option>
+                    <option value="fixed_annual">Fixed annual amount</option>
                   </select>
                 </label>
+                <label data-controlled-by="pension_contribution_method" data-hide-when="employer_only">Contribution value <input name="pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="pensionContributionValue" data-income-summary-trigger></label>
               </div>
-              <div class="grid two compact">
-                <label>Contribution amount <input name="pension_contribution_value" ${decimalInputAttrs({ min: '0', max: '100000000' })} data-modal-field="pensionContributionValue" data-income-summary-trigger></label>
-                <label>How is your pension taken?
+              <details class="form-details">
+                <summary>Advanced tax treatment</summary>
+                <label>Tax treatment override
                   <select name="pension_contribution_tax_treatment" data-modal-field="pensionContributionTaxTreatment" data-income-summary-trigger>
-                    <option value="pre_tax">Salary sacrifice / before tax</option>
-                    <option value="post_tax">After tax</option>
-                    <option value="unknown">Not sure</option>
+                    <option value="">Use contribution method</option>
+                    <option value="pre_tax">Before Income Tax</option>
+                    <option value="post_tax">From net pay</option>
                   </select>
                 </label>
-              </div>
-              <p class="hint" data-controlled-by="pension_scheme_type" data-show-when="salary_sacrifice">Salary sacrifice is treated as a pre-tax deduction for this budgeting estimate, reducing taxable and National Insurance-able pay.</p>
+              </details>
               <p class="hint" data-controlled-by="pension_scheme_type" data-show-when="defined_benefit" hidden>For defined benefit pensions, enter the employee contribution deducted from pay. The app tracks the pay impact, not the actuarial value of the pension promise.</p>
             </div>
             <div class="pension-form-card" data-controlled-by="has_pension" data-show-when="yes" hidden>
-              <h4>Link to Savings</h4>
-              <p class="hint">Use this if you want the employee deduction and any employer contribution to feed a pension pot, linked goals, and long-term projections.</p>
-              <label>Pension pot in Savings
+              <h4>Link to pension pot or entitlement</h4>
+              <p class="hint">Use this if you want the employee deduction and any employer contribution to feed a pension pot, entitlement, linked goals, and long-term projections.</p>
+              <label>Pension pot or entitlement
                 <select name="pension_tracking_mode" data-controls data-modal-field="pensionTrackingMode">
-                  <option value="none">Do not track in Savings</option>
-                  ${pensionAccounts.length ? '<option value="link_existing">Link to an existing pension pot</option>' : ''}
+                  <option value="none">Do not link</option>
+                  ${pensionAccounts.length ? '<option value="link_existing">Link existing pension pot / entitlement</option>' : ''}
                   <option value="create_new">Create a pension pot in Savings</option>
                 </select>
               </label>
-              <label data-controlled-by="pension_tracking_mode" data-show-when="link_existing" hidden>Existing pension pot
+              <label data-controlled-by="pension_tracking_mode" data-show-when="link_existing" hidden>Existing pension pot or entitlement
                 <select name="linked_savings_account_id" data-modal-field="linkedSavingsAccountId">
-                  <option value="">Choose a pension pot</option>
+                  <option value="">Choose a pension pot or entitlement</option>
                   ${pensionAccountOptions(pensionAccounts, members)}
                 </select>
               </label>
@@ -1319,7 +1376,8 @@ function incomeForm(ctx, members, returnTo, savingsAccounts = []) {
                   <select name="employer_pension_contribution_type" data-controls data-modal-field="employerPensionContributionType">
                     <option value="none">Choose contribution type</option>
                     <option value="percentage">Percentage of gross salary</option>
-                    <option value="fixed_amount">Fixed annual amount</option>
+                    <option value="fixed_monthly">Fixed monthly amount</option>
+                    <option value="fixed_annual">Fixed annual amount</option>
                   </select>
                 </label>
               </div>
@@ -1729,10 +1787,21 @@ function studentLoanPlanLabel(plan) {
 
 function pensionTreatmentLabel(item) {
   if ((item.estimate_pension_contribution_type || 'none') === 'none') return 'Not set';
+  const methodLabel = pensionContributionMethodLabel(item.estimate_pension_contribution_method || inferPensionContributionMethod(item));
   return {
-    pre_tax: 'Pre-tax',
-    post_tax: 'Post-tax'
-  }[item.estimate_pension_contribution_tax_treatment] || 'Not set';
+    pre_tax: `${methodLabel} · before Income Tax`,
+    post_tax: `${methodLabel} · from net pay`
+  }[item.estimate_pension_contribution_tax_treatment] || methodLabel;
+}
+
+function pensionContributionMethodLabel(method) {
+  return {
+    salary_sacrifice: 'Salary sacrifice',
+    net_pay: 'Net pay arrangement',
+    relief_at_source: 'Relief at source',
+    employer_only: 'Employer only',
+    not_sure: 'Not sure'
+  }[method] || 'Not set';
 }
 
 function formatTaxYearLabel(taxYear) {
@@ -1826,7 +1895,7 @@ function budgetItemEmptyState(itemType, fallbackMessage) {
 function incomeEditAttributes(item) {
   const studentLoanPlans = parseEstimateStudentLoanPlans(item);
   const pensionContributionValue =
-    item.estimate_pension_contribution_type === 'fixed_amount'
+    ['fixed_amount', 'fixed_monthly', 'fixed_annual'].includes(item.estimate_pension_contribution_type)
       ? moneyInputValue(item.estimate_pension_contribution_value || 0)
       : escapeHtml(item.estimate_pension_contribution_value || '');
   const pensionSchemeType = item.estimate_pension_scheme_type || inferPensionSchemeType(item);
@@ -1844,17 +1913,18 @@ function incomeEditAttributes(item) {
     `data-fill-tax-year="${escapeHtml(item.estimate_tax_year || latestTaxYear())}"`,
     `data-fill-student-loan-plan="${escapeHtml(studentLoanPlans[0] || 'none')}"`,
     `data-fill-has-postgraduate-loan="${item.estimate_has_postgraduate_loan ? '1' : '0'}"`,
-    `data-fill-has-pension="${item.estimate_pension_contribution_type && item.estimate_pension_contribution_type !== 'none' ? 'yes' : 'no'}"`,
+    `data-fill-has-pension="${hasIncomePensionDetails(item) ? 'yes' : 'no'}"`,
     `data-fill-pension-scheme-type="${escapeHtml(pensionSchemeType)}"`,
-    `data-fill-pension-contribution-type="${escapeHtml(item.estimate_pension_contribution_type || 'none')}"`,
+    `data-fill-pension-contribution-method="${escapeHtml(item.estimate_pension_contribution_method || inferPensionContributionMethod(item))}"`,
+    `data-fill-pension-contribution-type="${escapeHtml(normaliseContributionType(item.estimate_pension_contribution_type || 'none'))}"`,
     `data-fill-pension-contribution-value="${pensionContributionValue}"`,
     `data-fill-pension-contribution-tax-treatment="${escapeHtml(item.estimate_pension_contribution_tax_treatment || 'pre_tax')}"`,
     `data-fill-pension-tracking-mode="${item.estimate_linked_savings_account_id ? 'link_existing' : 'none'}"`,
     `data-fill-linked-savings-account-id="${escapeHtml(item.estimate_linked_savings_account_id || '')}"`,
     `data-fill-new-pension-account-name="${escapeHtml(item.name ? `${item.name} pension` : 'Workplace pension')}"`,
     `data-fill-has-employer-pension-contribution="${item.estimate_employer_pension_contribution_type && item.estimate_employer_pension_contribution_type !== 'none' ? 'yes' : 'no'}"`,
-    `data-fill-employer-pension-contribution-type="${escapeHtml(item.estimate_employer_pension_contribution_type || 'none')}"`,
-    `data-fill-employer-pension-contribution-value="${item.estimate_employer_pension_contribution_type === 'fixed_amount' ? moneyInputValue(item.estimate_employer_pension_contribution_value || 0) : escapeHtml(item.estimate_employer_pension_contribution_value || '')}"`,
+    `data-fill-employer-pension-contribution-type="${escapeHtml(normaliseContributionType(item.estimate_employer_pension_contribution_type || 'none'))}"`,
+    `data-fill-employer-pension-contribution-value="${['fixed_amount', 'fixed_monthly', 'fixed_annual'].includes(item.estimate_employer_pension_contribution_type) ? moneyInputValue(item.estimate_employer_pension_contribution_value || 0) : escapeHtml(item.estimate_employer_pension_contribution_value || '')}"`,
     `data-fill-other-pre-tax-deductions="${item.estimate_other_pre_tax_deductions_pence ? moneyInputValue(item.estimate_other_pre_tax_deductions_pence) : ''}"`,
     `data-fill-other-post-tax-deductions="${item.estimate_other_post_tax_deductions_pence ? moneyInputValue(item.estimate_other_post_tax_deductions_pence) : ''}"`,
     `data-fill-start-date="${escapeHtml(item.start_date || todayIso())}"`,
@@ -1864,9 +1934,24 @@ function incomeEditAttributes(item) {
 }
 
 function inferPensionSchemeType(item) {
-  if (!item.estimate_pension_contribution_type || item.estimate_pension_contribution_type === 'none') return 'salary_sacrifice';
-  if (item.estimate_pension_contribution_tax_treatment === 'post_tax') return 'defined_contribution';
-  return 'salary_sacrifice';
+  if (['defined_contribution', 'defined_benefit', 'sipp', 'other'].includes(item.estimate_pension_scheme_type)) {
+    return item.estimate_pension_scheme_type;
+  }
+  return 'defined_contribution';
+}
+
+function hasIncomePensionDetails(item) {
+  return Boolean(
+    (item.estimate_pension_contribution_type && item.estimate_pension_contribution_type !== 'none') ||
+      (item.estimate_employer_pension_contribution_type && item.estimate_employer_pension_contribution_type !== 'none') ||
+      item.estimate_linked_savings_account_id
+  );
+}
+
+function inferPensionContributionMethod(item) {
+  if (item.estimate_pension_scheme_type === 'salary_sacrifice') return 'salary_sacrifice';
+  if (item.estimate_pension_contribution_tax_treatment === 'post_tax') return 'relief_at_source';
+  return 'net_pay';
 }
 
 function expenseEditAttributes(item) {
@@ -1959,6 +2044,7 @@ function createIncome(ctx, db) {
         payFrequency: frequency,
         taxYear: estimate.taxYear,
         pensionSchemeType: estimate.pensionSchemeType,
+        pensionContributionMethod: estimate.pensionContributionMethod,
         pensionContributionType: estimate.pensionContributionType,
         pensionContributionValue: estimate.pensionContributionValue,
         pensionContributionTaxTreatment: estimate.pensionContributionTaxTreatment,
@@ -2003,7 +2089,7 @@ function createIncome(ctx, db) {
 }
 
 function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerType, incomeName }) {
-  const hasPension = String(ctx.body.has_pension || 'no') === 'yes' && estimate.pensionContributionPence > 0;
+  const hasPension = String(ctx.body.has_pension || 'no') === 'yes';
   if (!hasPension) {
     return {
       linkedSavingsAccountId: null,
@@ -2029,8 +2115,8 @@ function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerTy
     const linkedSavingsAccountId = Number(ctx.body.linked_savings_account_id || 0) || null;
     if (!linkedSavingsAccountId) throw new Error('Choose an existing pension pot.');
     const existingAccount = findSavingsAccountById(db, ctx.user.household_id, linkedSavingsAccountId);
-    if (!existingAccount || existingAccount.account_type !== 'pension') {
-      throw new Error('Selected pension pot was not found.');
+    if (!existingAccount || !isPensionAccountType(existingAccount.account_type)) {
+      throw new Error('Selected pension pot or entitlement was not found.');
     }
     updateSavingsAccount(db, {
       id: existingAccount.id,
@@ -2050,6 +2136,9 @@ function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerTy
       projectedAnnualRate: Number(existingAccount.projected_annual_rate || 0),
       projectedRateType: existingAccount.projected_rate_type,
       includeLisaBonus: Number(existingAccount.include_lisa_bonus) === 1,
+      annualChargePercentage: Number(existingAccount.annual_charge_percentage || 0),
+      annualPensionEntitlementPence: Number(existingAccount.annual_pension_entitlement_pence || 0),
+      lumpSumEntitlementPence: Number(existingAccount.lump_sum_entitlement_pence || 0),
       isActive: Number(existingAccount.is_active) === 1,
       notes: existingAccount.notes
     });
@@ -2065,7 +2154,7 @@ function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerTy
     householdId: ctx.user.household_id,
     name: newAccountName,
     providerName: null,
-    accountType: 'pension',
+    accountType: pensionAccountTypeForScheme(estimate.pensionSchemeType),
     ownerType,
     currentBalancePence: 0,
     monthlyContributionPence: employeeMonthlyContributionPence,
@@ -2078,6 +2167,9 @@ function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerTy
     projectedAnnualRate: 0,
     projectedRateType: 'growth',
     includeLisaBonus: false,
+    annualChargePercentage: 0,
+    annualPensionEntitlementPence: 0,
+    lumpSumEntitlementPence: 0,
     isActive: true,
     notes: 'Review this pension pot in Savings to confirm balance, provider, and growth assumption.'
   });
@@ -2088,23 +2180,31 @@ function resolveIncomePensionTracking({ ctx, db, estimate, existingItem, ownerTy
   };
 }
 
+function pensionAccountTypeForScheme(schemeType) {
+  if (schemeType === 'defined_benefit') return 'defined_benefit_pension';
+  if (schemeType === 'sipp') return 'sipp_pension';
+  return 'defined_contribution_pension';
+}
+
 function parseEmployerPensionContribution(body, grossAnnualSalaryPence) {
   const hasEmployerPensionContribution = String(body.has_employer_pension_contribution || 'no') === 'yes';
   if (!hasEmployerPensionContribution) {
     return { type: 'none', value: 0, annualContributionPence: 0 };
   }
-  const type = requireChoice(body.employer_pension_contribution_type || 'none', ['none', 'fixed_amount', 'percentage'], 'Employer contribution');
+  const type = normaliseContributionType(requireChoice(body.employer_pension_contribution_type || 'none', ['none', 'fixed_amount', 'fixed_monthly', 'fixed_annual', 'percentage'], 'Employer contribution'));
   if (type === 'none') {
     throw new Error('Choose an employer contribution type.');
   }
   const rawValue = body.employer_pension_contribution_value || '0';
   const value =
-    type === 'fixed_amount'
+    type === 'fixed_monthly' || type === 'fixed_annual'
       ? requireMoney(rawValue, 'Employer contribution amount')
       : requireDecimal(rawValue, 'Employer contribution amount', { min: 0.01, max: 100 });
   const annualContributionPence =
-    type === 'fixed_amount'
-      ? value
+    type === 'fixed_monthly'
+      ? value * 12
+      : type === 'fixed_annual'
+        ? value
       : Math.round(Number(grossAnnualSalaryPence || 0) * (Number(value || 0) / 100));
   return { type, value, annualContributionPence };
 }
@@ -2156,40 +2256,50 @@ function hiddenFields(fields) {
 
 function buildEstimate(ctx) {
   const hasStudentLoan = String(ctx.body.has_student_loan || 'no') === 'yes';
-  const pensionTreatmentRaw = ctx.body.pension_contribution_tax_treatment || 'pre_tax';
   const hasPension = String(ctx.body.has_pension || 'no') === 'yes';
   const pensionSchemeType = hasPension
-    ? requireChoice(ctx.body.pension_scheme_type || 'salary_sacrifice', ['salary_sacrifice', 'defined_contribution', 'defined_benefit'], 'Pension type')
+    ? requireChoice(ctx.body.pension_scheme_type || 'defined_contribution', ['defined_contribution', 'defined_benefit', 'sipp', 'other'], 'Scheme type')
+    : 'defined_contribution';
+  const pensionContributionMethod = hasPension
+    ? requireChoice(ctx.body.pension_contribution_method || 'salary_sacrifice', ['salary_sacrifice', 'net_pay', 'relief_at_source', 'employer_only', 'not_sure'], 'Contribution method')
     : 'salary_sacrifice';
-  const pensionTypeRaw = hasPension ? (ctx.body.pension_contribution_type || 'none') : 'none';
+  const pensionTypeRaw = hasPension && pensionContributionMethod !== 'employer_only' ? (ctx.body.pension_contribution_type || 'none') : 'none';
   if (hasStudentLoan && !ctx.body.student_loan_plan) {
     throw new Error('Student loan repayment plan is required.');
   }
-  if (hasPension && pensionTypeRaw === 'none') {
+  if (hasPension && pensionContributionMethod !== 'employer_only' && pensionTypeRaw === 'none') {
     throw new Error('Choose a pension contribution type.');
   }
-  const pensionType = requireChoice(pensionTypeRaw, ['none', 'fixed_amount', 'percentage'], 'Pension contribution');
+  const pensionType = normaliseContributionType(requireChoice(pensionTypeRaw, ['none', 'fixed_amount', 'fixed_monthly', 'fixed_annual', 'percentage'], 'Employee contribution'));
   const rawPensionValue = pensionType === 'none' ? '0' : ctx.body.pension_contribution_value || '0';
   const pensionContributionValue =
-    pensionType === 'fixed_amount'
+    pensionType === 'fixed_monthly' || pensionType === 'fixed_annual'
       ? requireMoney(rawPensionValue, 'Contribution amount')
       : pensionType === 'percentage'
         ? requireDecimal(rawPensionValue, 'Contribution amount', { min: 0.01, max: 100 })
         : 0;
   const grossAnnualSalaryPence = requireMoney(ctx.body.gross_annual_salary, 'Gross annual salary');
+  const taxTreatmentOverride = ctx.body.pension_contribution_tax_treatment
+    ? requireChoice(ctx.body.pension_contribution_tax_treatment, ['pre_tax', 'post_tax'], 'Tax treatment')
+    : null;
 
   return estimateTakeHomePay({
     grossAnnualSalaryPence,
     taxYear: requireString(ctx.body.tax_year, 'Tax year', 20),
     pensionSchemeType,
+    pensionContributionMethod,
     pensionContributionType: pensionType,
     pensionContributionValue,
-    pensionContributionTaxTreatment: requireChoice(pensionTreatmentRaw === 'unknown' ? 'pre_tax' : pensionTreatmentRaw, ['pre_tax', 'post_tax'], 'How your pension is taken'),
+    pensionContributionTaxTreatment: taxTreatmentOverride,
     otherPreTaxDeductionsPence: optionalMoney(ctx.body.other_pre_tax_deductions, 'Other deductions before tax'),
     otherPostTaxDeductionsPence: optionalMoney(ctx.body.other_post_tax_deductions, 'Other deductions after tax'),
     studentLoanPlans: hasStudentLoan ? parseStudentLoanPlans(ctx.body) : [],
     hasPostgraduateLoan: checkboxValue(ctx.body.has_postgraduate_loan)
   });
+}
+
+function normaliseContributionType(type) {
+  return type === 'fixed_amount' ? 'fixed_annual' : type;
 }
 
 function previewIncomeEstimateJson(ctx) {
@@ -2333,11 +2443,14 @@ function saveVariablePlannedSpending(ctx, db) {
     const amountPence = requireMoney(ctx.body.variable_amount, 'Planned monthly amount');
     const categoryId = Number(ctx.body.category_id || 0) || null;
     if (!categoryId) throw new Error('Category is required.');
+    const ownership = plannedSpendingOwnershipFromBody(ctx.body);
 
     saveCategoryBudgetDefault(db, {
       id: Number(ctx.body.id || 0) || null,
       householdId: ctx.user.household_id,
       categoryId,
+      name: requireString(ctx.body.name, 'Name', 120),
+      ...ownership,
       amountPence,
       notes: optionalString(ctx.body.notes),
       createdBy: ctx.user.id
@@ -2347,6 +2460,19 @@ function saveVariablePlannedSpending(ctx, db) {
   } catch (error) {
     redirectWithError(ctx.res, returnTo, error);
   }
+}
+
+function plannedSpendingOwnershipFromBody(body) {
+  const ownerType = requireChoice(body.owner_type || 'shared', ['person_a', 'person_b', 'shared'], 'Owner');
+  const splitType = ownerType === 'shared' ? requireChoice(body.split_type || 'equal', ['equal', 'manual_percentage'], 'Split type') : 'equal';
+  const personAPercentage = splitType === 'manual_percentage' ? parsePercentage(body.person_a_percentage) : 50;
+  const personBPercentage = splitType === 'manual_percentage' ? Math.round((100 - personAPercentage) * 100) / 100 : 50;
+  return {
+    ownerType,
+    splitType,
+    personAPercentage,
+    personBPercentage
+  };
 }
 
 function assertDateOrder(startDate, endDate) {
@@ -2369,6 +2495,8 @@ function createOrUpdateCategoryBudgetAction(ctx, db) {
         id: Number(ctx.body.id || 0) || null,
         householdId: ctx.user.household_id,
         categoryId,
+        name: optionalString(ctx.body.name),
+        ...plannedSpendingOwnershipFromBody(ctx.body),
         amountPence,
         notes: optionalString(ctx.body.notes),
         createdBy: ctx.user.id
@@ -2378,7 +2506,9 @@ function createOrUpdateCategoryBudgetAction(ctx, db) {
         id: Number(ctx.body.id || 0) || null,
         householdId: ctx.user.household_id,
         categoryId,
+        name: optionalString(ctx.body.name),
         budgetMonth: requireBudgetMonth(ctx.body.budget_month),
+        ...plannedSpendingOwnershipFromBody(ctx.body),
         amountPence,
         notes: optionalString(ctx.body.notes),
         createdBy: ctx.user.id

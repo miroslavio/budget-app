@@ -75,7 +75,7 @@ export function plannedSpendingCategorySeries({ expenseItems = [], defaultBudget
       : monthBudgets;
     for (const budget of effectiveCategoryBudgets(defaultBudgets, monthRows, month || monthRows[0]?.budget_month || '')) {
       if (committedCategoryKeys.has(spendingCategoryKey(budget.category_id, budget.category_name))) continue;
-      const amount = sharedFlexibleAmountForOwner(Number(budget.amount_pence || 0), owner);
+      const amount = amountForOwner(Number(budget.amount_pence || 0), budget, owner);
       if (amount <= 0) continue;
       const label = budget.category_name || 'Uncategorised';
       totals.set(label, (totals.get(label) || 0) + amount);
@@ -136,12 +136,12 @@ export function buildUnifiedSpendingBudgetRows({
       id: budget.id,
       categoryKey: budget.categoryKey,
       categoryId: budget.category_id,
-      name: budget.category_name || 'Uncategorised',
+      name: budget.name || budget.category_name || 'Uncategorised',
       categoryName: budget.category_name || 'Uncategorised',
-      ownerType: 'shared',
-      splitType: 'equal',
-      personAPercentage: 50,
-      personBPercentage: 50,
+      ownerType: budget.owner_type || 'shared',
+      splitType: budget.split_type || 'equal',
+      personAPercentage: Number(budget.person_a_percentage ?? 50),
+      personBPercentage: Number(budget.person_b_percentage ?? 50),
       frequency: budget.budget_scope === 'month_override' ? 'month_override' : 'default_monthly',
       plannedMonthlyPence,
       sourceAmountPence: plannedMonthlyPence,
@@ -163,12 +163,12 @@ export function buildUnifiedSpendingBudgetRows({
       id: budget.id,
       categoryKey: spendingCategoryKey(budget.category_id, budget.category_name),
       categoryId: budget.category_id,
-      name: budget.category_name || 'Uncategorised',
+      name: budget.name || budget.category_name || 'Uncategorised',
       categoryName: budget.category_name || 'Uncategorised',
-      ownerType: 'shared',
-      splitType: 'equal',
-      personAPercentage: 50,
-      personBPercentage: 50,
+      ownerType: budget.owner_type || 'shared',
+      splitType: budget.split_type || 'equal',
+      personAPercentage: Number(budget.person_a_percentage ?? 50),
+      personBPercentage: Number(budget.person_b_percentage ?? 50),
       frequency: 'default_monthly',
       plannedMonthlyPence: Number(budget.amount_pence || 0),
       sourceAmountPence: Number(budget.amount_pence || 0),
@@ -214,13 +214,6 @@ function amountForOwner(amount, item, owner) {
   const split = calculateSharedSplit(amount, item);
   if (owner === 'person_a') return split.personA;
   if (owner === 'person_b') return split.personB;
-  return amount;
-}
-
-function sharedFlexibleAmountForOwner(amount, owner) {
-  if (owner === 'household') return amount;
-  if (owner === 'person_a') return Math.round(amount / 2);
-  if (owner === 'person_b') return amount - Math.round(amount / 2);
   return amount;
 }
 
