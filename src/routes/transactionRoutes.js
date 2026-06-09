@@ -277,7 +277,7 @@ function transactionMobileCard(ctx, transaction, members, month) {
     </div>
     <div class="mobile-card-amount">
       <strong>${formatCurrency(transaction.amount_pence)}</strong>
-      <span>Actual movement</span>
+      <span>${escapeHtml(ownerLabel(transaction.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(transaction.owner_type, members))}</dd></div>

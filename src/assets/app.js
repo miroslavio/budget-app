@@ -190,6 +190,8 @@ function chartOptionForElement(element, config, { compact = false, reducedMotion
       return dashboardSpendingPressureChartOption(themedConfig, { compact, reducedMotion });
     case 'dashboard-savings-allocation':
       return dashboardSavingsAllocationChartOption(themedConfig, { compact, reducedMotion });
+    case 'savings-monthly-additions':
+      return savingsMonthlyAdditionsChartOption(themedConfig, { compact, reducedMotion });
     case 'planned-spending-owner':
       return plannedSpendingOwnerChartOption(themedConfig, { compact, reducedMotion });
     default:
@@ -281,11 +283,28 @@ function compactBarChartOption(option, compact) {
     ...option,
     grid: {
       ...(option.grid || {}),
-      left: 4,
-      right: 10,
+      left: 0,
+      right: 6,
+      top: 6,
+      bottom: 38,
       containLabel: true
     },
-    xAxis: compactCurrencyAxis(option.xAxis)
+    xAxis: compactCurrencyAxis(option.xAxis),
+    yAxis: compactCategoryAxis(option.yAxis)
+  };
+}
+
+function compactCategoryAxis(axis) {
+  if (!axis) return axis;
+  if (Array.isArray(axis)) return axis.map((entry) => compactCategoryAxis(entry));
+  return {
+    ...axis,
+    axisLabel: {
+      ...(axis.axisLabel || {}),
+      width: 92,
+      overflow: 'truncate',
+      fontSize: 11
+    }
   };
 }
 
@@ -391,7 +410,7 @@ function dashboardSpendingPressureChartOption(config, { compact = false, reduced
     series: (config.series || []).map((series) => ({
       ...series,
       label: {
-        show: true,
+        show: !compact,
         position: compact ? 'insideRight' : 'right',
         color: colours.muted,
         fontWeight: 800,
@@ -438,7 +457,55 @@ function dashboardSavingsAllocationChartOption(config, { compact = false, reduce
         ...seriesItem,
         label: isLastSeries
           ? {
-              show: true,
+              show: !compact,
+              position: compact ? 'insideRight' : 'right',
+              color: colours.muted,
+              fontWeight: 800,
+              formatter(params) {
+                return formatCurrencyFromPence(Number(params.data?.totalPence || 0));
+              }
+            }
+          : { show: false }
+      };
+    })
+  };
+  return compactBarChartOption(option, compact);
+}
+
+function savingsMonthlyAdditionsChartOption(config, { compact = false, reducedMotion = false } = {}) {
+  const series = config.series || [];
+  const colours = chartThemeColours();
+  const option = {
+    ...config,
+    animation: !reducedMotion,
+    tooltip: {
+      ...(config.tooltip || {}),
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      renderMode: 'richText',
+      formatter(params) {
+        const entries = Array.isArray(params) ? params : [params];
+        const first = entries[0]?.data || {};
+        const fromIncome = Number(entries.find((entry) => entry.seriesName === 'From income')?.data?.valuePence || 0);
+        const employer = Number(entries.find((entry) => entry.seriesName === 'Employer contribution')?.data?.valuePence || 0);
+        const bonus = Number(entries.find((entry) => entry.seriesName === 'Bonus / top-up')?.data?.valuePence || 0);
+        const lines = [
+          first.name || entries[0]?.name || 'Savings pot',
+          `Total monthly additions: ${formatCurrencyFromPence(Number(first.totalPence || fromIncome + employer + bonus))}`,
+          `From income: ${formatCurrencyFromPence(fromIncome)}`
+        ];
+        if (employer > 0) lines.push(`Employer contribution: ${formatCurrencyFromPence(employer)}`);
+        if (bonus > 0) lines.push(`Bonus / top-up: ${formatCurrencyFromPence(bonus)}`);
+        return lines.join('\n');
+      }
+    },
+    series: series.map((seriesItem, index) => {
+      const isLastSeries = index === series.length - 1;
+      return {
+        ...seriesItem,
+        label: isLastSeries
+          ? {
+              show: !compact,
               position: compact ? 'insideRight' : 'right',
               color: colours.muted,
               fontWeight: 800,
@@ -483,7 +550,7 @@ function plannedSpendingOwnerChartOption(config, { compact = false, reducedMotio
     series: series.map((seriesItem) => ({
       ...seriesItem,
       label: {
-        show: true,
+        show: !compact,
         position: compact ? 'insideRight' : 'right',
         color: colours.muted,
         fontWeight: 800,

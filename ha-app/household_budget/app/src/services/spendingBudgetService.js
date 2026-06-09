@@ -10,24 +10,18 @@ export function spendingCategoryKey(categoryId, categoryName = 'Uncategorised') 
 
 export function plannedSpendingSummary({ expenseItems = [], defaultBudgets = [], monthBudgets = [], month }) {
   const committedItems = activeCommittedExpenseItems(expenseItems, month);
-  const committedCategoryKeys = new Set(committedItems.map((item) => spendingCategoryKey(item.category_id, item.category_name)));
   const effectiveBudgets = effectiveCategoryBudgets(defaultBudgets, monthBudgets, month).map((budget) => {
     const categoryKey = spendingCategoryKey(budget.category_id, budget.category_name);
-    const overlap = committedCategoryKeys.has(categoryKey);
     return {
       ...budget,
       categoryKey,
-      overlap,
-      countedInPlan: !overlap
+      overlap: false,
+      countedInPlan: true
     };
   });
 
   const committedTotalPence = committedItems.reduce((total, item) => total + Number(item.monthly_equivalent_pence || 0), 0);
   const flexibleTotalPence = effectiveBudgets
-    .filter((budget) => budget.countedInPlan)
-    .reduce((total, budget) => total + Number(budget.amount_pence || 0), 0);
-  const overlappingFlexibleTotalPence = effectiveBudgets
-    .filter((budget) => budget.overlap)
     .reduce((total, budget) => total + Number(budget.amount_pence || 0), 0);
 
   return {
@@ -35,9 +29,9 @@ export function plannedSpendingSummary({ expenseItems = [], defaultBudgets = [],
     effectiveBudgets,
     committedTotalPence,
     flexibleTotalPence,
-    overlappingFlexibleTotalPence,
+    overlappingFlexibleTotalPence: 0,
     totalPlannedSpendingPence: committedTotalPence + flexibleTotalPence,
-    overlaps: effectiveBudgets.filter((budget) => budget.overlap)
+    overlaps: []
   };
 }
 
@@ -61,7 +55,6 @@ export function plannedSpendingCategorySeries({ expenseItems = [], defaultBudget
 
   for (const month of periodMonths) {
     const committedItems = activeCommittedExpenseItems(expenseItems, month);
-    const committedCategoryKeys = new Set(committedItems.map((item) => spendingCategoryKey(item.category_id, item.category_name)));
 
     for (const item of committedItems) {
       const amount = amountForOwner(Number(item.monthly_equivalent_pence || 0), item, owner);
@@ -74,7 +67,6 @@ export function plannedSpendingCategorySeries({ expenseItems = [], defaultBudget
       ? monthBudgets.filter((budget) => budget.budget_month === month)
       : monthBudgets;
     for (const budget of effectiveCategoryBudgets(defaultBudgets, monthRows, month || monthRows[0]?.budget_month || '')) {
-      if (committedCategoryKeys.has(spendingCategoryKey(budget.category_id, budget.category_name))) continue;
       const amount = amountForOwner(Number(budget.amount_pence || 0), budget, owner);
       if (amount <= 0) continue;
       const label = budget.category_name || 'Uncategorised';
@@ -147,9 +139,9 @@ export function buildUnifiedSpendingBudgetRows({
       sourceAmountPence: plannedMonthlyPence,
       actualSpentPence,
       remainingPence: plannedMonthlyPence - actualSpentPence,
-      status: budget.overlap ? 'Overlap warning' : 'Active',
-      countedInPlan: budget.countedInPlan,
-      overlap: budget.overlap,
+      status: 'Active',
+      countedInPlan: true,
+      overlap: false,
       budgetScope: budget.budget_scope,
       budgetMonth: budget.budget_month,
       notes: budget.notes || ''

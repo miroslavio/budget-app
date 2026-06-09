@@ -46,41 +46,50 @@ export function cashflowForecastChart(forecast) {
   if (!forecast.length) return '<div class="chart-empty">No forecast data yet.</div>';
 
   const width = 920;
-  const height = 340;
-  const padding = { top: 24, right: 28, bottom: 54, left: 92 };
+  const height = 380;
+  const padding = { top: 30, right: 34, bottom: 64, left: 92 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const values = forecast.flatMap((row) => [row.openingBalancePence, row.closingBalancePence]);
+  const values = forecast.flatMap((row) => [row.openingBalancePence, row.closingBalancePence, row.netMovementPence, 0]);
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   const rawRange = rawMax - rawMin;
   const pad = Math.max(10_000, rawRange ? rawRange * 0.12 : Math.max(Math.abs(rawMax || 0), 50_000) * 0.12);
-  const minValue = rawMin - pad;
-  const maxValue = rawMax + pad;
+  const minValue = Math.min(0, rawMin - pad);
+  const maxValue = Math.max(0, rawMax + pad);
   const range = maxValue - minValue || 1;
   const step = plotWidth / Math.max(1, forecast.length);
-  const guideValues = [maxValue, minValue + range / 2, minValue];
+  const barWidth = Math.max(14, Math.min(34, step * 0.48));
+  const guideValues = [maxValue, minValue + range / 2, minValue].filter((value, index, rows) => rows.indexOf(value) === index);
+  const zeroY = yFor(0, minValue, range, padding, plotHeight);
   const linePoints = forecast.map((row, index) => {
     const x = padding.left + step * index + step / 2;
     const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
     return `${round(x)},${round(y)}`;
   });
-  const areaPoints = [
-    `${padding.left + step / 2},${height - padding.bottom}`,
-    ...linePoints,
-    `${padding.left + step * (forecast.length - 1) + step / 2},${height - padding.bottom}`
-  ].join(' ');
+  const lowestRow = forecast.reduce((lowest, row) => (row.closingBalancePence < lowest.closingBalancePence ? row : lowest), forecast[0]);
+  const finalRow = forecast.at(-1);
 
-  return `<div class="cashflow-chart-block" role="img" aria-label="Projected closing balance chart">
+  return `<div class="cashflow-chart-block" role="img" aria-label="Cashflow resilience chart">
     <svg class="cashflow-chart" viewBox="0 0 ${width} ${height}" aria-hidden="true">
       ${guideValues
         .map((value) => {
           const y = yFor(value, minValue, range, padding, plotHeight);
           return `<line class="guide-line" x1="${padding.left}" y1="${round(y)}" x2="${width - padding.right}" y2="${round(y)}"></line>
-            <text class="axis-label" x="12" y="${round(y + 4)}">${formatCurrency(Math.round(value))}</text>`;
+            <text class="axis-label" x="12" y="${round(y + 4)}">${formatAxisCurrency(value)}</text>`;
         })
         .join('')}
-      <polyline class="closing-area" points="${areaPoints}"></polyline>
+      <line class="forecast-zero-line" x1="${padding.left}" y1="${round(zeroY)}" x2="${width - padding.right}" y2="${round(zeroY)}"></line>
+      ${forecast
+        .map((row, index) => {
+          const x = padding.left + step * index + step / 2;
+          const valueY = yFor(row.netMovementPence, minValue, range, padding, plotHeight);
+          const y = Math.min(zeroY, valueY);
+          const barHeight = Math.max(2, Math.abs(zeroY - valueY));
+          const tone = row.netMovementPence < 0 ? 'negative' : row.netMovementPence > 0 ? 'positive' : 'neutral';
+          return `<rect class="forecast-net-bar ${tone}" x="${round(x - barWidth / 2)}" y="${round(y)}" width="${round(barWidth)}" height="${round(barHeight)}"></rect>`;
+        })
+        .join('')}
       <polyline class="closing-line" points="${linePoints.join(' ')}"></polyline>
       ${forecast
         .map((row, index) => {
@@ -94,6 +103,8 @@ export function cashflowForecastChart(forecast) {
           </g>`;
         })
         .join('')}
+      ${lowestRow ? forecastAnnotation(lowestRow, forecast.indexOf(lowestRow), step, padding, plotHeight, minValue, range, 'Lowest') : ''}
+      ${finalRow ? forecastAnnotation(finalRow, forecast.length - 1, step, padding, plotHeight, minValue, range, 'Final') : ''}
       ${forecast
         .filter((_, index) => index % Math.ceil(forecast.length / 6) === 0)
         .map((row) => {
@@ -104,6 +115,8 @@ export function cashflowForecastChart(forecast) {
         .join('')}
     </svg>
     <div class="chart-legend forecast-legend">
+      <div class="legend-row simple"><span class="legend-bar forecast-positive"></span><span>Monthly surplus</span></div>
+      <div class="legend-row simple"><span class="legend-bar forecast-negative"></span><span>Monthly deficit</span></div>
       <div class="legend-row simple"><span class="legend-line"></span><span>Projected closing balance</span></div>
     </div>
   </div>`;
@@ -136,6 +149,7 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
     `${padding.left + step * (cumulativeRows.length - 1) + step / 2},${height - padding.bottom}`
   ].join(' ');
   const yTicks = buildCurrencyTicks(maxValue, 5);
+  const labelStep = projectionLabelStep(cumulativeRows.length);
 
   return `<div class="cashflow-chart-block" role="img" aria-label="Projected savings balances chart">
     <svg class="cashflow-chart" viewBox="0 0 ${width} ${height}" aria-hidden="true">
@@ -160,11 +174,12 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
             <rect class="closing-hit" x="${round(x - step / 2)}" y="${padding.top}" width="${round(step)}" height="${plotHeight}" tabindex="0" data-chart-tooltip="${escapeHtml(savingsProjectionTooltip(row))}" aria-label="${escapeHtml(savingsProjectionTooltip(row))}">
               <title>${savingsProjectionTooltip(row)}</title>
             </rect>
-            <circle class="savings-point" cx="${round(x)}" cy="${round(y)}" r="4"></circle>
+            ${index % labelStep === 0 || index === cumulativeRows.length - 1 ? `<circle class="savings-point" cx="${round(x)}" cy="${round(y)}" r="4"></circle>` : ''}
           </g>`;
         })
         .join('')}
       ${cumulativeRows
+        .filter((_, index) => index % labelStep === 0 || index === cumulativeRows.length - 1)
         .map((row) => {
           const originalIndex = cumulativeRows.indexOf(row);
           const x = padding.left + step * originalIndex + step / 2;
@@ -184,6 +199,75 @@ export function savingsProjectionChart(projection, { emptyMessage = 'No projecte
         .join('')}
     </div>
   </div>`;
+}
+
+export function savingsMonthlyAdditionsChart(rows = [], { emptyMessage = 'No monthly additions yet.' } = {}) {
+  const chartRows = rows.filter((row) => Number(row.totalPence || 0) > 0);
+  if (!chartRows.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+
+  const chartId = `savings-monthly-additions-${Math.random().toString(36).slice(2)}`;
+  const orderedRows = [...chartRows].reverse();
+  const rowData = orderedRows.map((row) => ({
+    name: row.name,
+    incomePence: Number(row.personalPence || 0),
+    employerPence: Number(row.employerPence || 0),
+    bonusPence: Number(row.bonusPence || 0),
+    totalPence: Number(row.totalPence || 0)
+  }));
+  const hasEmployer = rowData.some((row) => row.employerPence > 0);
+  const hasBonus = rowData.some((row) => row.bonusPence > 0);
+  const legendData = ['From income', ...(hasEmployer ? ['Employer contribution'] : []), ...(hasBonus ? ['Bonus / top-up'] : [])];
+  const chartConfig = {
+    textStyle: {
+      fontFamily: 'inherit',
+      color: '#17211b'
+    },
+    legend: {
+      bottom: 0,
+      left: 0,
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: {
+        color: '#5e6b63',
+        fontWeight: 700
+      },
+      data: legendData
+    },
+    grid: {
+      left: 6,
+      right: 112,
+      top: 10,
+      bottom: legendData.length > 1 ? 42 : 24,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      min: 0,
+      axisLabel: {
+        formatter: '£{value}'
+      },
+      splitLine: {
+        lineStyle: { color: 'rgba(56, 45, 31, 0.09)' }
+      }
+    },
+    yAxis: {
+      type: 'category',
+      data: rowData.map((row) => row.name),
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: {
+        color: '#17211b',
+        fontWeight: 700
+      }
+    },
+    series: [
+      monthlyAdditionSeries('From income', rowData, 'incomePence', '#1f6f5b'),
+      ...(hasEmployer ? [monthlyAdditionSeries('Employer contribution', rowData, 'employerPence', '#4b5fb5')] : []),
+      ...(hasBonus ? [monthlyAdditionSeries('Bonus / top-up', rowData, 'bonusPence', '#d4863c')] : [])
+    ]
+  };
+
+  return `<div id="${chartId}" class="echarts-dashboard-chart savings-monthly-additions-chart" role="img" aria-label="Monthly additions breakdown chart" data-echarts-chart data-chart-type="savings-monthly-additions" data-chart-config="${escapeHtml(JSON.stringify(chartConfig))}"></div>`;
 }
 
 export function savingsContributionChart(projection, { emptyMessage = 'No projected contributions data yet.' } = {}) {
@@ -580,6 +664,35 @@ function buildSavingsProjectionSeries(months) {
   });
 }
 
+function projectionLabelStep(rowCount) {
+  if (rowCount <= 14) return 1;
+  if (rowCount <= 36) return 3;
+  if (rowCount <= 60) return 6;
+  return 12;
+}
+
+function monthlyAdditionSeries(name, rows, key, colour) {
+  return {
+    name,
+    type: 'bar',
+    stack: 'total',
+    barWidth: 14,
+    data: rows.map((row) => ({
+      name: row.name,
+      value: Number((Number(row[key] || 0) / 100).toFixed(2)),
+      valuePence: Number(row[key] || 0),
+      totalPence: Number(row.totalPence || 0),
+      incomePence: Number(row.incomePence || 0),
+      employerPence: Number(row.employerPence || 0),
+      bonusPence: Number(row.bonusPence || 0)
+    })),
+    itemStyle: {
+      color: colour,
+      borderRadius: 2
+    }
+  };
+}
+
 function buildSavingsContributionSeries(months) {
   return months.map((row) => {
     const byAccount = Object.fromEntries(
@@ -685,14 +798,25 @@ function shortMonth(month) {
   return `${name.slice(0, 3)} ${year.slice(2)}`;
 }
 
+function forecastAnnotation(row, index, step, padding, plotHeight, minValue, range, label) {
+  const x = padding.left + step * index + step / 2;
+  const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
+  const textY = Math.max(padding.top + 14, y - 16);
+  return `<g class="forecast-annotation">
+    <line x1="${round(x)}" y1="${round(y)}" x2="${round(x)}" y2="${round(textY + 4)}"></line>
+    <text x="${round(x)}" y="${round(textY)}" text-anchor="middle">${escapeHtml(label)} ${formatAxisCurrency(row.closingBalancePence)}</text>
+  </g>`;
+}
+
 function forecastTooltip(row) {
   return [
     monthLabel(row.month),
-    `Starting balance: ${formatCurrency(row.openingBalancePence)}`,
+    `Opening balance: ${formatCurrency(row.openingBalancePence)}`,
     `Planned income: ${formatCurrency(row.expectedIncomePence)}`,
     `Planned spending: -${formatCurrency(row.expectedExpensesPence)}`,
     `Planned savings: -${formatCurrency(row.expectedSavingsPence)}`,
-    `Projected closing balance: ${formatCurrency(row.closingBalancePence)}`
+    `Net movement: ${formatSignedCurrency(row.netMovementPence)}`,
+    `Closing balance: ${formatCurrency(row.closingBalancePence)}`
   ].join('\n');
 }
 

@@ -440,11 +440,31 @@ button.secondary {
   justify-items: end;
 }
 
+.dashboard-period-mobile-menu {
+  display: none;
+}
+
+.dashboard-period-menu-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  margin-top: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
 .period-pills {
   display: flex;
   gap: 0.55rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.period-pills.vertical {
+  align-items: stretch;
+  flex-direction: column;
 }
 
 .section-nav {
@@ -600,6 +620,34 @@ h2 {
 
 .forecast-summary-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.forecast-layout {
+  display: grid;
+  gap: 1.35rem;
+}
+
+.forecast-layout > .page-title {
+  margin-bottom: 0;
+}
+
+.forecast-start-card,
+.forecast-scenario-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.forecast-scenario-card .card-heading {
+  margin-bottom: 0;
+}
+
+.scenario-preset-list {
+  margin-top: 0.15rem;
+}
+
+.forecast-scenario-form {
+  margin-top: 0.25rem;
+  row-gap: 1rem;
 }
 
 .grid.one {
@@ -2164,15 +2212,18 @@ th {
   border-radius: 16px;
   margin-bottom: 1rem;
   font-weight: 700;
+  border: 1px solid transparent;
 }
 
 .flash.error {
-  background: #f8d8d5;
+  border-color: color-mix(in srgb, var(--bad) 28%, transparent);
+  background: color-mix(in srgb, var(--bad) 12%, var(--panel));
   color: var(--bad);
 }
 
 .flash.success {
-  background: #dceee6;
+  border-color: color-mix(in srgb, var(--accent-strong) 24%, transparent);
+  background: color-mix(in srgb, var(--accent-strong) 12%, var(--panel));
   color: var(--accent-strong);
 }
 
@@ -2393,6 +2444,7 @@ progress {
   position: relative;
   display: grid;
   gap: 1rem;
+  max-width: 100%;
 }
 
 .echarts-sankey-block {
@@ -2467,6 +2519,25 @@ progress {
   height: 280px;
   min-height: 240px;
   overflow: hidden;
+}
+
+.savings-monthly-additions-chart {
+  height: 300px;
+}
+
+@media (max-width: 980px) {
+  .echarts-sankey {
+    height: 300px;
+    min-height: 260px;
+  }
+
+  .sankey-mobile-legend {
+    display: grid;
+  }
+
+  .sankey-mobile-legend-row {
+    display: grid;
+  }
 }
 
 .shortfall-warning {
@@ -2611,11 +2682,51 @@ progress {
   background: var(--bad);
 }
 
+.forecast-net-bar.positive {
+  fill: var(--good);
+  opacity: 0.72;
+}
+
+.forecast-net-bar.negative {
+  fill: var(--bad);
+  opacity: 0.76;
+}
+
+.forecast-net-bar.neutral {
+  fill: var(--muted);
+  opacity: 0.45;
+}
+
+.forecast-zero-line {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 6;
+  opacity: 0.72;
+}
+
+.forecast-annotation line {
+  stroke: var(--muted);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.forecast-annotation text {
+  fill: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .legend-line {
   width: 1.4rem;
   height: 0.2rem;
   border-radius: 999px;
   background: var(--blue);
+}
+
+.legend-bar {
+  width: 0.9rem;
+  height: 0.55rem;
+  border-radius: 3px;
 }
 
 .legend-line.savings-line-key {
@@ -2655,6 +2766,49 @@ progress {
 .forecast-movement.negative {
   color: var(--bad);
   font-weight: 700;
+}
+
+.stacked-breakdown-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.stacked-breakdown-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.stacked-breakdown-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.stacked-breakdown-heading span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.stacked-breakdown-track {
+  display: flex;
+  width: 100%;
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--track);
+}
+
+.stacked-breakdown-segment.income {
+  background: var(--good);
+}
+
+.stacked-breakdown-segment.employer {
+  background: var(--blue);
+}
+
+.stacked-breakdown-segment.bonus {
+  background: var(--orange);
 }
 
 .mobile-card-region {
@@ -2827,7 +2981,7 @@ progress {
   justify-content: flex-start;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1160px) {
   .hero {
     align-items: stretch;
     flex-direction: column;
@@ -2897,6 +3051,20 @@ progress {
     justify-content: flex-end;
   }
 
+  html[data-theme='dark'] .nav-panel {
+    background: color-mix(in srgb, var(--panel) 98%, transparent);
+    border-color: var(--line);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html[data-theme='system'] .nav-panel {
+      background: color-mix(in srgb, var(--panel) 98%, transparent);
+      border-color: var(--line);
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
+    }
+  }
+
   .page-title {
     align-items: stretch;
     flex-direction: column;
@@ -2962,19 +3130,6 @@ progress {
     grid-template-columns: 1fr;
   }
 
-  .echarts-sankey {
-    height: 300px;
-    min-height: 260px;
-  }
-
-  .sankey-mobile-legend {
-    display: grid;
-  }
-
-  .sankey-mobile-legend-row {
-    display: grid;
-  }
-
   .echarts-dashboard-chart {
     height: 300px;
   }
@@ -3022,6 +3177,31 @@ progress {
 }
 
 @media (max-width: 760px) {
+  .dashboard-period-desktop,
+  .dashboard-toolbar-controls > .budget-plan-month-form {
+    display: none;
+  }
+
+  .dashboard-period-mobile-menu {
+    display: block;
+    width: 100%;
+  }
+
+  .dashboard-period-mobile-menu summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .dashboard-period-mobile-menu summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .dashboard-period-menu-panel .budget-plan-month-form,
+  .dashboard-period-menu-panel .budget-plan-month-controls,
+  .dashboard-period-menu-panel .budget-plan-month-nav {
+    width: 100%;
+  }
+
   .desktop-table-wrapper {
     display: none;
   }
@@ -3039,48 +3219,65 @@ progress {
   }
 
   .mobile-finance-card {
-    gap: 0.6rem;
-    padding: 0.95rem;
+    gap: 0.55rem;
+    padding: 0.8rem;
+    border-radius: 16px;
   }
 
   .mobile-card-head {
     grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
   }
 
-  .mobile-card-head p,
-  .mobile-card-amount span {
+  .mobile-card-head p {
     display: none;
+  }
+
+  .mobile-card-head h3 {
+    font-size: 0.96rem;
+  }
+
+  .mobile-card-status {
+    min-height: 1.75rem;
+    padding: 0.24rem 0.52rem;
+    font-size: 0.74rem;
+  }
+
+  .mobile-card-amount {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
   }
 
   .mobile-card-meta {
-    display: block;
-    color: var(--muted);
-    font-weight: 700;
-  }
-
-  .mobile-card-meta div {
     display: none;
-  }
-
-  .mobile-card-meta div:first-child {
-    display: block;
-  }
-
-  .mobile-card-meta dt {
-    display: none;
-  }
-
-  .mobile-card-meta dd {
-    margin: 0;
   }
 
   .mobile-card-amount strong {
-    font-size: clamp(1.35rem, 7vw, 1.75rem);
+    font-size: clamp(1.05rem, 5vw, 1.35rem);
   }
 
-  .mobile-card-meta div {
-    grid-template-columns: 1fr;
-    gap: 0.1rem;
+  .mobile-card-amount span {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 750;
+    text-align: right;
+  }
+  .mobile-card-actions .icon-button,
+  .mobile-card-actions button.icon-button {
+    min-width: 2.55rem;
+    min-height: 2.55rem;
+  }
+
+  .cashflow-chart-block {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
+  .cashflow-chart {
+    min-width: 680px;
+    min-height: 300px;
   }
 }
 
@@ -3092,12 +3289,6 @@ html[data-theme='dark'] .setup-status,
 html[data-theme='dark'] .income-plan-table tfoot th,
 html[data-theme='dark'] .income-plan-table tfoot td {
   background: var(--track);
-}
-
-html[data-theme='dark'] .nav-panel {
-  background: color-mix(in srgb, var(--panel) 98%, transparent);
-  border-color: var(--line);
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
 }
 
 html[data-theme='dark'] .nav-links a {
@@ -3158,12 +3349,6 @@ html[data-theme='dark'] .legend-swatch.savings-bar-start-key {
   html[data-theme='system'] .income-plan-table tfoot th,
   html[data-theme='system'] .income-plan-table tfoot td {
     background: var(--track);
-  }
-
-  html[data-theme='system'] .nav-panel {
-    background: color-mix(in srgb, var(--panel) 98%, transparent);
-    border-color: var(--line);
-    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
   }
 
   html[data-theme='system'] .nav-links a {
