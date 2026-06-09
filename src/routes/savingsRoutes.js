@@ -891,7 +891,7 @@ function savingsAccountMobileCard(account, members, actions = '') {
     </div>
     <div class="mobile-card-amount">
       <strong>${account.account_type === 'defined_benefit_pension' ? formatCurrency(account.annual_pension_entitlement_pence || 0) : formatCurrency(account.current_balance_pence)}</strong>
-      <span>${account.account_type === 'defined_benefit_pension' ? 'Annual entitlement' : 'Current balance'}</span>
+      <span>${escapeHtml(ownerLabel(account.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(account.owner_type, members))}</dd></div>
@@ -920,7 +920,7 @@ function savingsGoalMobileCard(ctx, goal, progress, members, returnTo) {
     </div>
     <div class="mobile-card-amount">
       <strong>${formatCurrency(progress.currentSavedPence)}</strong>
-      <span>Current saved towards ${formatCurrency(goal.target_amount_pence)}</span>
+      <span>${escapeHtml(ownerLabel(goal.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(goal.owner_type, members))}</dd></div>

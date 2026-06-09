@@ -164,29 +164,6 @@ function renderSpendingBudgetsPage(ctx, db) {
       <section class="action-row">
         ${plannedSpendingDisclosure(ctx, categories, members, returnTo, rows)}
       </section>
-      <section class="grid four">
-        <div class="stat">
-          <span>Expected monthly spending</span>
-          <strong>${formatCurrency(rows.totalPlannedSpendingPence)}</strong>
-        </div>
-        <div class="stat">
-          <span>Regular costs</span>
-          <strong>${formatCurrency(rows.committedTotalPence)}</strong>
-        </div>
-        <div class="stat">
-          <span>Variable estimates</span>
-          <strong>${formatCurrency(rows.flexibleTotalPence)}</strong>
-        </div>
-        <div class="stat">
-          <span>Yearly costs smoothed</span>
-          <strong>${formatCurrency(yearlyMonthlyEquivalentPence(rows.committedItems))}</strong>
-        </div>
-      </section>
-      ${rows.overlaps.length ? `<section class="card warning-card">
-        <h2>Potential double-counting to review</h2>
-        <p>The categories below exist as both regular spending and variable estimates. Variable estimates in these categories are not deducted again from your plan.</p>
-        <ul class="bullet-list">${rows.overlaps.map((row) => `<li>${escapeHtml(row.category_name || 'Uncategorised')}</li>`).join('')}</ul>
-      </section>` : ''}
       <section class="card planned-spending-view-card">
         <div class="card-heading">
           <h2>Planned spending</h2>
@@ -215,7 +192,6 @@ function renderPlannedSavingsPage(ctx, db) {
   const goals = listSavingsGoals(db, ctx.user.household_id);
   const savingsAccounts = listSavingsAccounts(db, ctx.user.household_id, { activeOnly: true });
   const plannedSavingsItems = plannedMonthlySummary(plannedSavingsBudgetItems({ goals, accounts: savingsAccounts }), month).activeItems;
-  const totalPlannedSavingsPence = plannedSavingsItems.reduce((total, item) => total + Number(item.monthly_equivalent_pence || 0), 0);
 
   html(
     ctx.res,
@@ -227,17 +203,6 @@ function renderPlannedSavingsPage(ctx, db) {
       <section class="action-row">
         <a class="button" href="/savings/accounts">Add planned saving</a>
         <a class="button" href="/savings/goals">View full Savings Goals</a>
-      </section>
-      <section class="grid two">
-        <div class="stat">
-          <span>Planned savings</span>
-          <strong>${formatCurrency(totalPlannedSavingsPence)}</strong>
-        </div>
-        <div class="stat">
-          <span>Savings contributions in plan</span>
-          <strong>${plannedSavingsItems.length}</strong>
-          <small class="plan-stat-note">${savingsAccounts.length ? 'Monthly contributions from active accounts and pots are included in the plan.' : 'Monthly contributions from active savings goals are included in the plan until you start tracking accounts and pots.'}</small>
-        </div>
       </section>
       <section class="card">
         <h2>Planned savings</h2>
@@ -345,7 +310,7 @@ function budgetPlanOverviewMobileCard(row) {
     </div>
     <div class="mobile-card-amount">
       <strong class="budget-plan-value ${escapeHtml(sectionKind)}">${formatCurrency(row.monthlyPlannedPence)}</strong>
-      <span>Monthly planned</span>
+      <span>${escapeHtml(row.ownerSummary)}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner or split summary</dt><dd>${escapeHtml(row.ownerSummary)}</dd></div>
@@ -891,7 +856,7 @@ function plannedSavingsAccountMobileCard(account, members) {
     </div>
     <div class="mobile-card-amount">
       <strong>${formatCurrency(Number(account.monthly_contribution_pence || 0))}</strong>
-      <span>Monthly contribution</span>
+      <span>${escapeHtml(ownerLabel(account.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(account.owner_type, members))}</dd></div>
@@ -915,7 +880,7 @@ function plannedSavingsGoalMobileCard(goal, members) {
     </div>
     <div class="mobile-card-amount">
       <strong>${formatCurrency(Number(goal.monthly_contribution_pence || 0))}</strong>
-      <span>Monthly contribution</span>
+      <span>${escapeHtml(ownerLabel(goal.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(goal.owner_type, members))}</dd></div>
@@ -1055,7 +1020,7 @@ function plannedSpendingMobileCard(ctx, row, members, returnTo) {
     </div>
     <div class="mobile-card-amount">
       <strong>${formatCurrency(row.plannedMonthlyPence)}</strong>
-      <span>Planned monthly</span>
+      <span>${escapeHtml(spendingOwnerLabel(row, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner / split</dt><dd>${escapeHtml(spendingOwnerLabel(row, members))}</dd></div>
@@ -1100,8 +1065,6 @@ function plannedSpendingModal(ctx, categories, members, returnTo, rows) {
 function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
   const expenseCategories = categories.filter((category) => ['expense', 'debt'].includes(category.kind));
   const suggestedCategoryId = suggestedExpenseCategoryId(ctx, expenseCategories);
-  const committedCategoryIds = [...new Set(rows.committedItems.map((item) => String(item.category_id || '')).filter(Boolean))];
-  const flexibleCategoryIds = [...new Set(rows.effectiveBudgets.map((budget) => String(budget.category_id || '')).filter(Boolean))];
   const firstMemberLabel = ownerLabel('person_a', members);
   const secondMemberLabel = ownerLabel('person_b', members);
 
@@ -1126,18 +1089,6 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
       </label>
       <p class="hint">Add the spending you expect as part of your usual plan. Use regular costs for predictable payments and variable estimates for things like groceries, transport, and eating out.</p>
       <label>Name <input name="name" maxlength="120" data-modal-field="name" data-required-when-visible="true"></label>
-      <label>Category <select
-        name="category_id"
-        required
-        data-modal-field="categoryId"
-        data-spending-warning-select
-        data-spending-type-source="spending_type"
-        data-warning-regular-category-ids="${escapeHtml(flexibleCategoryIds.join(','))}"
-        data-warning-regular-message="${escapeHtml('You already have this category as a variable estimate. Adding it here may count the same spending twice.')}"
-        data-warning-variable-category-ids="${escapeHtml(committedCategoryIds.join(','))}"
-        data-warning-variable-message="${escapeHtml('You already have this category in regular spending. Adding it here may count the same spending twice.')}"
-      >${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
-      <p class="inline-hint warning-text" data-spending-duplicate-warning hidden></p>
       <label>Owner <select name="owner_type" data-controls data-modal-field="ownerType">${ownerOptions('shared', members)}</select></label>
       <fieldset>
         <legend>Shared split</legend>
@@ -1172,11 +1123,16 @@ function plannedSpendingForm(ctx, categories, members, returnTo, rows) {
               data-modal-field="personAPercentage"
               data-split-slider
               class="split-slider-input"
-              aria-label="Shared spending split"
+              aria-label="Shared planned spending split"
             >
           </div>
         </div>
       </fieldset>
+      <label>Category <select
+        name="category_id"
+        required
+        data-modal-field="categoryId"
+      >${categoryOptions(expenseCategories, suggestedCategoryId)}</select></label>
     </section>
     <div class="form-step-cluster" data-form-step data-step-title="Spending details" data-controlled-by="spending_type" data-show-when="regular">
     <section class="form-section">
@@ -1613,7 +1569,7 @@ function incomeMobileCard(ctx, item, members, returnTo) {
     </div>
     <div class="mobile-card-amount">
       <strong>${formatCurrency(item.monthly_equivalent_pence)}</strong>
-      <span>Planned monthly</span>
+      <span>${escapeHtml(ownerLabel(item.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">
       <div><dt>Owner</dt><dd>${escapeHtml(ownerLabel(item.owner_type, members))}</dd></div>

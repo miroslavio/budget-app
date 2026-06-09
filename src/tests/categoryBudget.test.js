@@ -232,7 +232,7 @@ test('category budget comparison and merged tracking include defaults, overrides
   assert.equal(merged.find((row) => row.category === 'Transport').budgetPence, 12000);
 });
 
-test('planned spending summary does not double-count overlapping flexible targets', () => {
+test('planned spending summary counts distinct planned spending items in the same category', () => {
   const summary = plannedSpendingSummary({
     expenseItems: [
       {
@@ -254,10 +254,10 @@ test('planned spending summary does not double-count overlapping flexible target
   });
 
   assert.equal(summary.committedTotalPence, 30000);
-  assert.equal(summary.flexibleTotalPence, 12000);
-  assert.equal(summary.overlappingFlexibleTotalPence, 30000);
-  assert.equal(summary.totalPlannedSpendingPence, 42000);
-  assert.deepEqual(summary.overlaps.map((row) => row.category_name), ['Groceries']);
+  assert.equal(summary.flexibleTotalPence, 42000);
+  assert.equal(summary.overlappingFlexibleTotalPence, 0);
+  assert.equal(summary.totalPlannedSpendingPence, 72000);
+  assert.deepEqual(summary.overlaps, []);
 });
 
 test('inactive default category budgets do not affect planned spending totals', () => {

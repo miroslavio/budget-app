@@ -281,11 +281,28 @@ function compactBarChartOption(option, compact) {
     ...option,
     grid: {
       ...(option.grid || {}),
-      left: 4,
-      right: 10,
+      left: 0,
+      right: 6,
+      top: 6,
+      bottom: 38,
       containLabel: true
     },
-    xAxis: compactCurrencyAxis(option.xAxis)
+    xAxis: compactCurrencyAxis(option.xAxis),
+    yAxis: compactCategoryAxis(option.yAxis)
+  };
+}
+
+function compactCategoryAxis(axis) {
+  if (!axis) return axis;
+  if (Array.isArray(axis)) return axis.map((entry) => compactCategoryAxis(entry));
+  return {
+    ...axis,
+    axisLabel: {
+      ...(axis.axisLabel || {}),
+      width: 92,
+      overflow: 'truncate',
+      fontSize: 11
+    }
   };
 }
 
@@ -391,7 +408,7 @@ function dashboardSpendingPressureChartOption(config, { compact = false, reduced
     series: (config.series || []).map((series) => ({
       ...series,
       label: {
-        show: true,
+        show: !compact,
         position: compact ? 'insideRight' : 'right',
         color: colours.muted,
         fontWeight: 800,
@@ -438,7 +455,7 @@ function dashboardSavingsAllocationChartOption(config, { compact = false, reduce
         ...seriesItem,
         label: isLastSeries
           ? {
-              show: true,
+              show: !compact,
               position: compact ? 'insideRight' : 'right',
               color: colours.muted,
               fontWeight: 800,
@@ -483,7 +500,7 @@ function plannedSpendingOwnerChartOption(config, { compact = false, reducedMotio
     series: series.map((seriesItem) => ({
       ...seriesItem,
       label: {
-        show: true,
+        show: !compact,
         position: compact ? 'insideRight' : 'right',
         color: colours.muted,
         fontWeight: 800,

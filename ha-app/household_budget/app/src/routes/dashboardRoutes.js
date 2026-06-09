@@ -125,7 +125,7 @@ export function registerDashboardRoutes(router, db) {
             <p class="dashboard-period-label">${escapeHtml(period.summaryLabel)}</p>
           </div>
           <div class="dashboard-toolbar-controls">
-            <nav class="period-pills" aria-label="Dashboard period">
+            <nav class="period-pills dashboard-period-desktop" aria-label="Dashboard period">
               ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth, activeFlowOwner)}
               ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth, activeFlowOwner)}
               ${periodPill('/dashboard', 'next_3_months', 'Next 3 months', period.key, selectedMonth, activeFlowOwner)}
@@ -134,8 +134,21 @@ export function registerDashboardRoutes(router, db) {
               ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth, activeFlowOwner)}
             </nav>
             ${period.key === 'specific_month' ? dashboardSpecificMonthControls(selectedMonth, activeFlowOwner) : ''}
+            <details class="dashboard-period-mobile-menu">
+              <summary class="period-pill">Period</summary>
+              <div class="dashboard-period-menu-panel">
+                <nav class="period-pills vertical" aria-label="Dashboard period">
+                  ${periodPill('/dashboard', 'this_month', 'This month', period.key, selectedMonth, activeFlowOwner)}
+                  ${periodPill('/dashboard', 'next_month', 'Next month', period.key, selectedMonth, activeFlowOwner)}
+                  ${periodPill('/dashboard', 'next_3_months', 'Next 3 months', period.key, selectedMonth, activeFlowOwner)}
+                  ${periodPill('/dashboard', 'last_3_months', 'Last 3 months', period.key, selectedMonth, activeFlowOwner)}
+                  ${periodPill('/dashboard', 'tax_year', 'Tax year', period.key, selectedMonth, activeFlowOwner)}
+                  ${periodPill('/dashboard', 'specific_month', 'Pick month', period.key, selectedMonth, activeFlowOwner)}
+                </nav>
+                ${period.key === 'specific_month' ? dashboardSpecificMonthControls(selectedMonth, activeFlowOwner, 'dashboard-month-input-mobile') : ''}
+              </div>
+            </details>
             <div class="dashboard-owner-scope">
-              <span>View</span>
               ${dashboardFlowOwnerPills(flowOwners, period, selectedMonth)}
             </div>
           </div>
@@ -272,14 +285,12 @@ function planningDashboardContent({
   const requestedOwners = dashboardFlowOwners(members, selectedFlowOwner);
   const activeFlowOwner = requestedOwners.some((owner) => owner.active) ? selectedFlowOwner : 'household';
   const flowPlanned = plannedForFlowOwner(planned, activeFlowOwner, members);
-  const ownerFlexibleSpendingPence = plannedSpendingForOwner(plannedFlexibleSpendingPence, activeFlowOwner, members);
   const spendingPressure = spendingPressureRows(plannedExpenseSeries, flowPlanned.plannedExpensePence);
   const savingsAllocation = savingsAllocationRows(savingsAccounts, flowPlanned, activeFlowOwner, members, periodMonths.length || 1);
   const retirementAllocationPence = retirementAllocationForOwner(savingsAccounts, activeFlowOwner, members, periodMonths.length || 1);
   const moneyFlow = moneyFlowSegments(flowPlanned, retirementAllocationPence);
 
-  return `${plannedSummaryCards(flowPlanned, ownerFlexibleSpendingPence)}
-    ${householdMoneyFlowCard(flowPlanned, moneyFlow)}
+  return `${householdMoneyFlowCard(flowPlanned, moneyFlow)}
     <section class="grid two dashboard-analysis-grid">
       ${spendingPressureCard(spendingPressure)}
       ${savingsAllocationCard(savingsAllocation)}
@@ -793,8 +804,7 @@ function periodPill(basePath, periodKey, label, selectedPeriod, selectedMonth, s
   return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${basePath}?${params.toString()}">${escapeHtml(label)}</a>`;
 }
 
-function dashboardSpecificMonthControls(month, selectedFlowOwner = 'household') {
-  const inputId = 'dashboard-month-input';
+function dashboardSpecificMonthControls(month, selectedFlowOwner = 'household', inputId = 'dashboard-month-input') {
   return `<form method="get" action="/dashboard" class="budget-plan-month-form" data-submit-on-change>
     <input type="hidden" name="period" value="specific_month">
     <input type="hidden" name="flow_owner" value="${escapeHtml(selectedFlowOwner)}">
