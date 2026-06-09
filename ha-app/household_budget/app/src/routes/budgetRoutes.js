@@ -102,7 +102,7 @@ function renderBudgetPlanOverview(ctx, db) {
           <h2>Where planned spending goes</h2>
           <a href="/budget-plan/spending">Review all</a>
         </div>
-        ${plannedSpendingOwnerBarChart(spendingRows.rows, members, { maxRows: 10 })}
+        ${plannedSpendingOwnerBarChart(spendingRows.rows, members)}
       </section>
       ${completeness.missingCount > 0 ? planCompletenessCard(completeness) : ''}` : budgetPlanEmptyState()}</div>`
     })

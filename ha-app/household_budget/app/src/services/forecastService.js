@@ -24,6 +24,9 @@ export function buildMonthlyForecast({ items, startMonth, months = 12, openingBa
     const planned = plannedMonthlySummary(items, month);
     const scenarioActive = isScenarioActive(month, scenarioStartMonth, scenarioDuration);
     const oneOffMonth = month === scenarioStartMonth;
+    const annualCostItems = planned.activeItems.filter(
+      (item) => item.item_type === 'expense' && item.frequency === 'yearly' && Number(item.monthly_equivalent_pence || 0) > 0
+    );
     const percentageIncomeAdjustmentPence = scenarioActive
       ? Math.round(planned.plannedIncomePence * (Number(scenario.incomeAdjustmentPercent || 0) / 100))
       : 0;
@@ -51,7 +54,16 @@ export function buildMonthlyForecast({ items, startMonth, months = 12, openingBa
       expectedSavingsPence,
       netMovementPence,
       closingBalancePence,
-      scenarioActive
+      scenarioActive,
+      annualCostItems: annualCostItems.map((item) => ({
+        name: item.name,
+        monthlyEquivalentPence: Number(item.monthly_equivalent_pence || 0)
+      })),
+      oneOffCostPence: oneOffMonth ? Number(scenario.oneOffCostPence || 0) : 0,
+      oneOffIncomePence: oneOffMonth ? Number(scenario.oneOffIncomePence || 0) : 0,
+      scenarioIncomeAdjustmentPence: scenarioActive ? Number(scenario.incomeAdjustmentPence || 0) + percentageIncomeAdjustmentPence : 0,
+      scenarioSpendingAdjustmentPence: scenarioActive ? Number(scenario.spendingAdjustmentPence || 0) : 0,
+      scenarioSavingsAdjustmentPence: scenarioActive ? Number(scenario.savingsAdjustmentPence || 0) : 0
     });
     opening = closingBalancePence;
   }

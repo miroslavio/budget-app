@@ -56,30 +56,9 @@ export function registerForecastRoutes(router, db) {
             <button>Update</button>
           </form>
         </section>
-        <section class="card forecast-start-card">
-          <div class="grid three compact">
-            <div class="stat">
-              <span>Spendable accounts total</span>
-              <strong>${formatCurrency(spendableBalancePence)}</strong>
-            </div>
-            <div class="stat">
-              <span>Forecast adjustment</span>
-              <strong>${formatSignedCurrency(forecastAdjustmentPence)}</strong>
-            </div>
-            <div class="stat">
-              <span>Starting point used</span>
-              <strong>${formatCurrency(startingBalancePence)}</strong>
-            </div>
-          </div>
-          <form method="post" action="/forecast/adjustment" class="inline-form top-gap">
-            ${csrfField(ctx)}
-            <input type="hidden" name="start_month" value="${escapeHtml(startMonth)}">
-            <input type="hidden" name="months" value="${months}">
-            <label>Forecast adjustment <input name="forecast_adjustment" value="${moneyInputValue(forecastAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
-            <button>Save adjustment</button>
-          </form>
-        </section>
-        ${hasForecastData ? `${forecastSummaryCards(summary)}
+        ${forecastSetupCard(ctx, { startMonth, months, spendableBalancePence, forecastAdjustmentPence, startingBalancePence })}
+        ${hasForecastData ? `${forecastHealthCards(summary)}
+        ${forecastDipExplanationsCard(forecast)}
         ${cashflowForecastCard(forecast)}
         ${forecastWhatIfPanel({ startMonth, months, scenario })}
         ${forecastSavingsNote(savingsContributionsMonthlyPence)}
@@ -109,6 +88,40 @@ export function registerForecastRoutes(router, db) {
       redirectWithError(ctx.res, '/forecast', error);
     }
   });
+}
+
+function forecastSetupCard(ctx, { startMonth, months, spendableBalancePence, forecastAdjustmentPence, startingBalancePence }) {
+  return `<section class="card forecast-start-card">
+    <div class="card-heading">
+      <h2>Forecast setup</h2>
+    </div>
+    <div class="grid four compact">
+      <div class="stat">
+        <span>Start month</span>
+        <strong>${escapeHtml(monthLabel(startMonth))}</strong>
+      </div>
+      <div class="stat">
+        <span>Duration</span>
+        <strong>${months} month${months === 1 ? '' : 's'}</strong>
+      </div>
+      <div class="stat">
+        <span>Starting balance</span>
+        <strong>${formatCurrency(startingBalancePence)}</strong>
+        <small class="plan-stat-note">Spendable accounts ${formatCurrency(spendableBalancePence)}</small>
+      </div>
+      <div class="stat">
+        <span>Forecast adjustment</span>
+        <strong>${formatSignedCurrency(forecastAdjustmentPence)}</strong>
+      </div>
+    </div>
+          <form method="post" action="/forecast/adjustment" class="inline-form top-gap">
+            ${csrfField(ctx)}
+            <input type="hidden" name="start_month" value="${escapeHtml(startMonth)}">
+            <input type="hidden" name="months" value="${months}">
+            <label>Forecast adjustment <input name="forecast_adjustment" value="${moneyInputValue(forecastAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
+            <button>Save adjustment</button>
+          </form>
+  </section>`;
 }
 
 function cashflowForecastCard(forecast) {
@@ -183,17 +196,8 @@ function forecastSummary(forecast, { forecastAdjustmentPence = 0 } = {}) {
   };
 }
 
-function forecastSummaryCards(summary) {
+function forecastHealthCards(summary) {
   return `<section class="grid forecast-summary-grid">
-    <div class="stat">
-      <span>Spendable starting balance</span>
-      <strong>${formatCurrency(summary.openingBalancePence)}</strong>
-      <small class="plan-stat-note">${summary.startMonth ? `Start of ${escapeHtml(monthLabel(summary.startMonth))}` : ''}${summary.forecastAdjustmentPence ? ` · Includes ${formatSignedCurrency(summary.forecastAdjustmentPence)} adjustment` : ''}</small>
-    </div>
-    <div class="stat ${summary.averageMonthlyMovementPence < 0 ? 'bad' : summary.averageMonthlyMovementPence > 0 ? 'good' : ''}">
-      <span>Average monthly surplus / deficit</span>
-      <strong>${formatSignedCurrency(summary.averageMonthlyMovementPence)}</strong>
-    </div>
     <div class="stat">
       <span>Monthly income</span>
       <strong>${formatCurrency(summary.averageIncomePence)}</strong>
@@ -201,6 +205,10 @@ function forecastSummaryCards(summary) {
     <div class="stat">
       <span>Monthly outgoings</span>
       <strong>${formatCurrency(summary.averageOutgoingsPence)}</strong>
+    </div>
+    <div class="stat ${summary.averageMonthlyMovementPence < 0 ? 'bad' : summary.averageMonthlyMovementPence > 0 ? 'good' : ''}">
+      <span>Average monthly surplus / deficit</span>
+      <strong>${formatSignedCurrency(summary.averageMonthlyMovementPence)}</strong>
     </div>
     <div class="stat ${summary.lowestProjectedBalancePence < 0 ? 'bad' : ''}">
       <span>Lowest projected balance</span>
@@ -211,7 +219,55 @@ function forecastSummaryCards(summary) {
       <span>Months below zero</span>
       <strong>${summary.monthsBelowZero}</strong>
     </div>
+    <div class="stat ${summary.projectedClosingBalancePence < 0 ? 'bad' : summary.projectedClosingBalancePence > 0 ? 'good' : ''}">
+      <span>Ending balance</span>
+      <strong>${formatCurrency(summary.projectedClosingBalancePence)}</strong>
+    </div>
   </section>`;
+}
+
+function forecastDipExplanationsCard(forecast) {
+  if (!forecast.length) return '';
+  const averageMovement = Math.round(forecast.reduce((sum, row) => sum + Number(row.netMovementPence || 0), 0) / forecast.length);
+  const rows = [...forecast]
+    .sort((a, b) => Number(a.netMovementPence || 0) - Number(b.netMovementPence || 0))
+    .slice(0, 3)
+    .map((row) => ({
+      ...row,
+      reasons: forecastDipReasons(row, forecast, averageMovement)
+    }));
+  if (!rows.some((row) => row.reasons.length) && rows.every((row) => row.netMovementPence >= averageMovement)) return '';
+  return `<section class="card">
+    <h2>Tight months</h2>
+    <div class="forecast-dip-list">
+      ${rows.map((row) => `<article class="forecast-dip-row">
+        <div>
+          <strong>${escapeHtml(monthLabel(row.month))}</strong>
+          <span>${formatSignedCurrency(row.netMovementPence)} net movement</span>
+        </div>
+        <p>${escapeHtml(row.reasons.join(' · ') || 'This is one of the lowest projected movement months in the selected forecast.')}</p>
+      </article>`).join('')}
+    </div>
+  </section>`;
+}
+
+function forecastDipReasons(row, forecast, averageMovement = 0) {
+  const averageIncome = Math.round(forecast.reduce((sum, entry) => sum + Number(entry.expectedIncomePence || 0), 0) / forecast.length);
+  const averageSpending = Math.round(forecast.reduce((sum, entry) => sum + Number(entry.expectedExpensesPence || 0), 0) / forecast.length);
+  const averageSavings = Math.round(forecast.reduce((sum, entry) => sum + Number(entry.expectedSavingsPence || 0), 0) / forecast.length);
+  const reasons = [];
+  const annualCostNames = (row.annualCostItems || []).map((item) => item.name).filter(Boolean);
+  if (annualCostNames.length) reasons.push(`Annual costs included: ${annualCostNames.slice(0, 3).join(', ')}`);
+  if (Number(row.oneOffCostPence || 0) > 0) reasons.push(`One-off cost included: ${formatCurrency(row.oneOffCostPence)}`);
+  if (Number(row.oneOffIncomePence || 0) > 0) reasons.push(`One-off income included: ${formatCurrency(row.oneOffIncomePence)}`);
+  if (Number(row.scenarioSpendingAdjustmentPence || 0) > 0) reasons.push(`Scenario increases spending by ${formatCurrency(row.scenarioSpendingAdjustmentPence)}`);
+  if (Number(row.scenarioIncomeAdjustmentPence || 0) < 0) reasons.push(`Scenario reduces income by ${formatCurrency(Math.abs(row.scenarioIncomeAdjustmentPence))}`);
+  if (Number(row.scenarioSavingsAdjustmentPence || 0) > 0) reasons.push(`Scenario increases savings by ${formatCurrency(row.scenarioSavingsAdjustmentPence)}`);
+  if (row.expectedExpensesPence > averageSpending) reasons.push('Higher planned spending than average');
+  if (row.expectedIncomePence < averageIncome) reasons.push('Lower planned income than average');
+  if (row.expectedSavingsPence > averageSavings) reasons.push('Higher savings contribution than average');
+  if (row.netMovementPence < averageMovement && !reasons.length) reasons.push('Lower monthly movement than the forecast average');
+  return reasons;
 }
 
 function forecastMovementClass(netMovementPence) {
@@ -221,7 +277,7 @@ function forecastMovementClass(netMovementPence) {
 }
 
 function forecastWhatIfPanel({ startMonth, months, scenario }) {
-  return `<section class="card forecast-scenario-card">
+  return `<section class="card forecast-scenario-card" id="forecast-what-if">
     <div class="card-heading">
       <div>
         <h2>What-if scenario</h2>
@@ -234,19 +290,21 @@ function forecastWhatIfPanel({ startMonth, months, scenario }) {
       ${scenarioPreset('Savings -£100/month', { startMonth, months, savings_adjustment: '-100' })}
       ${scenarioPreset('£500 one-off cost', { startMonth, months, one_off_cost: '500' })}
       ${scenarioPreset('Mortgage +£200/month', { startMonth, months, spending_adjustment: '200' })}
-      <a class="secondary button" href="/forecast?start_month=${encodeURIComponent(startMonth)}&months=${encodeURIComponent(String(months))}">Clear scenario</a>
+      <a class="secondary button" href="/forecast?start_month=${encodeURIComponent(startMonth)}&months=${encodeURIComponent(String(months))}#forecast-what-if">Clear scenario</a>
     </div>
-    <form method="get" action="/forecast" class="grid three compact forecast-scenario-form">
+    <form method="get" action="/forecast#forecast-what-if" class="forecast-scenario-form">
       <input type="hidden" name="start_month" value="${escapeHtml(startMonth)}">
       <input type="hidden" name="months" value="${months}">
-      <label>Income adjustment / month <input name="income_adjustment" value="${moneyInputValue(scenario.incomeAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
-      <label>Spending adjustment / month <input name="spending_adjustment" value="${moneyInputValue(scenario.spendingAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
-      <label>Savings adjustment / month <input name="savings_adjustment" value="${moneyInputValue(scenario.savingsAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
-      <label>One-off cost <input name="one_off_cost" value="${moneyInputValue(scenario.oneOffCostPence)}" ${moneyInputAttrs({ allowNegative: false, min: '0' })}></label>
-      <label>One-off income <input name="one_off_income" value="${moneyInputValue(scenario.oneOffIncomePence)}" ${moneyInputAttrs({ allowNegative: false, min: '0' })}></label>
-      <label>Scenario start <input type="month" name="scenario_start_month" value="${escapeHtml(scenario.startMonth || startMonth)}"></label>
-      <label>Duration months <input name="scenario_duration" value="${scenario.durationMonths || months}" ${decimalInputAttrs({ min: '1', max: '120', decimals: 0, step: '1' })}></label>
-      <div class="form-actions"><button>Run scenario</button></div>
+      <div class="grid three compact forecast-scenario-fields">
+        <label>Income adjustment / month <input name="income_adjustment" value="${moneyInputValue(scenario.incomeAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
+        <label>Spending adjustment / month <input name="spending_adjustment" value="${moneyInputValue(scenario.spendingAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
+        <label>Savings adjustment / month <input name="savings_adjustment" value="${moneyInputValue(scenario.savingsAdjustmentPence)}" ${moneyInputAttrs({ allowNegative: true, min: null })}></label>
+        <label>One-off cost <input name="one_off_cost" value="${moneyInputValue(scenario.oneOffCostPence)}" ${moneyInputAttrs({ allowNegative: false, min: '0' })}></label>
+        <label>One-off income <input name="one_off_income" value="${moneyInputValue(scenario.oneOffIncomePence)}" ${moneyInputAttrs({ allowNegative: false, min: '0' })}></label>
+        <label>Scenario start <input type="month" name="scenario_start_month" value="${escapeHtml(scenario.startMonth || startMonth)}"></label>
+        <label>Duration months <input name="scenario_duration" value="${scenario.durationMonths || months}" ${decimalInputAttrs({ min: '1', max: '120', decimals: 0, step: '1' })}></label>
+      </div>
+      <div class="form-actions forecast-scenario-actions"><button>Run scenario</button></div>
     </form>
   </section>`;
 }
@@ -267,7 +325,7 @@ function scenarioPreset(label, params) {
   if (params.savings_adjustment) search.set('savings_adjustment', params.savings_adjustment);
   if (params.one_off_cost) search.set('one_off_cost', params.one_off_cost);
   if (params.one_off_income) search.set('one_off_income', params.one_off_income);
-  return `<a class="secondary button" href="/forecast?${search.toString()}">${escapeHtml(label)}</a>`;
+  return `<a class="secondary button" href="/forecast?${search.toString()}#forecast-what-if">${escapeHtml(label)}</a>`;
 }
 
 function forecastSavingsNote(savingsContributionsMonthlyPence) {

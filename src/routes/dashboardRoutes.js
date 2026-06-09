@@ -887,7 +887,7 @@ function plannedSpendingForOwner(amountPence, owner, members = []) {
 function retirementAllocationForOwner(accounts, owner, members = [], periodMonthCount = 1) {
   const periodMultiplier = Math.max(1, Number(periodMonthCount || 1));
   const activePensions = accounts.filter(
-    (account) => Number(account.is_active) === 1 && isPensionAccountType(account.account_type) && account.account_type !== 'defined_benefit_pension'
+    (account) => Number(account.is_active) === 1 && isPensionAccountType(account.account_type)
   );
   if (owner === 'household') {
     return activePensions.reduce((sum, account) => sum + Number(account.monthly_contribution_pence || 0), 0) * periodMultiplier;

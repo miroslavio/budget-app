@@ -68,7 +68,10 @@ export function cashflowForecastChart(forecast) {
     return `${round(x)},${round(y)}`;
   });
   const lowestRow = forecast.reduce((lowest, row) => (row.closingBalancePence < lowest.closingBalancePence ? row : lowest), forecast[0]);
+  const lowestIndex = forecast.indexOf(lowestRow);
   const finalRow = forecast.at(-1);
+  const finalIndex = forecast.length - 1;
+  const showLowestAnnotation = lowestRow && lowestIndex !== finalIndex;
 
   return `<div class="cashflow-chart-block" role="img" aria-label="Cashflow resilience chart">
     <svg class="cashflow-chart" viewBox="0 0 ${width} ${height}" aria-hidden="true">
@@ -103,8 +106,8 @@ export function cashflowForecastChart(forecast) {
           </g>`;
         })
         .join('')}
-      ${lowestRow ? forecastAnnotation(lowestRow, forecast.indexOf(lowestRow), step, padding, plotHeight, minValue, range, 'Lowest') : ''}
-      ${finalRow ? forecastAnnotation(finalRow, forecast.length - 1, step, padding, plotHeight, minValue, range, 'Final') : ''}
+      ${showLowestAnnotation ? forecastAnnotation(lowestRow, lowestIndex, step, padding, plotHeight, minValue, range, 'Lowest') : ''}
+      ${finalRow ? forecastAnnotation(finalRow, finalIndex, step, padding, plotHeight, minValue, range, 'Final') : ''}
       ${forecast
         .filter((_, index) => index % Math.ceil(forecast.length / 6) === 0)
         .map((row) => {
@@ -802,13 +805,27 @@ function forecastAnnotation(row, index, step, padding, plotHeight, minValue, ran
   const x = padding.left + step * index + step / 2;
   const y = yFor(row.closingBalancePence, minValue, range, padding, plotHeight);
   const textY = Math.max(padding.top + 14, y - 16);
+  const plotRight = 920 - padding.right;
+  const isNearRightEdge = x > plotRight - 130;
+  const textX = isNearRightEdge ? x - 8 : x + 8;
+  const textAnchor = isNearRightEdge ? 'end' : 'start';
   return `<g class="forecast-annotation">
     <line x1="${round(x)}" y1="${round(y)}" x2="${round(x)}" y2="${round(textY + 4)}"></line>
-    <text x="${round(x)}" y="${round(textY)}" text-anchor="middle">${escapeHtml(label)} ${formatAxisCurrency(row.closingBalancePence)}</text>
+    <text x="${round(textX)}" y="${round(textY)}" text-anchor="${textAnchor}">${escapeHtml(label)} ${formatAxisCurrency(row.closingBalancePence)}</text>
   </g>`;
 }
 
 function forecastTooltip(row) {
+  const annualCostLines = (row.annualCostItems || []).map(
+    (item) => `Annual cost: ${item.name} (${formatCurrency(item.monthlyEquivalentPence)}/month equivalent)`
+  );
+  const scenarioLines = [
+    Number(row.oneOffCostPence || 0) > 0 ? `One-off cost: -${formatCurrency(row.oneOffCostPence)}` : '',
+    Number(row.oneOffIncomePence || 0) > 0 ? `One-off income: ${formatCurrency(row.oneOffIncomePence)}` : '',
+    Number(row.scenarioIncomeAdjustmentPence || 0) ? `Income scenario adjustment: ${formatSignedCurrency(row.scenarioIncomeAdjustmentPence)}` : '',
+    Number(row.scenarioSpendingAdjustmentPence || 0) ? `Spending scenario adjustment: ${formatSignedCurrency(row.scenarioSpendingAdjustmentPence)}` : '',
+    Number(row.scenarioSavingsAdjustmentPence || 0) ? `Savings scenario adjustment: ${formatSignedCurrency(row.scenarioSavingsAdjustmentPence)}` : ''
+  ].filter(Boolean);
   return [
     monthLabel(row.month),
     `Opening balance: ${formatCurrency(row.openingBalancePence)}`,
@@ -816,7 +833,9 @@ function forecastTooltip(row) {
     `Planned spending: -${formatCurrency(row.expectedExpensesPence)}`,
     `Planned savings: -${formatCurrency(row.expectedSavingsPence)}`,
     `Net movement: ${formatSignedCurrency(row.netMovementPence)}`,
-    `Closing balance: ${formatCurrency(row.closingBalancePence)}`
+    `Closing balance: ${formatCurrency(row.closingBalancePence)}`,
+    ...annualCostLines,
+    ...scenarioLines
   ].join('\n');
 }
 

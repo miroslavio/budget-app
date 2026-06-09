@@ -76,7 +76,6 @@ function renderSavingsOverview(ctx, db) {
         </div>
       </section>` : savingsEmptyState()}
       ${savingsOverviewProjectionCard(summary, projection, projectionHorizon, goals)}
-      ${monthlyAdditionsBreakdownCard(projection)}
       ${definedBenefitEntitlementsCard(accounts, goals)}
       </div>`
     })
@@ -87,7 +86,12 @@ function renderSavingsAccountsPage(ctx, db) {
   if (!ensureAuthenticated(ctx)) return;
   const members = listHouseholdMembers(db, ctx.user.household_id);
   const accounts = listSavingsAccounts(db, ctx.user.household_id);
+  const goalLinks = listSavingsGoalAccountLinks(db, ctx.user.household_id);
+  const goals = decorateGoalsWithLinkedAccounts(listSavingsGoals(db, ctx.user.household_id), goalLinks, accounts);
   const summary = savingsAccountSummary(accounts);
+  const definedBenefitAccounts = accounts.filter((account) => account.account_type === 'defined_benefit_pension');
+  const pensionPots = accounts.filter((account) => account.account_type !== 'defined_benefit_pension' && isPensionAccountType(account.account_type));
+  const investmentAndCashPots = accounts.filter((account) => account.account_type !== 'defined_benefit_pension' && !isPensionAccountType(account.account_type));
 
   html(
     ctx.res,
@@ -120,10 +124,9 @@ function renderSavingsAccountsPage(ctx, db) {
           <strong>${Math.max(0, accounts.length - summary.activeCount)}</strong>
         </div>
       </section>
-      <section class="card">
-        <h2>Accounts and pots</h2>
-        ${savingsAccountsTable(ctx, accounts, members)}
-      </section>
+      ${savingsAccountGroupCard(ctx, 'Investment and cash pots', investmentAndCashPots, members, 'investment-cash')}
+      ${savingsAccountGroupCard(ctx, 'Pension pots', pensionPots, members, 'pension-pots')}
+      ${definedBenefitEntitlementsManagementCard(ctx, definedBenefitAccounts, goals, members)}
       </div>`
     })
   );
@@ -396,6 +399,7 @@ function projectionBreakdownCard(summary, projection, months) {
 
 function savingsOverviewProjectionCard(summary, projection, projectionHorizon, goals) {
   if (!projection.accounts.length) return '';
+  const monthlyAdditionsChart = monthlyAdditionsBreakdownPanel(projection);
   const totals = projection.accounts.reduce(
     (aggregate, account) => {
       aggregate.personalContributionPence += Number(account.totalPersonalContributionPence || 0);
@@ -412,7 +416,13 @@ function savingsOverviewProjectionCard(summary, projection, projectionHorizon, g
         <h2>Long-term savings projection</h2>
         <p class="hint">Projected balances by pot using current balances, monthly additions, top-ups, growth assumptions, and charges where tracked.</p>
       </div>
-      ${savingsProjectionHorizonControls(projectionHorizon, goals)}
+      <div class="stack">
+        ${savingsProjectionHorizonControls(projectionHorizon, goals)}
+        <div class="period-pills view-toggle-pills" data-view-toggle-group="savings-overview" aria-label="Savings chart mode">
+          <button type="button" class="period-pill active" data-view-toggle="savings-overview" data-view-value="balances" aria-pressed="true">Projected balances</button>
+          <button type="button" class="period-pill" data-view-toggle="savings-overview" data-view-value="additions" aria-pressed="false">Monthly additions</button>
+        </div>
+      </div>
     </div>
     <section class="grid projection-summary-grid">
       <div class="stat">
@@ -441,6 +451,9 @@ function savingsOverviewProjectionCard(summary, projection, projectionHorizon, g
         emptyMessage: 'Add an account or pot to start projecting balances.'
       })}
     </div>
+    <div data-view-panel="savings-overview" data-view-value="additions" class="view-panel" hidden>
+      ${monthlyAdditionsChart}
+    </div>
   </section>`;
 }
 
@@ -458,8 +471,8 @@ function savingsProjectionHorizonControls(activeHorizon, goals) {
   </nav>`;
 }
 
-function monthlyAdditionsBreakdownCard(projection) {
-  if (!projection.accounts.length) return '';
+function monthlyAdditionsBreakdownPanel(projection) {
+  if (!projection.accounts.length) return '<div class="chart-empty">No monthly additions yet.</div>';
   const firstMonth = projection.months[0];
   const rows = projection.accounts
     .map((account) => {
@@ -472,11 +485,8 @@ function monthlyAdditionsBreakdownCard(projection) {
     })
     .filter((row) => row.totalPence > 0)
     .sort((a, b) => b.totalPence - a.totalPence);
-  if (!rows.length) return '';
-  return `<section class="card">
-    <h2>Monthly additions breakdown</h2>
-    ${savingsMonthlyAdditionsChart(rows)}
-  </section>`;
+  if (!rows.length) return '<div class="chart-empty">No monthly additions yet.</div>';
+  return savingsMonthlyAdditionsChart(rows);
 }
 
 function definedBenefitEntitlementsCard(accounts, goals) {
@@ -495,6 +505,50 @@ function definedBenefitEntitlementsCard(accounts, goals) {
         </tr>`).join('')}</tbody>
       </table>
     </div>
+  </section>`;
+}
+
+function savingsAccountGroupCard(ctx, title, accounts, members, idSuffix) {
+  return `<section class="card">
+    <h2>${escapeHtml(title)}</h2>
+    ${savingsAccountsTable(ctx, accounts, members, idSuffix)}
+  </section>`;
+}
+
+function definedBenefitEntitlementsManagementCard(ctx, accounts, goals, members) {
+  if (!accounts.length) {
+    return `<section class="card">
+      <h2>Defined benefit entitlements</h2>
+      <p class="empty">No defined benefit pension entitlements tracked yet.</p>
+    </section>`;
+  }
+
+  const desktopTable = `<table class="data-table">
+    <thead><tr><th>Entitlement</th><th>Owner</th><th>Annual pension</th><th>Lump sum</th><th>Provider</th><th>Linked retirement goal</th><th class="actions-col"></th></tr></thead>
+    <tbody>${accounts.map((account) => `<tr>
+      <td><strong>${escapeHtml(account.name)}</strong></td>
+      <td>${escapeHtml(ownerLabel(account.owner_type, members))}</td>
+      <td>${formatCurrency(account.annual_pension_entitlement_pence || 0)}</td>
+      <td>${formatCurrency(account.lump_sum_entitlement_pence || 0)}</td>
+      <td>${escapeHtml(account.provider_name || 'Not set')}</td>
+      <td>${escapeHtml(linkedRetirementGoalLabel(account, goals))}</td>
+      <td class="actions-col">${savingsAccountActions(ctx, account)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+  const mobileCardsId = 'defined-benefit-entitlements-mobile-cards';
+  return `<section class="card">
+    <h2>Defined benefit entitlements</h2>
+    ${responsiveFinanceTable(desktopTable, `
+      ${mobileSortControl(mobileCardsId, accounts.length, [
+        ['name:asc', 'Name, A to Z'],
+        ['owner:asc', 'Owner, A to Z'],
+        ['balance:desc', 'Annual pension, high to low'],
+        ['status:asc', 'Status, A to Z']
+      ])}
+      <div id="${mobileCardsId}" class="mobile-finance-card-list">
+        ${accounts.map((account) => savingsAccountMobileCard(account, members, savingsAccountActions(ctx, account))).join('')}
+      </div>
+    `)}
   </section>`;
 }
 
@@ -845,7 +899,7 @@ function accountsSnapshotTable(accounts, members) {
   `);
 }
 
-function savingsAccountsTable(ctx, accounts, members) {
+function savingsAccountsTable(ctx, accounts, members, idSuffix = 'savings-accounts') {
   if (!accounts.length) return '<p class="empty">No accounts or pots tracked yet.</p>';
 
   const desktopTable = `<table class="data-table">
@@ -868,7 +922,7 @@ function savingsAccountsTable(ctx, accounts, members) {
       })
       .join('')}</tbody>
   </table>`;
-  const mobileCardsId = 'savings-accounts-mobile-cards';
+  const mobileCardsId = `${idSuffix}-mobile-cards`;
   return responsiveFinanceTable(desktopTable, `
     ${mobileSortControl(mobileCardsId, accounts.length, [
       ['balance:desc', 'Balance, high to low'],
@@ -1004,10 +1058,13 @@ function savingsGoalActions(ctx, goal, progress, returnTo) {
 function savingsAccountMobileCard(account, members, actions = '') {
   const status = Number(account.is_active) === 1 ? 'Active' : 'Excluded';
   const monthlyTotalPence = Number(account.monthly_contribution_pence || 0) + Number(account.employer_monthly_contribution_pence || 0);
+  const primaryValuePence = account.account_type === 'defined_benefit_pension'
+    ? Number(account.annual_pension_entitlement_pence || 0)
+    : Number(account.current_balance_pence || 0);
   return `<article class="mobile-finance-card ${mobileStatusClass(status)}" data-mobile-sort-card
     data-sort-name="${escapeHtml(String(account.name || '').toLowerCase())}"
     data-sort-owner="${escapeHtml(ownerLabel(account.owner_type, members).toLowerCase())}"
-    data-sort-balance="${Number(account.current_balance_pence || 0)}"
+    data-sort-balance="${primaryValuePence}"
     data-sort-monthly="${monthlyTotalPence}"
     data-sort-status="${escapeHtml(status.toLowerCase())}">
     <div class="mobile-card-head">
@@ -1018,7 +1075,7 @@ function savingsAccountMobileCard(account, members, actions = '') {
       <span class="mobile-card-status ${mobileStatusClass(status)}">${escapeHtml(status)}</span>
     </div>
     <div class="mobile-card-amount">
-      <strong>${account.account_type === 'defined_benefit_pension' ? formatCurrency(account.annual_pension_entitlement_pence || 0) : formatCurrency(account.current_balance_pence)}</strong>
+      <strong>${formatCurrency(primaryValuePence)}</strong>
       <span>${escapeHtml(ownerLabel(account.owner_type, members))}</span>
     </div>
     <dl class="mobile-card-meta">

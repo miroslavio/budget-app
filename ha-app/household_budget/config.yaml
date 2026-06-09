@@ -1,6 +1,6 @@
 name: "Household Budget"
 description: "Planning-first UK household budgeting app"
-version: "0.1.12"
+version: "0.1.13"
 slug: "household_budget"
 init: false
 arch:
