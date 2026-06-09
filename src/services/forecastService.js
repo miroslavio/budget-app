@@ -13,26 +13,55 @@ export function deriveForecastStartingBalance({ accounts = [], adjustmentPence =
   return spendableHouseholdBalancePence(accounts) + Number(adjustmentPence || 0);
 }
 
-export function buildMonthlyForecast({ items, startMonth, months = 12, openingBalancePence = 0 }) {
+export function buildMonthlyForecast({ items, startMonth, months = 12, openingBalancePence = 0, scenario = {} }) {
   const forecast = [];
   let opening = Number(openingBalancePence || 0);
+  const scenarioStartMonth = scenario.startMonth || startMonth;
+  const scenarioDuration = Math.max(1, Number(scenario.durationMonths || months || 1));
 
   for (let index = 0; index < months; index += 1) {
     const month = addMonths(startMonth, index);
     const planned = plannedMonthlySummary(items, month);
-    const netMovementPence = planned.plannedIncomePence - planned.plannedExpensePence - planned.plannedSavingsPence;
+    const scenarioActive = isScenarioActive(month, scenarioStartMonth, scenarioDuration);
+    const oneOffMonth = month === scenarioStartMonth;
+    const percentageIncomeAdjustmentPence = scenarioActive
+      ? Math.round(planned.plannedIncomePence * (Number(scenario.incomeAdjustmentPercent || 0) / 100))
+      : 0;
+    const expectedIncomePence = Math.max(
+      0,
+      planned.plannedIncomePence +
+        (scenarioActive ? Number(scenario.incomeAdjustmentPence || 0) : 0) +
+        percentageIncomeAdjustmentPence +
+        (oneOffMonth ? Number(scenario.oneOffIncomePence || 0) : 0)
+    );
+    const expectedExpensesPence = Math.max(
+      0,
+      planned.plannedExpensePence +
+        (scenarioActive ? Number(scenario.spendingAdjustmentPence || 0) : 0) +
+        (oneOffMonth ? Number(scenario.oneOffCostPence || 0) : 0)
+    );
+    const expectedSavingsPence = Math.max(0, planned.plannedSavingsPence + (scenarioActive ? Number(scenario.savingsAdjustmentPence || 0) : 0));
+    const netMovementPence = expectedIncomePence - expectedExpensesPence - expectedSavingsPence;
     const closingBalancePence = opening + netMovementPence;
     forecast.push({
       month,
       openingBalancePence: opening,
-      expectedIncomePence: planned.plannedIncomePence,
-      expectedExpensesPence: planned.plannedExpensePence,
-      expectedSavingsPence: planned.plannedSavingsPence,
+      expectedIncomePence,
+      expectedExpensesPence,
+      expectedSavingsPence,
       netMovementPence,
-      closingBalancePence
+      closingBalancePence,
+      scenarioActive
     });
     opening = closingBalancePence;
   }
 
   return forecast;
+}
+
+function isScenarioActive(month, startMonth, durationMonths) {
+  for (let offset = 0; offset < durationMonths; offset += 1) {
+    if (addMonths(startMonth, offset) === month) return true;
+  }
+  return false;
 }

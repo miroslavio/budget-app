@@ -16,7 +16,7 @@ import {
   savingsAccountTypeLabel,
   savingsAccountTypeOptions
 } from '../services/savingsAccountService.js';
-import { savingsProjectionChart } from '../views/charts.js';
+import { savingsMonthlyAdditionsChart, savingsProjectionChart } from '../views/charts.js';
 import { actionIconButton, csrfField, escapeHtml, formatCurrency, formatSignedCurrency, ownerLabel, page } from '../views/html.js';
 import { decimalInputAttrs, moneyInputAttrs, ownerOptions } from '../views/forms.js';
 import { html } from '../http/response.js';
@@ -41,7 +41,8 @@ function renderSavingsOverview(ctx, db) {
   const goalLinks = listSavingsGoalAccountLinks(db, ctx.user.household_id);
   const goals = decorateGoalsWithLinkedAccounts(listSavingsGoals(db, ctx.user.household_id), goalLinks, accounts);
   const summary = savingsAccountSummary(accounts);
-  const projection = buildSavingsProjection(accounts, { startMonth: currentMonth(), months: 12 });
+  const projectionHorizon = resolveSavingsProjectionHorizon(ctx.query.get('horizon'), goals);
+  const projection = buildSavingsProjection(accounts, { startMonth: currentMonth(), months: projectionHorizon.months });
   const projectedYearEndPence = projection.months.at(-1)?.closingBalancePence ?? summary.totalBalancePence;
   const activeGoals = goals.filter((goal) => goal.status === 'active');
   const totalGoalTargetPence = activeGoals.reduce((sum, goal) => sum + Number(goal.target_amount_pence || 0), 0);
@@ -63,7 +64,7 @@ function renderSavingsOverview(ctx, db) {
           <button type="button" data-open-modal="savings-goal-modal" data-reset-modal="true">Add savings goal</button>
         </div>
       </section>
-      ${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence)}
+      ${overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence, projectionHorizon)}
       <section class="grid two">
         <div class="card">
           <h2>Accounts & pots</h2>
@@ -74,7 +75,9 @@ function renderSavingsOverview(ctx, db) {
           ${goalsOverview(goals)}
         </div>
       </section>` : savingsEmptyState()}
-      ${savingsOverviewProjectionCard(summary, projection, 12)}
+      ${savingsOverviewProjectionCard(summary, projection, projectionHorizon, goals)}
+      ${monthlyAdditionsBreakdownCard(projection)}
+      ${definedBenefitEntitlementsCard(accounts, goals)}
       </div>`
     })
   );
@@ -327,7 +330,7 @@ function savingsSectionLink(href, label, active = false) {
   return `<a class="period-pill${active ? ' active' : ''}" ${active ? 'aria-current="page"' : ''} href="${href}">${escapeHtml(label)}</a>`;
 }
 
-function overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence) {
+function overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, currentGoalSavedPence, projectionHorizon) {
   const monthlyAdditionsPence = Number(summary.monthlyContributionPence || 0) + Number(summary.employerContributionPence || 0);
   return `<section class="grid four">
     <div class="stat">
@@ -339,7 +342,7 @@ function overviewCards(summary, projectedYearEndPence, totalGoalTargetPence, cur
       <strong>${formatCurrency(monthlyAdditionsPence)}</strong>
     </div>
     <div class="stat">
-      <span>Projected in 12 months</span>
+      <span>Projected ${escapeHtml(projectionHorizon.cardLabel)}</span>
       <strong>${formatCurrency(projectedYearEndPence)}</strong>
     </div>
     <div class="stat">
@@ -391,7 +394,7 @@ function projectionBreakdownCard(summary, projection, months) {
   </section>`;
 }
 
-function savingsOverviewProjectionCard(summary, projection, months) {
+function savingsOverviewProjectionCard(summary, projection, projectionHorizon, goals) {
   if (!projection.accounts.length) return '';
   const totals = projection.accounts.reduce(
     (aggregate, account) => {
@@ -406,15 +409,140 @@ function savingsOverviewProjectionCard(summary, projection, months) {
   return `<section class="card chart-card">
     <div class="card-heading">
       <div>
-        <h2>Savings projection</h2>
+        <h2>Long-term savings projection</h2>
+        <p class="hint">Projected balances by pot using current balances, monthly additions, top-ups, growth assumptions, and charges where tracked.</p>
       </div>
+      ${savingsProjectionHorizonControls(projectionHorizon, goals)}
     </div>
+    <section class="grid projection-summary-grid">
+      <div class="stat">
+        <span>Starting balance</span>
+        <strong>${formatCurrency(summary.totalBalancePence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Personal contributions</span>
+        <strong>${formatCurrency(totals.personalContributionPence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Employer and LISA top-ups</span>
+        <strong>${formatCurrency(totals.topUpsPence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Projected growth / interest</span>
+        <strong>${formatCurrency(totals.growthPence)}</strong>
+      </div>
+      <div class="stat">
+        <span>Projected total</span>
+        <strong>${formatCurrency(projectedTotalPence)}</strong>
+      </div>
+    </section>
     <div data-view-panel="savings-overview" data-view-value="balances" class="view-panel">
       ${savingsProjectionChart(projection, {
         emptyMessage: 'Add an account or pot to start projecting balances.'
       })}
     </div>
   </section>`;
+}
+
+function savingsProjectionHorizonControls(activeHorizon, goals) {
+  const options = [
+    ['1y', '1 year'],
+    ['3y', '3 years'],
+    ['5y', '5 years'],
+    ['10y', '10 years'],
+    ...(goalDateMonths(goals) ? [['goal', 'To goal date']] : []),
+    ...(retirementDateMonths(goals) ? [['retirement', 'To retirement']] : [])
+  ];
+  return `<nav class="period-pills view-toggle-pills" aria-label="Savings projection horizon">
+    ${options.map(([key, label]) => `<a class="period-pill${activeHorizon.key === key ? ' active' : ''}" href="/savings?horizon=${encodeURIComponent(key)}">${escapeHtml(label)}</a>`).join('')}
+  </nav>`;
+}
+
+function monthlyAdditionsBreakdownCard(projection) {
+  if (!projection.accounts.length) return '';
+  const firstMonth = projection.months[0];
+  const rows = projection.accounts
+    .map((account) => {
+      const monthAccount = firstMonth?.accounts?.find((entry) => entry.accountId === account.accountId);
+      const personalPence = Number(monthAccount?.personalContributionPence || account.monthlyContributionPence || 0);
+      const employerPence = Number(monthAccount?.employerContributionPence || account.employerMonthlyContributionPence || 0);
+      const bonusPence = Number(monthAccount?.bonusPence || 0);
+      const totalPence = personalPence + employerPence + bonusPence;
+      return { name: account.name, personalPence, employerPence, bonusPence, totalPence };
+    })
+    .filter((row) => row.totalPence > 0)
+    .sort((a, b) => b.totalPence - a.totalPence);
+  if (!rows.length) return '';
+  return `<section class="card">
+    <h2>Monthly additions breakdown</h2>
+    ${savingsMonthlyAdditionsChart(rows)}
+  </section>`;
+}
+
+function definedBenefitEntitlementsCard(accounts, goals) {
+  const rows = accounts.filter((account) => account.account_type === 'defined_benefit_pension');
+  if (!rows.length) return '';
+  return `<section class="card">
+    <h2>Defined benefit pension entitlements</h2>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Entitlement</th><th>Annual pension</th><th>Lump sum</th><th>Linked retirement goal</th></tr></thead>
+        <tbody>${rows.map((account) => `<tr>
+          <td>${escapeHtml(account.name)}</td>
+          <td>${formatCurrency(account.annual_pension_entitlement_pence || 0)}</td>
+          <td>${formatCurrency(account.lump_sum_entitlement_pence || 0)}</td>
+          <td>${escapeHtml(linkedRetirementGoalLabel(account, goals))}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </section>`;
+}
+
+function linkedRetirementGoalLabel(account, goals) {
+  const linked = goals.find((goal) => goal.goal_type === 'retirement' && (goal.linkedAccounts || []).some((link) => Number(link.id) === Number(account.id)));
+  return linked?.name || 'Not linked';
+}
+
+function resolveSavingsProjectionHorizon(requestedHorizon, goals = []) {
+  const key = String(requestedHorizon || '1y');
+  const fixed = {
+    '1y': { key: '1y', months: 12, cardLabel: 'in 1 year' },
+    '3y': { key: '3y', months: 36, cardLabel: 'in 3 years' },
+    '5y': { key: '5y', months: 60, cardLabel: 'in 5 years' },
+    '10y': { key: '10y', months: 120, cardLabel: 'in 10 years' }
+  };
+  if (fixed[key]) return fixed[key];
+  if (key === 'goal') {
+    const months = goalDateMonths(goals);
+    if (months) return { key: 'goal', months, cardLabel: 'by goal date' };
+  }
+  if (key === 'retirement') {
+    const months = retirementDateMonths(goals);
+    if (months) return { key: 'retirement', months, cardLabel: 'by retirement date' };
+  }
+  return fixed['1y'];
+}
+
+function goalDateMonths(goals = []) {
+  const targetMonths = goals
+    .filter((goal) => goal.status === 'active' && goal.target_date)
+    .map((goal) => monthsUntil(goal.target_date.slice(0, 7)))
+    .filter((months) => months > 0);
+  return targetMonths.length ? Math.min(...targetMonths) : null;
+}
+
+function retirementDateMonths(goals = []) {
+  const targetMonths = goals
+    .filter((goal) => goal.status === 'active' && goal.goal_type === 'retirement' && goal.target_date)
+    .map((goal) => monthsUntil(goal.target_date.slice(0, 7)))
+    .filter((months) => months > 0);
+  return targetMonths.length ? Math.min(...targetMonths) : null;
+}
+
+function monthsUntil(targetMonth) {
+  const [startYear, startMonth] = currentMonth().split('-').map(Number);
+  const [targetYear, targetMonthNumber] = targetMonth.split('-').map(Number);
+  return Math.max(1, (targetYear - startYear) * 12 + (targetMonthNumber - startMonth) + 1);
 }
 
 function savingsEmptyState() {
